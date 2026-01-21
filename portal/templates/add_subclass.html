@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .add-container {
+        padding-top: 40px;
+        max-width: 600px;
+    }
+    .card-header {
+        font-weight: bold;
+        background-color: #28a745;
+        color: white;
+    }
+</style>
+
+<div class="container add-container" transition-style="in:fade:slow">
+    <div class="row">
+        <div class="col-12">
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb bg-transparent p-0">
+                <li class="breadcrumb-item"><a href="{{ url_for('admin_management', _anchor='subclass') }}">Management</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Add Subclass</li>
+              </ol>
+            </nav>
+            <h2><i class="fas fa-tags text-success"></i> Add New Subclass</h2>
+            <p class="text-muted">Register a new subclass code and name to the database.</p>
+            <hr>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-header">
+            Subclass Details
+        </div>
+        <div class="card-body bg-light">
+            <form id="addSubclassForm" action="{{ url_for('subclass.add_subclass') }}" method="POST" autocomplete="off">
+                
+                <div class="form-group mb-3">
+                    <label for="product_group" class="font-weight-bold small text-secondary">PRODUCT GROUP (CODE)</label>
+                    <input type="text" name="product_group" id="product_group" class="form-control" 
+                           placeholder="e.g., AXIS or GIORD" required>
+                </div>
+
+                <div class="form-group mb-3">
+                    <label for="subclass_code" class="font-weight-bold small text-secondary">SUBCLASS CODE</label>
+                    <input type="text" name="subclass_code" id="subclass_code" class="form-control" 
+                           placeholder="e.g., 013" required pattern="[0-9]+" maxlength="3">
+                    <small class="form-text text-muted">Codes are typically 3 digits.</small>
+                </div>
+
+                <div class="form-group mb-4">
+                    <label for="description" class="font-weight-bold small text-secondary">SUBCLASS NAME</label>
+                    <input type="text" name="description" id="description" class="form-control" 
+                           placeholder="e.g., LEATHER" required>
+                </div>
+
+                <div class="d-flex justify-content-between">
+                    <a href="{{ url_for('admin_management', _anchor='subclass') }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Cancel
+                    </a>
+                    <button type="button" class="btn btn-success px-4 shadow-sm" data-toggle="modal" data-target="#confirmSubclassModal">
+                        <i class="fas fa-save"></i> Save Subclass
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="confirmSubclassModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header bg-success text-white">
+        <h5 class="modal-title">Confirm Save</h5>
+        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body text-center py-4">
+        <i class="fas fa-question-circle fa-3x text-success mb-3"></i>
+        <p>Are you sure you want to add this Subclass to the registry?</p>
+        <div class="alert alert-warning small mx-3">
+            <i class="fas fa-exclamation-triangle"></i> <strong>Note:</strong> This will update the MySQL database immediately.
+        </div>
+      </div>
+      <div class="modal-footer justify-content-center border-0 pb-4">
+        <button type="button" class="btn btn-secondary px-4" data-dismiss="modal">Go Back</button>
+        <button type="button" class="btn btn-success px-4" onclick="document.getElementById('addSubclassForm').submit();">Confirm & Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

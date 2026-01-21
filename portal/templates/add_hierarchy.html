@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .add-container { padding-top: 40px; max-width: 800px; }
+    .card-header { font-weight: bold; background-color: #28a745; color: white; }
+    .is-invalid { border-color: #dc3545 !important; }
+    .invalid-feedback { display: none; color: #dc3545; font-size: 0.875em; margin-top: 0.25rem; }
+    .breadcrumb a { color: #28a745; }
+</style>
+
+<div class="container add-container" transition-style="in:fade:slow">
+    <div class="row">
+        <div class="col-12">
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb bg-transparent p-0">
+                <li class="breadcrumb-item"><a href="{{ url_for('admin_management', _anchor='hierarchy') }}">Management</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Add Hierarchy</li>
+              </ol>
+            </nav>
+            <h2><i class="fas fa-sitemap text-success"></i> Add New Hierarchy</h2>
+            <p class="text-muted">Register a new Brand and Hierarchy Group to the Excel database.</p>
+            <hr>
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category if category != 'message' else 'danger' }} alert-dismissible fade show shadow-sm">
+            <i class="fas fa-exclamation-triangle mr-2"></i> {{ message }}
+            <button type="button" class="close" data-dismiss="alert">&times;</button>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="card shadow-sm border-0">
+        <div class="card-header"><i class="fas fa-info-circle mr-2"></i> Hierarchy Details</div>
+        <div class="card-body bg-white">
+            <form id="addHierarchyForm" action="{{ url_for('hierarchy.add_hierarchy') }}" method="POST" novalidate autocomplete="off">
+                
+                <div class="row">
+                    <div class="col-md-6 mb-3">
+                        <label class="font-weight-bold">Brand Name <span class="text-danger">*</span></label>
+                        <input type="text" name="brand_name" id="brand_name" class="form-control" placeholder="e.g., ADIDAS" required minlength="2">
+                        <div class="invalid-feedback">Please enter a valid Brand Name.</div>
+                    </div>
+                    <div class="col-md-6 mb-3">
+                        <label class="font-weight-bold">Product Group <span class="text-danger">*</span></label>
+                        <input type="text" name="product_group" id="product_group" class="form-control" placeholder="e.g., ADIDA" required>
+                        <div class="invalid-feedback">Product Group is required.</div>
+                    </div>
+                </div>
+
+                <div class="row">
+                    <div class="col-md-4 mb-3">
+                        <label class="font-weight-bold">Department (Dept) <span class="text-danger">*</span></label>
+                        <input type="text" name="dept" id="dept" class="form-control" placeholder="054" required pattern="^[0-9]+$" maxlength="3">
+                        <div class="invalid-feedback">Enter numeric Dept (max 3 digits).</div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="font-weight-bold">Sub Dept <span class="text-danger">*</span></label>
+                        <input type="text" name="sub_dept" id="sub_dept" class="form-control" placeholder="092" required pattern="^[0-9]+$" maxlength="3">
+                        <div class="invalid-feedback">Enter numeric Sub-Dept.</div>
+                    </div>
+                    <div class="col-md-4 mb-3">
+                        <label class="font-weight-bold">Class <span class="text-danger">*</span></label>
+                        <input type="text" name="class_code" id="class_code" class="form-control" placeholder="279" required pattern="^[0-9]+$" maxlength="3">
+                        <div class="invalid-feedback">Enter numeric Class.</div>
+                    </div>
+                </div>
+
+                <div class="alert alert-info py-2 small">
+                    <i class="fas fa-magic"></i> Codes will be automatically padded (e.g., 54 becomes 054).
+                </div>
+
+                <div class="d-flex justify-content-between border-top pt-3">
+                    <a href="{{ url_for('admin_management', _anchor='hierarchy') }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Cancel
+                    </a>
+                    <button type="button" class="btn btn-success px-4" onclick="validateHierarchy()">
+                        <i class="fas fa-save"></i> Save Hierarchy
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="confirmModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content border-0 shadow-lg">
+      <div class="modal-header bg-success text-white">
+        <h5 class="modal-title"><i class="fas fa-check-circle"></i> Confirm Addition</h5>
+      </div>
+      <div class="modal-body text-center p-4">
+        <p>Save this hierarchy entry to the <strong>Excel Registry</strong>?</p>
+        <div class="alert alert-warning py-2 small mb-0">
+            <i class="fas fa-lock"></i> <strong>CLOSE EXCEL</strong> on your PC before confirming.
+        </div>
+      </div>
+      <div class="modal-footer justify-content-center border-0 pb-4">
+        <button type="button" class="btn btn-secondary px-4" data-dismiss="modal">Go Back</button>
+        <button type="button" class="btn btn-success px-4" onclick="submitForm()">Confirm & Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+    // 1. RESET FORM ON BROWSER BACK BUTTON
+    window.addEventListener('pageshow', function(event) {
+        if (event.persisted || (window.performance && window.performance.navigation.type === 2)) {
+            document.getElementById('addHierarchyForm').reset();
+            const inputs = document.querySelectorAll('.form-control');
+            inputs.forEach(i => i.classList.remove('is-invalid'));
+        }
+    });
+
+    // 2. VALIDATION BEFORE MODAL
+    function validateHierarchy() {
+        const form = document.getElementById('addHierarchyForm');
+        const inputs = form.querySelectorAll('input[required]');
+        let isValid = true;
+
+        inputs.forEach(input => {
+            input.classList.remove('is-invalid');
+            if (!input.checkValidity()) {
+                input.classList.add('is-invalid');
+                isValid = false;
+            }
+        });
+
+        if (isValid) {
+            $('#confirmModal').modal('show');
+        }
+    }
+
+    // 3. FINAL SUBMISSION
+    function submitForm() {
+        document.getElementById('addHierarchyForm').submit();
+    }
+</script>
+{% endblock %}

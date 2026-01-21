@@ -1,0 +1,144 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .edit-container { padding-top: 40px; max-width: 600px; }
+    .card-header { font-weight: bold; background-color: #17a2b8; color: white; }
+    /* Error styling */
+    .is-invalid { border-color: #dc3545 !important; }
+    .invalid-feedback { display: none; color: #dc3545; font-size: 0.875em; margin-top: 0.25rem; }
+    .breadcrumb a { color: #17a2b8; }
+</style>
+
+<div class="container edit-container" transition-style="in:fade:slow">
+    <div class="row">
+        <div class="col-12">
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb bg-transparent p-0">
+                <li class="breadcrumb-item"><a href="{{ url_for('admin_management') }}">Management</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Edit Vendor</li>
+              </ol>
+            </nav>
+            <h2><i class="fas fa-edit text-info"></i> Edit Vendor</h2>
+            <p class="text-muted">Modify existing vendor details in the SM Template.</p>
+            <hr>
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category if category != 'message' else 'danger' }} alert-dismissible fade show shadow-sm" role="alert">
+            <i class="fas fa-exclamation-triangle mr-2"></i> {{ message }}
+            <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="card shadow-sm border-0">
+        <div class="card-header d-flex align-items-center">
+            <i class="fas fa-info-circle mr-2"></i> Update Details
+        </div>
+        <div class="card-body bg-white">
+            <form id="editVendorForm" action="{{ url_for('vendor.edit_vendor', code=old_code) }}" method="POST" novalidate autocomplete="off">
+                
+                <div class="form-group mb-3">
+                    <label for="code" class="font-weight-bold">Vendor Code <span class="text-danger">*</span></label>
+                    <input type="text" name="code" id="code" class="form-control" 
+                           value="{{ vendor.vendor_code }}" required pattern="^[0-9]+$">
+                    <div class="invalid-feedback" id="codeError">
+                        Please enter a valid numeric vendor code.
+                    </div>
+                </div>
+
+                <div class="form-group mb-4">
+                    <label for="name" class="font-weight-bold">Vendor Name <span class="text-danger">*</span></label>
+                    <input type="text" name="name" id="name" class="form-control" 
+                           value="{{ vendor.vendor_name }}" required minlength="2">
+                    <div class="invalid-feedback" id="nameError">
+                        Please enter a valid Vendor Name.
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-between border-top pt-3">
+                    <a href="{{ url_for('admin_management') }}#vendor" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Cancel
+                    </a>
+                    <button type="button" class="btn btn-info px-4 text-white" onclick="validateAndShowModal()">
+                        <i class="fas fa-sync-alt"></i> Update Vendor
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="confirmEditModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content border-0 shadow-lg">
+      <div class="modal-header bg-info text-white">
+        <h5 class="modal-title"><i class="fas fa-question-circle"></i> Confirm Changes</h5>
+        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body text-center p-4">
+        <p class="mb-2">Are you sure you want to <strong>OVERWRITE</strong> this vendor in the database?</p>
+        <div class="alert alert-warning py-2 small mb-0">
+            <i class="fas fa-lock"></i> <strong>CLOSE EXCEL:</strong> Double check the fields to ensure the information inputted is <strong>CORRECT</strong>.
+        </div>
+      </div>
+      <div class="modal-footer justify-content-center border-0 pb-4">
+        <button type="button" class="btn btn-secondary px-4" data-dismiss="modal">Go Back</button>
+        <button type="button" class="btn btn-info px-4 text-white" onclick="submitForm()">Apply Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+    // Back-Button Protection: If user goes back, ensure they see current server state
+    window.addEventListener('pageshow', function(event) {
+        if (event.persisted || (window.performance && window.performance.navigation.type === 2)) {
+            window.location.reload(); 
+        }
+    });
+
+    function validateAndShowModal() {
+        const codeInput = document.getElementById('code');
+        const nameInput = document.getElementById('name');
+        let isValid = true;
+
+        codeInput.classList.remove('is-invalid');
+        nameInput.classList.remove('is-invalid');
+        document.getElementById('codeError').style.display = 'none';
+        document.getElementById('nameError').style.display = 'none';
+
+        if (!codeInput.checkValidity()) {
+            codeInput.classList.add('is-invalid');
+            document.getElementById('codeError').style.display = 'block';
+            isValid = false;
+        }
+
+        if (!nameInput.checkValidity()) {
+            nameInput.classList.add('is-invalid');
+            document.getElementById('nameError').style.display = 'block';
+            isValid = false;
+        }
+
+        if (isValid) {
+            $('#confirmEditModal').modal('show');
+        }
+    }
+
+    function submitForm() {
+        const btn = event.target;
+        btn.disabled = true;
+        btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Saving...';
+        document.getElementById('editVendorForm').submit();
+    }
+</script>
+{% endblock %}

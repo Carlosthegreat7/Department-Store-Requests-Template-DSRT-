@@ -1,0 +1,148 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .add-container { padding-top: 40px; max-width: 600px; }
+    .card-header { font-weight: bold; background-color: #28a745; color: white; }
+    .is-invalid { border-color: #dc3545 !important; }
+    .invalid-feedback { display: none; color: #dc3545; font-size: 0.875em; margin-top: 0.25rem; }
+    .breadcrumb a { color: #28a745; }
+</style>
+
+<div class="container add-container" transition-style="in:fade:slow">
+    <div class="row">
+        <div class="col-12">
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb bg-transparent p-0">
+                <li class="breadcrumb-item"><a href="{{ url_for('admin_management', _anchor='vendor') }}">Management</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Add Vendor</li>
+              </ol>
+            </nav>
+            <h2><i class="fas fa-plus-circle text-success"></i> Add New Vendor</h2>
+            <p class="text-muted">Register a new vendor to the Template for SM.</p>
+            <hr>
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        {% for category, message in messages %}
+          <div class="alert alert-{{ category if category != 'message' else 'danger' }} alert-dismissible fade show shadow-sm" role="alert">
+            <i class="fas fa-exclamation-triangle mr-2"></i> {{ message }}
+            <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+              <span aria-hidden="true">&times;</span>
+            </button>
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endwith %}
+
+    <div class="card shadow-sm border-0">
+        <div class="card-header d-flex align-items-center">
+            <i class="fas fa-info-circle mr-2"></i> Vendor Details
+        </div>
+        <div class="card-body bg-white">
+            <form id="addVendorForm" action="{{ url_for('vendor.add_vendor') }}" method="POST" novalidate autocomplete="off">
+                
+                <div class="form-group mb-3">
+                    <label for="code" class="font-weight-bold">Vendor Code <span class="text-danger">*</span></label>
+                    <input type="text" name="code" id="code" class="form-control" 
+                           placeholder="e.g., 014353" required pattern="^[0-9]+$">
+                    <div class="invalid-feedback" id="codeError">
+                        Please enter a valid numeric vendor code.
+                    </div>
+                </div>
+
+                <div class="form-group mb-4">
+                    <label for="name" class="font-weight-bold">Vendor Name <span class="text-danger">*</span></label>
+                    <input type="text" name="name" id="name" class="form-control" 
+                           placeholder="e.g., ABOUT TIME CORP." required minlength="2">
+                    <div class="invalid-feedback" id="nameError">
+                        Please enter a valid Vendor Name (Min 2 characters).
+                    </div>
+                </div>
+
+                <div class="d-flex justify-content-between border-top pt-3">
+                    <a href="{{ url_for('admin_management', _anchor='vendor') }}" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Cancel
+                    </a>
+                    <button type="button" class="btn btn-success px-4" onclick="validateAndShowModal()">
+                        <i class="fas fa-save"></i> Save Vendor
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="confirmAddModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content border-0 shadow-lg">
+      <div class="modal-header bg-success text-white">
+        <h5 class="modal-title"><i class="fas fa-check-circle"></i> Confirm Addition</h5>
+        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body text-center p-4">
+        <p class="mb-2">Are you sure you want to add this vendor to the <strong>Excel Registry</strong>?</p>
+        <div class="alert alert-warning py-2 small mb-0">
+            <i class="fas fa-lock"></i> <strong>IMPORTANT:</strong> Double check the fields to ensure the information inputted is <strong>CORRECT</strong></stront> .
+        </div>
+      </div>
+      <div class="modal-footer justify-content-center border-0 pb-4">
+        <button type="button" class="btn btn-secondary px-4" data-dismiss="modal">Go Back</button>
+        <button type="button" class="btn btn-success px-4" onclick="submitForm()">Confirm & Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+    /**
+     * RESET LOGIC FOR BROWSER BACK BUTTON
+     * Detects if the page is loaded from cache (bfcache) and clears form.
+     */
+    window.addEventListener('pageshow', function(event) {
+        const form = document.getElementById('addVendorForm');
+        // If event.persisted is true, the page was loaded from the back/forward cache
+        if (event.persisted || (window.performance && window.performance.navigation.type === 2)) {
+            form.reset(); // Clear all inputs
+            // Remove error highlights if they were left over
+            document.getElementById('code').classList.remove('is-invalid');
+            document.getElementById('name').classList.remove('is-invalid');
+        }
+    });
+
+    function validateAndShowModal() {
+        const codeInput = document.getElementById('code');
+        const nameInput = document.getElementById('name');
+        let isValid = true;
+
+        codeInput.classList.remove('is-invalid');
+        nameInput.classList.remove('is-invalid');
+        document.getElementById('codeError').style.display = 'none';
+        document.getElementById('nameError').style.display = 'none';
+
+        if (!codeInput.checkValidity()) {
+            codeInput.classList.add('is-invalid');
+            document.getElementById('codeError').style.display = 'block';
+            isValid = false;
+        }
+
+        if (!nameInput.checkValidity()) {
+            nameInput.classList.add('is-invalid');
+            document.getElementById('nameError').style.display = 'block';
+            isValid = false;
+        }
+
+        if (isValid) {
+            $('#confirmAddModal').modal('show');
+        }
+    }
+
+    function submitForm() {
+        document.getElementById('addVendorForm').submit();
+    }
+</script>
+{% endblock %}

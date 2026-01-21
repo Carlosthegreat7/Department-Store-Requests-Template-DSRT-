@@ -1,0 +1,104 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .edit-container { padding-top: 40px; max-width: 600px; }
+    .card-header { font-weight: bold; background-color: #17a2b8; color: white; }
+    .is-invalid { border-color: #dc3545 !important; }
+    .invalid-feedback { display: none; color: #dc3545; font-size: 0.875em; margin-top: 0.25rem; }
+    .breadcrumb a { color: #17a2b8; }
+</style>
+
+<div class="container edit-container" transition-style="in:fade:slow">
+    <div class="row">
+        <div class="col-12">
+            <nav aria-label="breadcrumb">
+              <ol class="breadcrumb bg-transparent p-0">
+                <li class="breadcrumb-item"><a href="{{ url_for('admin_management') }}">Management</a></li>
+                <li class="breadcrumb-item active" aria-current="page">Edit Subclass</li>
+              </ol>
+            </nav>
+            <h2><i class="fas fa-edit text-info"></i> Edit Subclass</h2>
+            <p class="text-muted">Update subclass details for a specific Product Group.</p>
+            <hr>
+        </div>
+    </div>
+
+    <div class="card shadow-sm border-0">
+        <div class="card-header">
+            <i class="fas fa-database"></i> Subclass Details
+        </div>
+        <div class="card-body bg-light">
+            <form id="editSubclassForm" action="{{ url_for('subclass.edit_subclass', group=old_group, code=old_code) }}" method="POST" novalidate autocomplete="off">
+                
+                <div class="form-group mb-3">
+                    <label class="font-weight-bold small text-secondary">PRODUCT GROUP</label>
+                    <input type="text" name="product_group" class="form-control" value="{{ s.product_group }}" required>
+                </div>
+
+                <div class="form-group mb-3">
+                    <label class="font-weight-bold small text-secondary">SUBCLASS CODE</label>
+                    <input type="text" name="subclass_code" class="form-control" value="{{ s.subclass_code }}" maxlength="3" required>
+                </div>
+
+                <div class="form-group mb-4">
+                    <label class="font-weight-bold small text-secondary">SUBCLASS NAME</label>
+                    <input type="text" name="description" class="form-control" value="{{ s.subclass_name }}" required>
+                </div>
+
+                <div class="d-flex justify-content-between">
+                    <a href="{{ url_for('admin_management') }}#subclass" class="btn btn-outline-secondary">
+                        <i class="fas fa-arrow-left"></i> Cancel
+                    </a>
+                    <button type="button" class="btn btn-info text-white px-4 shadow-sm" onclick="validateAndShowModal()">
+                        <i class="fas fa-save"></i> Apply Changes
+                    </button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="confirmEditModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered" role="document">
+    <div class="modal-content border-0 shadow">
+      <div class="modal-header bg-info text-white">
+        <h5 class="modal-title">Confirm Update</h5>
+        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+          <span aria-hidden="true">&times;</span>
+        </button>
+      </div>
+      <div class="modal-body text-center py-4">
+        <i class="fas fa-question-circle fa-3x text-info mb-3"></i>
+        <p class="mb-0">Are you sure you want to update this subclass in the registry?</p>
+      </div>
+      <div class="modal-footer justify-content-center border-0 pb-4">
+        <button type="button" class="btn btn-secondary px-4" data-dismiss="modal">Go Back</button>
+        <button type="button" class="btn btn-info px-4 text-white" onclick="submitForm()">Apply Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+    // Force reload on back button
+    window.addEventListener('pageshow', function(event) {
+        if (event.persisted || (window.performance && window.performance.navigation.type === 2)) {
+            window.location.reload(); 
+        }
+    });
+
+    function validateAndShowModal() {
+        const form = document.getElementById('editSubclassForm');
+        if (form.checkValidity()) {
+            $('#confirmEditModal').modal('show');
+        } else {
+            form.reportValidity();
+        }
+    }
+
+    function submitForm() {
+        document.getElementById('editSubclassForm').submit();
+    }
+</script>
+{% endblock %}

@@ -1,0 +1,163 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+  /* Bento Grid Layout for Dashboard */
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 20px;
+    padding: 20px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .hero-img {
+    max-width: 100%;
+    height: auto;
+    max-height: 250px;
+    object-fit: contain;
+  }
+
+  .content {
+    width: 90%;
+    margin: 0 auto;
+  }
+
+  /* --- MINIMALIST LOADING SCREEN STYLES --- */
+  #loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(248, 249, 250, 0.9); /* Matches --bg-color */
+    backdrop-filter: blur(8px); /* Premium glassmorphism effect */
+    display: none; /* Hidden until form submission */
+    z-index: 9999;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .loader-bento {
+    width: 50px;
+    height: 50px;
+    border: 4px solid #e9ecef;
+    border-top: 4px solid var(--accent-purple); /* Uses your purple brand color */
+    border-radius: 50%;
+    animation: spin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+    margin-bottom: 20px;
+  }
+
+  @keyframes spin {
+    0% { transform: rotate(0deg); }
+    100% { transform: rotate(360deg); }
+  }
+
+  .loading-text {
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
+    color: var(--text-main);
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    font-size: 0.8rem;
+    animation: pulse 1.5s ease-in-out infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  /* --- END LOADING STYLES --- */
+</style>
+
+<body>
+  <div id="loading-overlay">
+    <div class="loader-bento"></div>
+    <div class="loading-text">Authenticating...</div>
+  </div>
+
+  {% if not session['sdr_loggedin'] %}
+    <div class="login-wrapper">
+      <div class="bento-tile shadow-lg" style="max-width: 900px; width: 100%;">
+        <div class="row align-items-center">
+          
+          <div class="col-md-6 text-center border-right">
+            <div transition-style="in:wipe:right">
+              <img src="{{url_for('static', filename='Newtrends.png')}}" class="hero-img mb-4" alt="DSRT Logo">
+              <p class="text-muted small mb-1">Newtrends International Corporation / About Time Corporation / Transcend Prime Corporation</p>
+              <h3 style="font-weight: 700; color: #333;">Department Store Requests Template</h3>
+            </div>
+          </div>
+
+          <div class="col-md-6">
+            <div class="p-4">
+              <h5 class="mb-4 font-weight-bold text-center">Account Login</h5>
+              <form id="login-form" action="{{ url_for('index', _external=True)}}" method="post">
+                <div class="mb-3">
+                  <label for="username" class="form-label font-weight-bold small">Username</label>
+                  <input type="text" class="form-control" name="username" id="username" placeholder="Enter username" required>
+                </div>
+                <div class="mb-3">
+                  <label for="password" class="form-label font-weight-bold small">Password</label>
+                  <input type="password" class="form-control" name="password" id="password" placeholder="••••••••" required>
+                </div>
+                <div class="mt-4 text-center">
+                  <button type="submit" class="btn01-hover bn20"> Log In</button>
+                </div>
+              </form>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  {% else %}
+    <div class="container py-5">
+      <div class="row mb-5">
+        <div class="col-12 text-center">
+          <div transition-style="in:wipe:right">
+            <p class="text-muted mb-1">Newtrends International Corporation / About Time Corporation / Transcend Prime Corporation</p>
+            <h2 style="font-weight: 800;">Department Store Requests Template</h2>
+            <h6 class="badge badge-primary px-3 py-2" style="font-size: 90%; border-radius: 50px;">
+              {{ session['sdr_usertype'] }}
+            </h6>
+          </div>
+        </div>
+      </div>
+
+      <div class="dashboard-grid">
+        <div class="bento-tile" style="grid-column: span 2; display: flex; align-items: center; justify-content: space-around;">
+          <div style="max-width: 50%;">
+            <h4 class="font-weight-bold">System Dashboard</h4>
+            <p class="text-muted">
+              Welcome back, <b>{{ session['sdr_curr_user_username'].replace('.', ' ').title() }}!</b> 
+              Use the navigation bar above to manage price change requests, use new templates, etc..
+            </p>
+          </div>
+          <img src="{{url_for('static', filename='Newtrends.png')}}" class="img-fluid" style="max-height: 200px;" alt="Dashboard Graphic">
+        </div>
+
+        <div class="bento-tile text-center d-flex flex-column justify-content-center">
+          <i class="fas fa-info-circle fa-2x mb-3 text-primary"></i>
+          <h5 class="font-weight-bold">Status</h5>
+          <p class="small text-muted mb-0">System is online and operational.</p>
+        </div>
+      </div>
+    </div>
+  {% endif %}
+
+  <script>
+    // Show minimalist loader on login form submit
+    const loginForm = document.getElementById('login-form');
+    if (loginForm) {
+        loginForm.addEventListener('submit', function() {
+            document.getElementById('loading-overlay').style.display = 'flex';
+        });
+    }
+  </script>
+</body>
+
+{% endblock %}

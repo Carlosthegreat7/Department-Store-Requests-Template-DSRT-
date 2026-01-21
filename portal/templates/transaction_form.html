@@ -1,0 +1,283 @@
+{% extends "base.html" %}
+
+{% block content %}
+<script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
+
+<style>
+    .form-control:focus {
+        border-color: var(--accent-purple);
+        box-shadow: 0 0 0 0.2rem rgba(86, 11, 173, 0.25);
+    }
+
+    /* Translucent Glassmorphism Loading Overlay */
+    #processing-overlay {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(255, 255, 255, 0.85); 
+        backdrop-filter: blur(6px); 
+        -webkit-backdrop-filter: blur(6px);
+        display: none; z-index: 3000; justify-content: center; align-items: center; flex-direction: column;
+        padding: 40px;
+        transition: opacity 0.3s ease;
+    }
+
+    .progress-wrapper {
+        width: 100%; max-width: 500px; background: rgba(233, 236, 239, 0.8);
+        border-radius: 20px; height: 14px; overflow: hidden;
+        margin: 25px 0; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+    }
+
+    .progress-bar-fill {
+        height: 100%; width: 0%; 
+        background: linear-gradient(90deg, #560bad, #4cc9f0, #b5179e);
+        background-size: 200% 200%;
+        animation: gradientShift 3s ease infinite;
+        transition: width 0.5s cubic-bezier(0.1, 0.7, 0.1, 1);
+        border-radius: 20px;
+        box-shadow: 0 0 15px rgba(76, 201, 240, 0.4);
+    }
+
+    @keyframes gradientShift {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+
+    #construction-overlay {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(248, 249, 250, 0.95); backdrop-filter: blur(10px);
+        display: none; z-index: 2000; justify-content: center; align-items: center; flex-direction: column;
+        animation: fadeIn 0.4s ease forwards;
+    }
+
+    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+</style>
+
+<div class="container py-5">
+    <div id="processing-overlay">
+        <h2 id="loadingPercentage" style="font-weight: 800; color: #333; font-size: 2.5rem; margin-bottom: 0;">0%</h2>
+        <div class="progress-wrapper">
+            <div id="progressBar" class="progress-bar-fill"></div>
+        </div>
+        <h5 id="loadingStatus" style="font-weight: 700; color: #555;">Initializing Search...</h5>
+        <p id="progressDetail" class="text-muted small">Connecting to network drive mgsvr09...</p>
+    </div>
+
+    <div class="modal fade" id="successModal" tabindex="-1" role="dialog" aria-hidden="true" data-backdrop="static">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content bento-tile border-0 shadow-lg">
+                <div class="modal-body text-center p-5">
+                    <i class="fas fa-check-circle fa-4x text-success mb-4"></i>
+                    <h2 style="font-weight: 800; margin-bottom: 5px;">Template Created!</h2>
+                    <p id="modalFileName" class="text-primary font-weight-bold mb-4 small"></p>
+                    
+                    <div class="row mt-3 mb-4 bg-light py-3 rounded">
+                        <div class="col-4">
+                            <div class="small text-muted">Total Items</div>
+                            <div id="statTotal" class="h5 font-weight-bold mb-0">0</div>
+                        </div>
+                        <div class="col-4 border-left border-right">
+                            <div class="small text-muted text-success">Images Found</div>
+                            <div id="statFound" class="h5 font-weight-bold text-success mb-0">0</div>
+                        </div>
+                        <div class="col-4">
+                            <div class="small text-muted">Closing In</div>
+                            <div id="countdownTimer" class="h5 font-weight-bold mb-0 text-dark">10</div>
+                        </div>
+                    </div>
+
+                    <p class="text-muted small">Download started automatically.</p>
+                    <button type="button" class="btn01-hover bn20 mt-2" data-dismiss="modal" style="width: 100%;" onclick="window.location.reload()">Excellent</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="construction-overlay">
+        <div class="bento-tile text-center" style="max-width: 500px;">
+            <i class="fas fa-tools fa-3x mb-4 text-warning"></i>
+            <h2 style="font-weight: 800;">Under Construction</h2>
+            <p class="text-muted">This specific template option is currently being developed.</p>
+            <button class="btn01-hover bn20 mt-3" onclick="hideConstruction()">Go Back</button>
+        </div>
+    </div>
+
+    <div class="row mb-4">
+        <div class="col-12 text-center">
+            <h2 style="font-weight: 800;">Create Request Template</h2>
+            <p class="text-muted">Fill in the details below to generate the department store template.</p>
+        </div>
+    </div>
+
+    <div class="row justify-content-center">
+        <div class="col-md-8">
+            <div class="bento-tile shadow-lg">
+                <form id="templateForm">
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <label class="small font-weight-bold">Dept. Store Chain</label>
+                            <select class="form-control" name="dept_chain" id="chainSelect" required>
+                                <option value="" selected disabled>Select Chain...</option>
+                                <option value="SM">SM</option>
+                                <option value="RobDS">Robinsons</option>
+                                <option value="RUSTANS">Rustans</option>
+                                <option value="GCAP">GCAP</option>
+                            </select>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="small font-weight-bold">Company</label>
+                            <select class="form-control" name="company" id="companySelect" required>
+                                <option value="" selected disabled>Select Company...</option>
+                                <option value="NIC">NIC</option>
+                                <option value="ATC">ATC</option>
+                                <option value="TPC">TPC</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="row mb-4">
+                        <div class="col-md-6">
+                            <label class="small font-weight-bold">PC Memo</label>
+                            <input type="text" class="form-control" name="pc_memo" id="pcMemoInput" placeholder="Enter PC Memo" required>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="small font-weight-bold">Sales Code</label>
+                            <input type="text" class="form-control" name="sales_code" id="salesCodeInput" placeholder="e.g. MSRP" required>
+                            <div id="validationFeedback" class="small mt-1" style="display:none;"></div>
+                        </div>
+                    </div>
+
+                    <div class="mt-4 text-center">
+                        <button type="button" id="submitBtn" class="btn01-hover bn20" style="width: 100%;" onclick="startTemplateGeneration()">
+                            Generate Template
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let countdownInterval;
+
+    function startTemplateGeneration() {
+        const form = document.getElementById('templateForm');
+        const overlay = document.getElementById('processing-overlay');
+        const progressBar = document.getElementById('progressBar');
+        const percentageText = document.getElementById('loadingPercentage');
+        const statusText = document.getElementById('loadingStatus');
+        const detailText = document.getElementById('progressDetail');
+
+        if (!form.checkValidity()) {
+            form.reportValidity();
+            return;
+        }
+
+        overlay.style.display = 'flex';
+        
+        // SSE Progress Listening
+        const eventSource = new EventSource("{{ url_for('transactions.progress') }}");
+        eventSource.onmessage = function(event) {
+            const data = JSON.parse(event.data);
+            if (data.total > 0) {
+                const percent = Math.round((data.current / data.total) * 100);
+                progressBar.style.width = percent + "%";
+                percentageText.innerText = percent + "%";
+                if (percent >= 100) {
+                    statusText.innerText = "Finalizing...";
+                    detailText.innerText = "Generating Excel file...";
+                } else {
+                    statusText.innerText = `Processing ${data.current} of ${data.total}`;
+                    detailText.innerText = data.status;
+                }
+            }
+        };
+
+        const formData = new FormData(form);
+        fetch("{{ url_for('transactions.process_template') }}", { method: 'POST', body: formData })
+        .then(response => {
+            eventSource.close();
+            if (!response.ok) throw new Error('Generation failed');
+            return response.blob().then(blob => ({
+                blob: blob,
+                total: response.headers.get('X-Total-Items'),
+                found: response.headers.get('X-Images-Found'),
+                filename: response.headers.get('X-Filename')
+            }));
+        })
+        .then(data => {
+            overlay.style.display = 'none';
+            document.getElementById('modalFileName').innerText = data.filename;
+            document.getElementById('statTotal').innerText = data.total;
+            document.getElementById('statFound').innerText = data.found;
+
+            const url = window.URL.createObjectURL(data.blob);
+            const a = document.createElement('a');
+            a.href = url; a.download = data.filename;
+            document.body.appendChild(a); a.click(); a.remove();
+
+            confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+
+            let timeLeft = 10;
+            document.getElementById('countdownTimer').innerText = timeLeft;
+            $('#successModal').modal('show');
+
+            clearInterval(countdownInterval);
+            countdownInterval = setInterval(() => {
+                timeLeft--;
+                document.getElementById('countdownTimer').innerText = timeLeft;
+                if (timeLeft <= 0) { 
+                    clearInterval(countdownInterval); 
+                    $('#successModal').modal('hide'); 
+                    // UPDATED: Forces a page refresh to clear state for next use
+                    window.location.reload(); 
+                }
+            }, 1000);
+        })
+        .catch(error => {
+            if (eventSource) eventSource.close();
+            overlay.style.display = 'none';
+            alert("Error: " + error.message);
+        });
+    }
+
+    // CASE-INSENSITIVE VALIDATION
+    $(document).ready(function() {
+        $('#salesCodeInput, #pcMemoInput').on('input change blur', function() {
+            let sc = $('#salesCodeInput').val();
+            let pm = $('#pcMemoInput').val();
+            if(sc && pm) {
+                $.ajax({
+                    url: "{{ url_for('transactions.validate_request') }}",
+                    method: "POST",
+                    data: { sales_code: sc, pc_memo: pm },
+                    success: function(r) {
+                        let fb = $('#validationFeedback');
+                        if(r.exists) fb.html('<i class=\"fas fa-check-circle\"></i> Valid').css('color', 'green').show();
+                        else fb.html('<i class=\"fas fa-times-circle\"></i> Not Found').css('color', 'red').show();
+                    }
+                });
+            }
+        });
+    });
+
+    // Construction logic
+    const chainSelect = document.getElementById('chainSelect');
+    const companySelect = document.getElementById('companySelect');
+    const constOverlay = document.getElementById('construction-overlay');
+
+    function checkRestricted() {
+        if ((chainSelect.value && chainSelect.value !== 'SM') || (companySelect.value && companySelect.value !== 'NIC')) {
+            constOverlay.style.display = 'flex';
+        }
+    }
+
+    function hideConstruction() {
+        constOverlay.style.display = 'none';
+        chainSelect.value = ""; companySelect.value = "";
+    }
+
+    chainSelect.addEventListener('change', checkRestricted);
+    companySelect.addEventListener('change', checkRestricted);
+</script>
+{% endblock %}

@@ -1,0 +1,304 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .mgmt-container { padding-top: 20px; margin-bottom: 50px; }
+    .tab-content {
+        background-color: #ffffff;
+        border: 1px solid #dee2e6;
+        border-top: none;
+        padding: 25px;
+        border-bottom-left-radius: 8px;
+        border-bottom-right-radius: 8px;
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+    }
+    .nav-tabs .nav-link.active { font-weight: bold; color: #3498DB !important; border-bottom-color: #ffffff; }
+    .table thead th { background-color: #f8f9fa; color: #555; vertical-align: middle; position: relative; }
+    
+    .sort-btn {
+        background: none; border: none; color: #ccc; cursor: pointer; padding: 0 5px; transition: color 0.2s; font-size: 0.8rem;
+    }
+    .sort-btn.active { color: #3498DB; }
+    .action-cell { display: flex; justify-content: center; gap: 8px; }
+    .btn-action { width: 70px; height: 32px; display: flex; justify-content: center; align-items: center; font-size: 0.85rem; padding: 0; }
+    tbody tr { transition: opacity 0.3s ease-in-out; }
+
+    /* Navigator & Scroll Top */
+    .pagination .page-item .page-link { color: #3498DB; border-radius: 4px; margin: 0 2px; }
+    .pagination .page-item.active .page-link { background-color: #3498DB; border-color: #3498DB; color: white; }
+    #backToTop {
+        position: fixed; bottom: 30px; right: 30px; width: 50px; height: 50px;
+        background-color: #3498DB; color: white; border-radius: 50%;
+        display: none; justify-content: center; align-items: center;
+        font-size: 20px; border: none; cursor: pointer;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.3); z-index: 1050;
+        transition: transform 0.2s, background-color 0.2s;
+    }
+</style>
+
+<div class="container mgmt-container" transition-style="in:fade:slow">
+    <div class="row">
+        <div class="col-12">
+            <h2 class="mb-0"><i class="fas fa-database text-primary"></i> System Data Management for SM</h2>
+            <p class="text-muted small">Live MySQL Registry Management with Column Sorting & Navigation</p>
+            <hr>
+        </div>
+    </div>
+
+    <div class="card mb-4 border-0 shadow-sm">
+        <div class="card-header bg-dark text-white d-flex align-items-center">
+            <i class="fas fa-search mr-2"></i> <strong>Search Registry</strong>
+        </div>
+        <div class="card-body bg-light text-center">
+            <div class="form-inline justify-content-center">
+                <div class="form-group mr-2">
+                    <select class="form-control" id="searchTarget">
+                        <option value="vendor">Vendors</option>
+                        <option value="hierarchy">Hierarchy</option>
+                        <option value="subclass">Subclasses</option>
+                    </select>
+                </div>
+                <div class="form-group mr-2">
+                    <input type="text" id="liveSearchInput" class="form-control" placeholder="Search entries..." style="min-width: 400px;">
+                </div>
+                <button type="button" class="btn btn-secondary" onclick="resetSearch()"><i class="fas fa-undo"></i> Reset</button>
+            </div>
+        </div>
+    </div>
+
+    <ul class="nav nav-tabs" id="mgmtTabs" role="tablist">
+        <li class="nav-item"><a class="nav-link active" data-toggle="tab" href="#vendor" role="tab"><i class="fas fa-truck-loading"></i> Vendors</a></li>
+        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#hierarchy" role="tab"><i class="fas fa-sitemap"></i> Hierarchy</a></li>
+        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#subclass" role="tab"><i class="fas fa-tags"></i> Subclass</a></li>
+    </ul>
+
+    <div class="tab-content" id="mgmtTabsContent">
+        <div class="tab-pane fade show active" id="vendor" role="tabpanel">
+            <div class="d-flex justify-content-end mb-3"><a href="{{ url_for('vendor.add_vendor') }}" class="btn btn-success btn-sm"><i class="fas fa-plus"></i> Add Vendor</a></div>
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th onclick="manualSort('vendor', 0)">Vendor Code <button class="sort-btn"><i class="fas fa-sort"></i></button></th>
+                            <th onclick="manualSort('vendor', 1)">Vendor Name <button class="sort-btn"><i class="fas fa-sort"></i></button></th>
+                            <th class="text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="vendorTbody">
+                        {% for v in vendors %}
+                        <tr class="vendor-row">
+                            <td>{{ v.vendor_code }}</td>
+                            <td>{{ v.vendor_name }}</td>
+                            <td>
+                                <div class="action-cell">
+                                    <a href="{{ url_for('vendor.edit_vendor', code=v.vendor_code) }}" class="btn btn-info btn-action">Edit</a>
+                                    <button class="btn02-delete btn-action" onclick="openDeleteModal('vendor', '{{ v.vendor_code }}')">Delete</button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <nav><ul class="pagination justify-content-center mt-3" id="vendorPagination"></ul></nav>
+        </div>
+
+        <div class="tab-pane fade" id="hierarchy" role="tabpanel">
+            <div class="d-flex justify-content-end mb-3"><a href="{{ url_for('hierarchy.add_hierarchy') }}" class="btn btn-success btn-sm"><i class="fas fa-plus"></i> Add Hierarchy</a></div>
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th onclick="manualSort('hierarchy', 0)">Brand <button class="sort-btn"><i class="fas fa-sort"></i></button></th>
+                            <th onclick="manualSort('hierarchy', 1)">Group <button class="sort-btn"><i class="fas fa-sort"></i></button></th>
+                            <th onclick="manualSort('hierarchy', 2)">Dept <button class="sort-btn"><i class="fas fa-sort"></i></button></th>
+                            <th onclick="manualSort('hierarchy', 3)">Sub Dept <button class="sort-btn"><i class="fas fa-sort"></i></button></th>
+                            <th onclick="manualSort('hierarchy', 4)">Class <button class="sort-btn"><i class="fas fa-sort"></i></button></th>
+                            <th class="text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="hierarchyTbody">
+                        {% for h in hierarchies %}
+                        <tr class="hierarchy-row">
+                            <td>{{ h.brand_name }}</td><td>{{ h.product_group }}</td><td>{{ h.dept_code }}</td><td>{{ h.sub_dept_code }}</td><td>{{ h.class_code }}</td>
+                            <td>
+                                <div class="action-cell">
+                                    <a href="{{ url_for('hierarchy.edit_hierarchy', code=h.brand_name) }}" class="btn btn-info btn-action">Edit</a>
+                                    <button class="btn02-delete btn-action" onclick="openDeleteModal('hierarchy', '{{ h.brand_name }}')">Delete</button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <nav><ul class="pagination justify-content-center mt-3" id="hierarchyPagination"></ul></nav>
+        </div>
+
+        <div class="tab-pane fade" id="subclass" role="tabpanel">
+            <div class="d-flex justify-content-end mb-3"><a href="{{ url_for('subclass.add_subclass') }}" class="btn btn-success btn-sm"><i class="fas fa-plus"></i> Add Subclass</a></div>
+            <div class="table-responsive">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th onclick="manualSort('subclass', 0)">Group <button class="sort-btn"><i class="fas fa-sort"></i></button></th>
+                            <th onclick="manualSort('subclass', 1)">Code <button class="sort-btn"><i class="fas fa-sort"></i></button></th>
+                            <th onclick="manualSort('subclass', 2)">Name <button class="sort-btn"><i class="fas fa-sort"></i></button></th>
+                            <th class="text-center">Action</th>
+                        </tr>
+                    </thead>
+                    <tbody id="subclassTbody">
+                        {% for s in subclasses %}
+                        <tr class="subclass-row">
+                            <td>{{ s.product_group }}</td><td>{{ s.subclass_code }}</td><td>{{ s.subclass_name }}</td>
+                            <td>
+                                <div class="action-cell">
+                                    <a href="{{ url_for('subclass.edit_subclass', group=s.product_group, code=s.subclass_code) }}" class="btn btn-info btn-action">Edit</a>
+                                    <button class="btn02-delete btn-action" onclick="openDeleteModal('subclass', '{{ s.product_group }}', '{{ s.subclass_code }}')">Delete</button>
+                                </div>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            <nav><ul class="pagination justify-content-center mt-3" id="subclassPagination"></ul></nav>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="deleteConfirmModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content border-0 shadow">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title"><i class="fas fa-exclamation-triangle"></i> Confirm Deletion</h5>
+                <button type="button" class="close text-white" data-dismiss="modal"><span>&times;</span></button>
+            </div>
+            <div class="modal-body text-center py-4">
+                <i class="fas fa-trash-alt fa-3x text-danger mb-3"></i>
+                <p class="mb-0">Are you sure you want to delete this entry? This action cannot be undone.</p>
+                <form id="globalDeleteForm" method="POST">
+                    </form>
+            </div>
+            <div class="modal-footer justify-content-center border-0 pb-4">
+                <button type="button" class="btn btn-secondary px-4" data-dismiss="modal">Cancel</button>
+                <button type="button" class="btn btn-danger px-4" onclick="document.getElementById('globalDeleteForm').submit()">Confirm Delete</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<button id="backToTop" title="Go to top"><i class="fas fa-chevron-up"></i></button>
+
+<script>
+    // 1. DELETE MODAL HANDLER
+    function openDeleteModal(type, id1, id2 = null) {
+        const form = document.getElementById('globalDeleteForm');
+        let baseUrl = "";
+
+        if (type === 'vendor') {
+            baseUrl = "{{ url_for('vendor.delete_vendor', code='ID_PLACEHOLDER') }}".replace('ID_PLACEHOLDER', id1);
+        } else if (type === 'hierarchy') {
+            baseUrl = "{{ url_for('hierarchy.delete_hierarchy', code='ID_PLACEHOLDER') }}".replace('ID_PLACEHOLDER', id1);
+        } else if (type === 'subclass') {
+            baseUrl = "{{ url_for('subclass.delete_subclass', group='GP_PLACE', code='CD_PLACE') }}"
+                      .replace('GP_PLACE', id1).replace('CD_PLACE', id2);
+        }
+
+        form.action = baseUrl;
+        $('#deleteConfirmModal').modal('show');
+    }
+
+    // --- RETAINED FEATURES: PAGINATION, SEARCH, SORTING ---
+    let sortState = { vendor: { col: -1, asc: true }, hierarchy: { col: -1, asc: true }, subclass: { col: -1, asc: true } };
+    const activePages = { vendor: 1, hierarchy: 1, subclass: 1 };
+
+    document.addEventListener('DOMContentLoaded', function() {
+        const searchInput = document.getElementById('liveSearchInput');
+        const searchTarget = document.getElementById('searchTarget');
+        const backToTopBtn = document.getElementById('backToTop');
+        const config = {
+            vendor: { perPage: 6, rowClass: '.vendor-row', paginationId: 'vendorPagination', tbodyId: 'vendorTbody' },
+            hierarchy: { perPage: 10, rowClass: '.hierarchy-row', paginationId: 'hierarchyPagination', tbodyId: 'hierarchyTbody' },
+            subclass: { perPage: 10, rowClass: '.subclass-row', paginationId: 'subclassPagination', tbodyId: 'subclassTbody' }
+        };
+
+        function updateDisplay(type) {
+            const query = searchInput.value.toLowerCase();
+            const rows = Array.from(document.querySelectorAll(config[type].rowClass));
+            const matchedRows = rows.filter(row => {
+                row.style.display = 'none'; row.style.opacity = '0';
+                return row.innerText.toLowerCase().includes(query);
+            });
+            const perPage = config[type].perPage;
+            const totalPages = Math.ceil(matchedRows.length / perPage);
+            matchedRows.slice((activePages[type] - 1) * perPage, activePages[type] * perPage).forEach(row => {
+                row.style.display = ''; setTimeout(() => row.style.opacity = '1', 50);
+            });
+            renderNavigator(type, totalPages);
+        }
+
+        function renderNavigator(type, totalPages) {
+            const container = document.getElementById(config[type].paginationId);
+            container.innerHTML = ''; if (totalPages <= 1) return;
+            const current = activePages[type];
+            container.appendChild(createPageItem('«', 1, type, current === 1));
+            container.appendChild(createPageItem('‹', current - 1, type, current === 1));
+            for (let i = 1; i <= totalPages; i++) {
+                if (i === 1 || i === totalPages || (i >= current - 1 && i <= current + 1)) {
+                    container.appendChild(createPageItem(i, i, type, false, i === current));
+                } else if (i === current - 2 || i === current + 2) {
+                    const dots = document.createElement('li'); dots.className = 'page-item disabled'; dots.innerHTML = '<span class="page-link">...</span>';
+                    container.appendChild(dots);
+                }
+            }
+            container.appendChild(createPageItem('›', current + 1, type, current === totalPages));
+            container.appendChild(createPageItem('»', totalPages, type, current === totalPages));
+        }
+
+        function createPageItem(label, page, type, isDisabled, isActive) {
+            const li = document.createElement('li'); li.className = `page-item ${isDisabled ? 'disabled' : ''} ${isActive ? 'active' : ''}`;
+            li.innerHTML = `<a class="page-link" href="javascript:void(0)">${label}</a>`;
+            if (!isDisabled && !isActive) li.addEventListener('click', () => { activePages[type] = page; updateDisplay(type); });
+            return li;
+        }
+
+        window.manualSort = function(type, colIndex) {
+            const tbody = document.getElementById(config[type].tbodyId);
+            const rows = Array.from(tbody.querySelectorAll(config[type].rowClass));
+            sortState[type].asc = (sortState[type].col === colIndex) ? !sortState[type].asc : true;
+            sortState[type].col = colIndex;
+            rows.sort((a, b) => {
+                const valA = a.cells[colIndex].innerText.toLowerCase(), valB = b.cells[colIndex].innerText.toLowerCase();
+                return sortState[type].asc ? valA.localeCompare(valB) : valB.localeCompare(valA);
+            });
+            rows.forEach(row => tbody.appendChild(row));
+            activePages[type] = 1; updateDisplay(type);
+        };
+
+        // --- NEW: AUTO-UPDATE SEARCH DROPDOWN ON TAB CLICK ---
+        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+            const targetId = $(e.target).attr("href").replace('#', ''); 
+            searchTarget.value = targetId; 
+            updateDisplay(targetId);
+        });
+
+        searchInput.addEventListener('input', () => { activePages[searchTarget.value] = 1; updateDisplay(searchTarget.value); });
+        searchTarget.addEventListener('change', () => { $('.nav-tabs a[href="#' + searchTarget.value + '"]').tab('show'); updateDisplay(searchTarget.value); });
+        window.onscroll = () => { backToTopBtn.style.display = (document.documentElement.scrollTop > 300) ? "flex" : "none"; };
+        backToTopBtn.addEventListener('click', () => { window.scrollTo({ top: 0, behavior: 'smooth' }); });
+
+        ['vendor', 'hierarchy', 'subclass'].forEach(updateDisplay);
+        if (window.location.hash) {
+            const h = window.location.hash.replace('#', '');
+            $('.nav-tabs a[href="' + window.location.hash + '"]').tab('show');
+            searchTarget.value = h; updateDisplay(h);
+        }
+    });
+
+    function resetSearch() {
+        const input = document.getElementById('liveSearchInput');
+        input.value = ''; input.dispatchEvent(new Event('input'));
+    }
+</script>
+{% endblock %}
