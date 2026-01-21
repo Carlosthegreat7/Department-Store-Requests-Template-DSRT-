@@ -4,280 +4,283 @@
 <script src="https://cdn.jsdelivr.net/npm/canvas-confetti@1.6.0/dist/confetti.browser.min.js"></script>
 
 <style>
-    .form-control:focus {
-        border-color: var(--accent-purple);
-        box-shadow: 0 0 0 0.2rem rgba(86, 11, 173, 0.25);
+    /* --- SHARED BENTO & GLASS STYLES --- */
+    .form-hero {
+        height: 150px;
+        background: #4361ee;
+        border-radius: 28px;
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        padding: 0 40px;
+        color: white;
+        margin-bottom: 30px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
     }
 
-    /* Translucent Glassmorphism Loading Overlay */
-    #processing-overlay {
-        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-        background: rgba(255, 255, 255, 0.85); 
-        backdrop-filter: blur(6px); 
-        -webkit-backdrop-filter: blur(6px);
-        display: none; z-index: 3000; justify-content: center; align-items: center; flex-direction: column;
-        padding: 40px;
-        transition: opacity 0.3s ease;
+    .form-hero::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        z-index: 1;
     }
+
+    .form-hero-text { z-index: 2; }
+    .form-hero-text h2 { font-weight: 800; letter-spacing: -1px; margin-bottom: 0; }
+
+    .bento-form-container { max-width: 800px; margin: 0 auto; }
+
+    .form-control-bento {
+        border-radius: 50px !important;
+        padding: 12px 25px !important;
+        border: 1px solid #e9ecef !important;
+        background-color: #f8f9fa !important;
+        color: #2d3436 !important;
+        transition: all 0.3s ease;
+        height: auto !important;
+    }
+
+    select.form-control-bento {
+        appearance: none;
+        background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
+        background-repeat: no-repeat;
+        background-position: right 20px center;
+        background-size: 16px;
+    }
+
+    .btn-generate {
+        background-image: linear-gradient(to right, #667eea, #764ba2, #6B8DD6, #8E37D7);
+        background-size: 300% 100%;
+        box-shadow: 0 4px 15px 0 rgba(116, 79, 168, 0.45);
+        color: #fff !important;
+        border: none;
+        border-radius: 50px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        transition: all 0.4s ease-in-out;
+    }
+
+    .btn-generate:hover { background-position: 100% 0; transform: translateY(-2px); }
+
+    /* --- OVERLAYS --- */
+    #processing-overlay, #construction-overlay, #success-overlay {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(255, 255, 255, 0.8); 
+        backdrop-filter: blur(12px); 
+        display: none; z-index: 3000; justify-content: center; align-items: center; flex-direction: column;
+    }
+
+    /* --- SUCCESS MODAL ANIMATION --- */
+    .success-card {
+        background: rgba(255, 255, 255, 0.95);
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        border-radius: 35px;
+        padding: 40px;
+        text-align: center;
+        max-width: 550px;
+        width: 90%;
+        box-shadow: 0 25px 50px rgba(0,0,0,0.1);
+        transform: scale(0.5); /* Start small for pop effect */
+        opacity: 0;
+        transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    #success-overlay.active { display: flex !important; }
+    #success-overlay.active .success-card { transform: scale(1); opacity: 1; }
+
+    .summary-box {
+        background: #f8f9fa;
+        border-radius: 20px;
+        padding: 20px;
+        margin: 20px 0;
+        text-align: left;
+    }
+
+    .stat-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.95rem; }
 
     .progress-wrapper {
-        width: 100%; max-width: 500px; background: rgba(233, 236, 239, 0.8);
-        border-radius: 20px; height: 14px; overflow: hidden;
-        margin: 25px 0; box-shadow: inset 0 1px 3px rgba(0,0,0,0.1);
+        width: 100%; max-width: 500px; background: rgba(0,0,0,0.05);
+        border-radius: 20px; height: 12px; overflow: hidden; margin: 20px 0;
     }
 
-    .progress-bar-fill {
-        height: 100%; width: 0%; 
-        background: linear-gradient(90deg, #560bad, #4cc9f0, #b5179e);
-        background-size: 200% 200%;
-        animation: gradientShift 3s ease infinite;
-        transition: width 0.5s cubic-bezier(0.1, 0.7, 0.1, 1);
-        border-radius: 20px;
-        box-shadow: 0 0 15px rgba(76, 201, 240, 0.4);
+    .progress-bar-custom {
+        height: 100%; background: linear-gradient(90deg, #4361ee, #f72585);
+        width: 0%; transition: width 0.4s ease;
     }
-
-    @keyframes gradientShift {
-        0% { background-position: 0% 50%; }
-        50% { background-position: 100% 50%; }
-        100% { background-position: 0% 50%; }
-    }
-
-    #construction-overlay {
-        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-        background: rgba(248, 249, 250, 0.95); backdrop-filter: blur(10px);
-        display: none; z-index: 2000; justify-content: center; align-items: center; flex-direction: column;
-        animation: fadeIn 0.4s ease forwards;
-    }
-
-    @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
 </style>
 
-<div class="container py-5">
-    <div id="processing-overlay">
-        <h2 id="loadingPercentage" style="font-weight: 800; color: #333; font-size: 2.5rem; margin-bottom: 0;">0%</h2>
-        <div class="progress-wrapper">
-            <div id="progressBar" class="progress-bar-fill"></div>
+<div class="container py-4">
+    <div class="bento-form-container">
+        <div class="form-hero shadow-sm">
+            <div class="form-hero-text">
+                <h2><i class="fas fa-file-invoice mr-3"></i>New Price Request</h2>
+                <p class="mb-0 opacity-75">Generate optimized retail templates in seconds.</p>
+            </div>
         </div>
-        <h5 id="loadingStatus" style="font-weight: 700; color: #555;">Initializing Search...</h5>
-        <p id="progressDetail" class="text-muted small">Connecting to network drive mgsvr09...</p>
-    </div>
 
-    <div class="modal fade" id="successModal" tabindex="-1" role="dialog" aria-hidden="true" data-backdrop="static">
-        <div class="modal-dialog modal-dialog-centered" role="document">
-            <div class="modal-content bento-tile border-0 shadow-lg">
-                <div class="modal-body text-center p-5">
-                    <i class="fas fa-check-circle fa-4x text-success mb-4"></i>
-                    <h2 style="font-weight: 800; margin-bottom: 5px;">Template Created!</h2>
-                    <p id="modalFileName" class="text-primary font-weight-bold mb-4 small"></p>
-                    
-                    <div class="row mt-3 mb-4 bg-light py-3 rounded">
-                        <div class="col-4">
-                            <div class="small text-muted">Total Items</div>
-                            <div id="statTotal" class="h5 font-weight-bold mb-0">0</div>
-                        </div>
-                        <div class="col-4 border-left border-right">
-                            <div class="small text-muted text-success">Images Found</div>
-                            <div id="statFound" class="h5 font-weight-bold text-success mb-0">0</div>
-                        </div>
-                        <div class="col-4">
-                            <div class="small text-muted">Closing In</div>
-                            <div id="countdownTimer" class="h5 font-weight-bold mb-0 text-dark">10</div>
-                        </div>
+        <div class="bento-tile shadow-lg">
+            <form id="templateForm" method="POST" action="{{ url_for('transactions.process_template') }}">
+                <div class="row">
+                    <div class="col-md-6 mb-4">
+                        <label class="small font-weight-bold text-muted uppercase ml-2">Retail Chain</label>
+                        <select name="chain" id="chainSelect" class="form-control form-control-bento" required>
+                            <option value="" disabled selected>Select Chain</option>
+                            <option value="SM">SM Department Store</option>
+                            <option value="RDS">Robinsons (RDS)</option>
+                        </select>
                     </div>
-
-                    <p class="text-muted small">Download started automatically.</p>
-                    <button type="button" class="btn01-hover bn20 mt-2" data-dismiss="modal" style="width: 100%;" onclick="window.location.reload()">Excellent</button>
+                    <div class="col-md-6 mb-4">
+                        <label class="small font-weight-bold text-muted uppercase ml-2">Company Entity</label>
+                        <select name="company" id="companySelect" class="form-control form-control-bento" required>
+                            <option value="" disabled selected>Select Company</option>
+                            <option value="NIC">NIC (Newtrends)</option>
+                            <option value="ATC">ATC (About Time)</option>
+                            <option value="TPC">TPC (Time Plus)</option>
+                        </select>
+                    </div>
                 </div>
-            </div>
-        </div>
-    </div>
 
-    <div id="construction-overlay">
-        <div class="bento-tile text-center" style="max-width: 500px;">
-            <i class="fas fa-tools fa-3x mb-4 text-warning"></i>
-            <h2 style="font-weight: 800;">Under Construction</h2>
-            <p class="text-muted">This specific template option is currently being developed.</p>
-            <button class="btn01-hover bn20 mt-3" onclick="hideConstruction()">Go Back</button>
-        </div>
-    </div>
-
-    <div class="row mb-4">
-        <div class="col-12 text-center">
-            <h2 style="font-weight: 800;">Create Request Template</h2>
-            <p class="text-muted">Fill in the details below to generate the department store template.</p>
-        </div>
-    </div>
-
-    <div class="row justify-content-center">
-        <div class="col-md-8">
-            <div class="bento-tile shadow-lg">
-                <form id="templateForm">
-                    <div class="row mb-4">
-                        <div class="col-md-6">
-                            <label class="small font-weight-bold">Dept. Store Chain</label>
-                            <select class="form-control" name="dept_chain" id="chainSelect" required>
-                                <option value="" selected disabled>Select Chain...</option>
-                                <option value="SM">SM</option>
-                                <option value="RobDS">Robinsons</option>
-                                <option value="RUSTANS">Rustans</option>
-                                <option value="GCAP">GCAP</option>
-                            </select>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="small font-weight-bold">Company</label>
-                            <select class="form-control" name="company" id="companySelect" required>
-                                <option value="" selected disabled>Select Company...</option>
-                                <option value="NIC">NIC</option>
-                                <option value="ATC">ATC</option>
-                                <option value="TPC">TPC</option>
-                            </select>
+                <div class="row">
+                    <div class="col-md-6 mb-4">
+                        <label class="small font-weight-bold text-muted uppercase ml-2">Sales Code</label>
+                        <input type="text" name="sales_code" id="salesCodeInput" class="form-control form-control-bento" placeholder="e.g. S001" required>
+                    </div>
+                    <div class="col-md-6 mb-4">
+                        <label class="small font-weight-bold text-muted uppercase ml-2">PC Memo No.</label>
+                        <div class="position-relative">
+                            <input type="text" name="pc_memo" id="pcMemoInput" class="form-control form-control-bento" placeholder="e.g. PCM-2024-001" required>
+                            <small id="validationFeedback" class="position-absolute" style="right: 20px; top: 14px; display: none;"></small>
                         </div>
                     </div>
+                </div>
 
-                    <div class="row mb-4">
-                        <div class="col-md-6">
-                            <label class="small font-weight-bold">PC Memo</label>
-                            <input type="text" class="form-control" name="pc_memo" id="pcMemoInput" placeholder="Enter PC Memo" required>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="small font-weight-bold">Sales Code</label>
-                            <input type="text" class="form-control" name="sales_code" id="salesCodeInput" placeholder="e.g. MSRP" required>
-                            <div id="validationFeedback" class="small mt-1" style="display:none;"></div>
-                        </div>
-                    </div>
-
-                    <div class="mt-4 text-center">
-                        <button type="button" id="submitBtn" class="btn01-hover bn20" style="width: 100%;" onclick="startTemplateGeneration()">
-                            Generate Template
-                        </button>
-                    </div>
-                </form>
-            </div>
+                <div class="text-center mt-3">
+                    <button type="submit" class="btn btn-generate w-100 py-3" id="submitBtn">
+                        <i class="fas fa-magic mr-2"></i>Generate Template
+                    </button>
+                </div>
+            </form>
         </div>
     </div>
 </div>
 
+<div id="processing-overlay">
+    <div class="spinner-border text-primary mb-4" style="width: 3rem; height: 3rem; border-width: 0.3em;"></div>
+    <h3 class="font-weight-bold mb-1" id="statusText">Processing...</h3>
+    <p class="text-muted" id="itemCount">Connecting to SQL Server</p>
+    <div class="progress-wrapper shadow-sm">
+        <div class="progress-bar-custom" id="progressBar"></div>
+    </div>
+</div>
+
+<div id="success-overlay">
+    <div class="success-card shadow-lg">
+        <div class="mb-4">
+            <i class="fas fa-check-circle fa-5x text-success"></i>
+        </div>
+        <h2 class="font-weight-bold mb-1">Success!</h2>
+        <p class="text-muted">Template processing completed successfully.</p>
+        
+        <div class="summary-box">
+            <div class="stat-row">
+                <span class="text-muted font-weight-bold">Filename:</span>
+                <span id="resFilename" class="font-weight-bold text-primary">--</span>
+            </div>
+            <div class="stat-row">
+                <span class="text-muted">Total Items:</span>
+                <span id="resTotal" class="font-weight-bold">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="text-muted">Images Fetched:</span>
+                <span id="resFound" class="font-weight-bold text-success">0</span>
+            </div>
+            <div class="stat-row">
+                <span class="text-muted">Missing Images:</span>
+                <span id="resFailed" class="font-weight-bold text-danger">0</span>
+            </div>
+        </div>
+
+        <button class="btn btn-primary rounded-pill px-5 py-2 font-weight-bold" onclick="closeSuccess()">DONE</button>
+        <p class="mt-3 small text-muted">Closing automatically in <span id="countdownText" class="font-weight-bold text-danger">15</span> seconds...</p>
+    </div>
+</div>
+
 <script>
+    let autoCloseTimer;
     let countdownInterval;
 
-    function startTemplateGeneration() {
-        const form = document.getElementById('templateForm');
-        const overlay = document.getElementById('processing-overlay');
-        const progressBar = document.getElementById('progressBar');
-        const percentageText = document.getElementById('loadingPercentage');
-        const statusText = document.getElementById('loadingStatus');
-        const detailText = document.getElementById('progressDetail');
-
-        if (!form.checkValidity()) {
-            form.reportValidity();
-            return;
-        }
-
-        overlay.style.display = 'flex';
-        
-        // SSE Progress Listening
-        const eventSource = new EventSource("{{ url_for('transactions.progress') }}");
-        eventSource.onmessage = function(event) {
-            const data = JSON.parse(event.data);
-            if (data.total > 0) {
-                const percent = Math.round((data.current / data.total) * 100);
-                progressBar.style.width = percent + "%";
-                percentageText.innerText = percent + "%";
-                if (percent >= 100) {
-                    statusText.innerText = "Finalizing...";
-                    detailText.innerText = "Generating Excel file...";
-                } else {
-                    statusText.innerText = `Processing ${data.current} of ${data.total}`;
-                    detailText.innerText = data.status;
-                }
-            }
-        };
-
-        const formData = new FormData(form);
-        fetch("{{ url_for('transactions.process_template') }}", { method: 'POST', body: formData })
-        .then(response => {
-            eventSource.close();
-            if (!response.ok) throw new Error('Generation failed');
-            return response.blob().then(blob => ({
-                blob: blob,
-                total: response.headers.get('X-Total-Items'),
-                found: response.headers.get('X-Images-Found'),
-                filename: response.headers.get('X-Filename')
-            }));
-        })
-        .then(data => {
-            overlay.style.display = 'none';
-            document.getElementById('modalFileName').innerText = data.filename;
-            document.getElementById('statTotal').innerText = data.total;
-            document.getElementById('statFound').innerText = data.found;
-
-            const url = window.URL.createObjectURL(data.blob);
-            const a = document.createElement('a');
-            a.href = url; a.download = data.filename;
-            document.body.appendChild(a); a.click(); a.remove();
-
-            confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
-
-            let timeLeft = 10;
-            document.getElementById('countdownTimer').innerText = timeLeft;
-            $('#successModal').modal('show');
-
-            clearInterval(countdownInterval);
-            countdownInterval = setInterval(() => {
-                timeLeft--;
-                document.getElementById('countdownTimer').innerText = timeLeft;
-                if (timeLeft <= 0) { 
-                    clearInterval(countdownInterval); 
-                    $('#successModal').modal('hide'); 
-                    // UPDATED: Forces a page refresh to clear state for next use
-                    window.location.reload(); 
-                }
-            }, 1000);
-        })
-        .catch(error => {
-            if (eventSource) eventSource.close();
-            overlay.style.display = 'none';
-            alert("Error: " + error.message);
-        });
-    }
-
-    // CASE-INSENSITIVE VALIDATION
     $(document).ready(function() {
-        $('#salesCodeInput, #pcMemoInput').on('input change blur', function() {
-            let sc = $('#salesCodeInput').val();
-            let pm = $('#pcMemoInput').val();
-            if(sc && pm) {
-                $.ajax({
-                    url: "{{ url_for('transactions.validate_request') }}",
-                    method: "POST",
-                    data: { sales_code: sc, pc_memo: pm },
-                    success: function(r) {
-                        let fb = $('#validationFeedback');
-                        if(r.exists) fb.html('<i class=\"fas fa-check-circle\"></i> Valid').css('color', 'green').show();
-                        else fb.html('<i class=\"fas fa-times-circle\"></i> Not Found').css('color', 'red').show();
-                    }
+        $('#templateForm').on('submit', function(e) {
+            e.preventDefault();
+            $('#processing-overlay').css('display', 'flex');
+            
+            const eventSource = new EventSource("{{ url_for('transactions.progress') }}");
+            
+            eventSource.onmessage = function(e) {
+                const data = JSON.parse(e.data);
+                $('#statusText').text(data.status);
+                if (data.total > 0) {
+                    let percent = (data.current / data.total) * 100;
+                    $('#progressBar').css('width', percent + '%');
+                    $('#itemCount').text(`Item ${data.current} / ${data.total}`);
+                }
+            };
+
+            const formData = new FormData(this);
+            fetch(this.action, { method: 'POST', body: formData })
+                .then(response => {
+                    const total = parseInt(response.headers.get('X-Total-Items')) || 0;
+                    const found = parseInt(response.headers.get('X-Images-Found')) || 0;
+                    const filename = response.headers.get('X-Filename') || 'DSRT_Template.xlsx';
+                    
+                    $('#resFilename').text(filename);
+                    $('#resTotal').text(total);
+                    $('#resFound').text(found);
+                    $('#resFailed').text(total - found);
+
+                    return response.blob().then(blob => ({ blob, filename }));
+                })
+                .then(({ blob, filename }) => {
+                    eventSource.close();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url; a.download = filename;
+                    document.body.appendChild(a); a.click();
+                    
+                    $('#processing-overlay').hide();
+                    
+                    // Trigger Pop Animation and Confetti
+                    const overlay = $('#success-overlay');
+                    overlay.show().addClass('active');
+                    
+                    confetti({ 
+                        particleCount: 150, 
+                        spread: 70, 
+                        origin: { y: 0.6 },
+                        colors: ['#560BAD', '#4361ee', '#28a745']
+                    });
+
+                    // Start Dynamic Timer
+                    let timeLeft = 15;
+                    $('#countdownText').text(timeLeft);
+                    
+                    countdownInterval = setInterval(() => {
+                        timeLeft--;
+                        $('#countdownText').text(timeLeft);
+                        if(timeLeft <= 0) closeSuccess();
+                    }, 1000);
                 });
-            }
         });
     });
 
-    // Construction logic
-    const chainSelect = document.getElementById('chainSelect');
-    const companySelect = document.getElementById('companySelect');
-    const constOverlay = document.getElementById('construction-overlay');
-
-    function checkRestricted() {
-        if ((chainSelect.value && chainSelect.value !== 'SM') || (companySelect.value && companySelect.value !== 'NIC')) {
-            constOverlay.style.display = 'flex';
-        }
+    function closeSuccess() {
+        clearInterval(countdownInterval);
+        $('#success-overlay').removeClass('active').fadeOut(300);
     }
-
-    function hideConstruction() {
-        constOverlay.style.display = 'none';
-        chainSelect.value = ""; companySelect.value = "";
-    }
-
-    chainSelect.addEventListener('change', checkRestricted);
-    companySelect.addEventListener('change', checkRestricted);
 </script>
 {% endblock %}

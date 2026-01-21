@@ -74,25 +74,25 @@
         transition: var(--transition);
     }
 
-    /* Admin Dropdown Styling with Smooth Sliding Animation */
+    /* Admin Dropdown Styling */
     .dropdown-menu {
-        display: block; /* Ensure it's part of the flow for transition */
+        display: block;
         visibility: hidden;
         opacity: 0;
-        transform: translateY(10px); /* Start slightly below */
+        transform: translateY(10px);
         transition: opacity 0.3s ease, transform 0.3s ease, visibility 0.3s;
         border-radius: 12px;
         border: none;
         box-shadow: var(--shadow);
         padding: 10px;
-        pointer-events: none; /* Prevent interaction when hidden */
+        pointer-events: none;
     }
 
     .dropdown-menu.show {
         visibility: visible;
         opacity: 1;
-        transform: translateY(0); /* Slide up to final position */
-        pointer-events: auto; /* Re-enable interaction */
+        transform: translateY(0);
+        pointer-events: auto;
     }
 
     .dropdown-item {
@@ -107,40 +107,20 @@
         color: var(--accent-purple);
     }
 
-    .btn02-delete {
-        padding: 8px 20px;
-        font-weight: 600;
-        background: transparent;
-        border: 2px solid var(--accent-red);
-        color: var(--accent-red);
-        font-size: 14px;
-        border-radius: 10px;
-        cursor: pointer;
-        transition: var(--transition);
-    }
-
-    .btn02-delete:hover {
-        color: #fff;
-        background-color: var(--accent-red);
-        box-shadow: 0 4px 12px rgba(217, 48, 37, 0.3);
-    }
-
-    .login-wrapper {
-        min-height: 100vh;
+    /* Logo Protection Styles */
+    .logo-frame {
         display: flex;
         align-items: center;
         justify-content: center;
-        padding: 20px;
+        overflow: hidden;
+        background: #fff;
     }
 
-    .btn01-hover.bn20 {
-        background-image: linear-gradient(to right, #667eea, #764ba2, #6b8dd6, #8e37d7);
-        box-shadow: 0 4px 15px 0 rgba(116, 79, 168, 0.75);
-        border-radius: 50px;
-        color: #fff;
-        font-weight: 600;
-        padding: 10px 30px;
-        border: none;
+    .logo-frame img {
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        padding: 10%;
     }
 
     #backToTop {
@@ -159,14 +139,6 @@
         cursor: pointer;
         z-index: 1050;
     }
-
-    @keyframes wipe-in-right {
-        from { clip-path: inset(0 100% 0 0); }
-        to { clip-path: inset(0 0 0 0); }
-    }
-    [transition-style="in:wipe:right"] {
-        animation: 2.5s cubic-bezier(.25, 1, .30, 1) wipe-in-right both;
-    }
 </style>
 
 <body>
@@ -174,7 +146,7 @@
       {% if session['sdr_loggedin'] %}
         <nav class="navbar navbar-expand-lg navbar-light navbar-custom fixed-top">
             <a class="navbar-brand" href="{{ url_for('index', _external=True) }}">
-                <img src="{{ url_for('static', filename='newtrendslogo.png') }}" alt="logo" width="40" height="40">
+                <img src="{{ url_for('static', filename='newtrendslogo.png') }}" alt="logo" width="40" height="40" style="object-fit: contain;">
             </a>
             <button class="navbar-toggler border-0" type="button" data-toggle="collapse" data-target="#navbarSupportedContent">
                 <span class="navbar-toggler-icon"></span>
@@ -193,9 +165,12 @@
                         <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownAdmin" role="button" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                             <i class='fas fa-key mr-1'></i> Admin
                         </a>
-                          <div class="dropdown-menu" aria-labelledby="navbarDropdownAdmin">
-                            <a class="dropdown-item" href="{{ url_for('admin_management', _anchor='vendor') }}">
+                        <div class="dropdown-menu" aria-labelledby="navbarDropdownAdmin">
+                            <a class="dropdown-item" href="{{ url_for('admin_management') }}">
                                 <i class="fas fa-cog mr-2"></i> Manage Codes for SM
+                            </a>
+                            <a class="dropdown-item" href="{{ url_for('rds_mng.admin_management_rds') }}">
+                                <i class="fas fa-store mr-2"></i> Manage Codes for RDS
                             </a>
                         </div>
                     </li>
@@ -204,11 +179,11 @@
 
                 <ul class="navbar-nav ml-auto">
                     <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" id="navbarDropdown7" data-toggle="dropdown">
+                        <a class="nav-link dropdown-toggle" href="#" id="navbarDropdownUser" data-toggle="dropdown">
                             <i class='fas fa-user-circle mr-1'></i> 
                             {{ session['sdr_curr_user_username'].replace('.', ' ').title() }}
                         </a>
-                        <div class="dropdown-menu dropdown-menu-right border-0 shadow-lg" aria-labelledby="navbarDropdown7">
+                        <div class="dropdown-menu dropdown-menu-right border-0 shadow-lg" aria-labelledby="navbarDropdownUser">
                             <a class="dropdown-item text-danger" href="{{ url_for('logout') }}">
                                 <i class="fas fa-sign-out-alt mr-2"></i> Logout
                             </a>
@@ -240,22 +215,11 @@
 
 <footer class="page-footer font-small py-4">
     <div class="footer-copyright text-center text-muted small" onclick="myFunction()" style="cursor: pointer;">
-        © 2025 MIS Department | Newtrends International Corporation
+        © 2026 MIS Department | Newtrends International Corporation
     </div>
 
     <script>
         function myFunction() { alert("Developed by:\n Carl Cabral"); }
-
-        $(".custom-file-input").on("change", function() {
-          var files = $(this)[0].files;
-          var label = $(this).siblings(".custom-file-upload");
-          if(files.length > 1){
-            label.addClass("selected").html("<i class='fa fa-upload'></i> " + files.length + " files selected");
-          } else {
-            var fileName = $(this).val().split("\\").pop();
-            label.addClass("selected").html("<i class='fa fa-upload'></i> " + fileName);
-          }
-        });
 
         var backToTopBtn = document.getElementById("backToTop");
         window.onscroll = function() {

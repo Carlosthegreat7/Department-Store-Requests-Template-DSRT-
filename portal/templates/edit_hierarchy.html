@@ -2,106 +2,198 @@
 
 {% block content %}
 <style>
-    .edit-container { padding-top: 40px; max-width: 800px; }
-    .card-header { font-weight: bold; background-color: #17a2b8; color: white; }
-    .is-invalid { border-color: #dc3545 !important; }
-    .invalid-feedback { display: none; color: #dc3545; font-size: 0.875em; margin-top: 0.25rem; }
-    .breadcrumb a { color: #17a2b8; }
-    .form-group label { font-weight: 600; color: #444; }
+    .edit-container { 
+        max-width: 800px; 
+        margin: 0 auto; 
+        padding-top: 30px; 
+    }
+
+    /* --- GLASSMOPHISM HEADER --- */
+    .glass-header {
+        height: 120px;
+        background: #4361ee;
+        border-radius: 28px;
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        padding: 0 40px;
+        color: white;
+        margin-bottom: 30px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 15px 35px rgba(67, 97, 238, 0.2);
+    }
+
+    .glass-header::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        z-index: 1;
+    }
+
+    .header-text { z-index: 2; }
+    .header-text h2 { font-weight: 800; letter-spacing: -1px; margin-bottom: 0; }
+
+    /* --- BENTO FORM CONTROLS --- */
+    .form-control-bento {
+        border-radius: 50px !important;
+        padding: 12px 25px !important;
+        border: 1px solid #e9ecef !important;
+        background-color: #f8f9fa !important;
+        color: #2d3436 !important;
+        transition: all 0.3s ease;
+    }
+
+    .form-control-bento:focus {
+        background-color: #fff !important;
+        border-color: var(--accent-purple) !important;
+        box-shadow: 0 0 0 0.2rem rgba(86, 11, 173, 0.15) !important;
+        outline: none;
+    }
+
+    .form-control-bento.is-invalid {
+        border-color: #f72585 !important;
+        background-color: rgba(247, 37, 133, 0.05) !important;
+    }
+
+    .btn-save {
+        background-image: linear-gradient(to right, #667eea, #764ba2, #6B8DD6, #8E37D7);
+        background-size: 300% 100%;
+        color: #fff !important;
+        border: none;
+        border-radius: 50px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        transition: all 0.4s ease-in-out;
+        box-shadow: 0 4px 15px 0 rgba(116, 79, 168, 0.45);
+    }
+
+    .btn-save:hover {
+        background-position: 100% 0;
+        transform: translateY(-2px);
+    }
+
+    .modal-glass {
+        backdrop-filter: blur(10px);
+        background: rgba(255,255,255,0.1);
+    }
+    .modal-content-bento {
+        border-radius: 30px;
+        border: none;
+        padding: 20px;
+    }
 </style>
 
-<div class="container edit-container" transition-style="in:fade:slow">
-    <div class="row">
-        <div class="col-12">
-            <nav aria-label="breadcrumb">
-              <ol class="breadcrumb bg-transparent p-0">
-                <li class="breadcrumb-item"><a href="{{ url_for('admin_management') }}">Management</a></li>
-                <li class="breadcrumb-item active" aria-current="page">Edit Hierarchy</li>
-              </ol>
-            </nav>
-            <h2><i class="fas fa-edit text-info"></i> Edit Hierarchy</h2>
-            <p class="text-muted">Update existing Brand and Hierarchy Group details in the registry.</p>
-            <hr>
+<div class="container edit-container">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <a href="{{ url_for('admin_management') }}" class="btn btn-sm btn-light rounded-pill px-3 shadow-sm text-muted">
+            <i class="fas fa-arrow-left mr-1"></i> BACK TO DASHBOARD
+        </a>
+    </div>
+
+    <div class="glass-header">
+        <div class="header-text">
+            <h2><i class="fas fa-sitemap mr-3"></i>Edit Hierarchy</h2>
         </div>
     </div>
 
-    <div class="card border-0 shadow-sm">
-        <div class="card-header"><i class="fas fa-database"></i> Hierarchy Details</div>
-        <div class="card-body bg-light">
-            <form id="editHierarchyForm" action="{{ url_for('hierarchy.edit_hierarchy', code=old_brand) }}" method="POST" novalidate autocomplete="off">
-                
-                <div class="form-group">
-                    <label>BRAND NAME</label>
-                    <input type="text" name="brand_name" class="form-control" value="{{ h.brand_name }}" required>
+    <div class="bento-tile shadow-lg">
+        <form id="editHierarchyForm" action="{{ url_for('hierarchy.edit_hierarchy', code=hierarchy.brand_name) }}" method="POST" autocomplete="off">
+            <div class="row">
+                <div class="col-md-6 mb-4">
+                    <label class="small font-weight-bold text-muted uppercase ml-2">Brand Name</label>
+                    <input type="text" name="brand_name" class="form-control form-control-bento" 
+                           value="{{ hierarchy.brand_name }}" required>
                 </div>
+                <div class="col-md-6 mb-4">
+                    <label class="small font-weight-bold text-muted uppercase ml-2">Product Group</label>
+                    <input type="text" name="product_group" class="form-control form-control-bento" 
+                           value="{{ hierarchy.product_group }}" required>
+                </div>
+            </div>
 
-                <div class="form-group">
-                    <label>PRODUCT GROUP</label>
-                    <input type="text" name="product_group" class="form-control" value="{{ h.product_group }}" required>
+            <div class="row">
+                <div class="col-md-4 mb-4">
+                    <label class="small font-weight-bold text-muted uppercase ml-2">Dept Code</label>
+                    <input type="text" name="dept_code" class="form-control form-control-bento" 
+                           value="{{ hierarchy.dept_code }}" required>
                 </div>
+                <div class="col-md-4 mb-4">
+                    <label class="small font-weight-bold text-muted uppercase ml-2">Sub-Dept Code</label>
+                    <input type="text" name="sub_dept_code" class="form-control form-control-bento" 
+                           value="{{ hierarchy.sub_dept_code }}" required>
+                </div>
+                <div class="col-md-4 mb-4">
+                    <label class="small font-weight-bold text-muted uppercase ml-2">Class Code</label>
+                    <input type="text" name="class_code" class="form-control form-control-bento" 
+                           value="{{ hierarchy.class_code }}" required>
+                </div>
+            </div>
 
-                <div class="row">
-                    <div class="col-md-4">
-                        <div class="form-group">
-                            <label>DEPT CODE</label>
-                            <input type="text" name="dept" class="form-control" value="{{ h.dept_code }}" maxlength="3" required>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="form-group">
-                            <label>SUB DEPT CODE</label>
-                            <input type="text" name="sub_dept" class="form-control" value="{{ h.sub_dept_code }}" maxlength="3" required>
-                        </div>
-                    </div>
-                    <div class="col-md-4">
-                        <div class="form-group">
-                            <label>CLASS CODE</label>
-                            <input type="text" name="class_code" class="form-control" value="{{ h.class_code }}" maxlength="3" required>
-                        </div>
-                    </div>
-                </div>
+            <hr class="my-4 opacity-25">
 
-                <div class="d-flex justify-content-between mt-4">
-                    <a href="{{ url_for('admin_management') }}#hierarchy" class="btn btn-secondary">Cancel</a>
-                    <button type="button" class="btn btn-info text-white px-4" onclick="validateAndShowModal()">Apply Changes</button>
-                </div>
-            </form>
-        </div>
+            <div class="d-flex justify-content-between">
+                <a href="{{ url_for('admin_management') }}" class="btn btn-light rounded-pill px-4 font-weight-bold text-muted">CANCEL</a>
+                <button type="button" class="btn btn-save px-5 py-2" onclick="validateAndShowModal()">
+                    <i class="fas fa-save mr-2"></i> Update Hierarchy
+                </button>
+            </div>
+        </form>
     </div>
 </div>
 
-<div class="modal fade" id="confirmEditModal" tabindex="-1" role="dialog">
-  <div class="modal-dialog modal-dialog-centered" role="document">
-    <div class="modal-content border-0 shadow">
-      <div class="modal-header bg-info text-white">
-        <h5 class="modal-title">Confirm Changes</h5>
-        <button type="button" class="close text-white" data-dismiss="modal"><span>&times;</span></button>
-      </div>
-      <div class="modal-body text-center py-4">
-        <i class="fas fa-question-circle fa-3x text-info mb-3"></i>
-        <p class="mb-0">Are you sure you want to update this hierarchy entry?</p>
-      </div>
-      <div class="modal-footer justify-content-center border-0 pb-4">
-        <button type="button" class="btn btn-secondary px-4" data-dismiss="modal">Go Back</button>
-        <button type="button" class="btn btn-info px-4 text-white" onclick="submitForm()">Save Changes</button>
-      </div>
+<div class="modal fade modal-glass" id="confirmEditModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content modal-content-bento bento-tile shadow-2xl">
+            <div class="text-center p-4">
+                <i class="fas fa-exclamation-circle fa-4x text-info mb-4"></i>
+                <h3 class="font-weight-bold mb-3">Save Changes?</h3>
+                <p class="text-muted">Are you sure you want to update this hierarchy entry in the master records?</p>
+                <div class="d-flex justify-content-center mt-4">
+                    <button type="button" class="btn btn-light rounded-pill px-4 mr-3" data-dismiss="modal">No, Cancel</button>
+                    <button type="button" class="btn btn-primary rounded-pill px-4" onclick="submitForm()">Yes, Confirm</button>
+                </div>
+            </div>
+        </div>
     </div>
-  </div>
 </div>
 
 <script>
+    // --- BROWSER NAVIGATION REFRESH FIX ---
     window.addEventListener('pageshow', function(event) {
-        if (event.persisted || (window.performance && window.performance.navigation.type === 2)) {
+        // Force a server-side refresh if navigating back/forward
+        const navEntries = performance.getEntriesByType("navigation");
+        const isBackForward = navEntries.length > 0 && navEntries[0].type === 'back_forward';
+        
+        if (event.persisted || isBackForward) {
             window.location.reload(); 
         }
     });
 
+    // Hard reset the form to clear browser-cached inputs on load
+    window.onload = function() {
+        document.getElementById('editHierarchyForm').reset();
+    };
+
     function validateAndShowModal() {
         const form = document.getElementById('editHierarchyForm');
-        if (form.checkValidity()) {
+        let isValid = true;
+        
+        const inputs = form.querySelectorAll('input[required]');
+        inputs.forEach(input => {
+            input.classList.remove('is-invalid');
+            if (!input.value.trim()) {
+                input.classList.add('is-invalid');
+                isValid = false;
+            }
+        });
+
+        if (isValid) {
             $('#confirmEditModal').modal('show');
-        } else {
-            form.reportValidity();
         }
     }
 

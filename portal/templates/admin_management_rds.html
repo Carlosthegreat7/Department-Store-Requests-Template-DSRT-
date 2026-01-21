@@ -1,0 +1,230 @@
+{% extends "base.html" %}
+
+{% block content %}
+<style>
+    .mgmt-container { padding-top: 20px; margin-bottom: 50px; }
+    .tab-content {
+        background-color: #ffffff;
+        border: 1px solid #dee2e6;
+        border-top: none;
+        padding: 25px;
+        border-bottom-left-radius: 20px;
+        border-bottom-right-radius: 20px;
+        box-shadow: var(--shadow);
+    }
+    .nav-tabs { border-bottom: 2px solid #dee2e6; }
+    .nav-tabs .nav-link { 
+        border: none; 
+        color: #6c757d; 
+        font-weight: 600; 
+        padding: 12px 25px;
+        transition: var(--transition);
+    }
+    .nav-tabs .nav-link.active { 
+        color: var(--accent-purple) !important; 
+        background: transparent;
+        border-bottom: 3px solid var(--accent-purple);
+    }
+    .search-container {
+        position: sticky;
+        top: 80px;
+        z-index: 1000;
+        background: var(--bg-color);
+        padding: 15px 0;
+    }
+    .sort-btn {
+        background: none; border: none; color: #ccc; cursor: pointer; padding: 0 5px; font-size: 0.8rem;
+    }
+    .sort-btn.active { color: var(--accent-purple); }
+</style>
+
+<div class="container mgmt-container">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h1 style="font-weight: 800; letter-spacing: -1px;">RDS Master Configuration</h1>
+            <p class="text-muted">Maintain vendor codes, hierarchy mappings, price points, and age codes for RDS.</p>
+        </div>
+    </div>
+
+    <div class="search-container">
+        <div class="bento-tile p-3 d-flex align-items-center">
+            <div class="input-group" style="max-width: 600px;">
+                <div class="input-group-prepend">
+                    <span class="input-group-text bg-white border-right-0" style="border-radius: 50px 0 0 50px;">
+                        <i class="fas fa-search text-muted"></i>
+                    </span>
+                </div>
+                <input type="text" id="mgmtSearch" class="form-control border-left-0" placeholder="Search across RDS records..." style="border-radius: 0 50px 50px 0;">
+            </div>
+            <select id="searchTarget" class="form-control ml-3 rounded-pill" style="max-width: 200px;">
+                <option value="vendor">Vendors</option>
+                <option value="hierarchy">Hierarchy</option>
+                <option value="price">Price Points</option>
+                <option value="age">Age Codes</option>
+            </select>
+        </div>
+    </div>
+
+    <ul class="nav nav-tabs mt-4" id="rdsTabs" role="tablist">
+        <li class="nav-item"><a class="nav-link active" data-toggle="tab" href="#vendor">Vendors</a></li>
+        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#hierarchy">Hierarchy</a></li>
+        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#price">Price Points</a></li>
+        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#age">Age Codes</a></li>
+    </ul>
+
+    <div class="tab-content mb-5">
+        <div class="tab-pane fade show active" id="vendor">
+            <div class="d-flex justify-content-between mb-3">
+                <h5 class="font-weight-bold">RDS Vendors</h5>
+                <button class="btn01-hover bn20 btn-sm" data-toggle="modal" data-target="#addVendorRdsModal">Add Vendor</button>
+            </div>
+            <table class="table table-hover border-0" id="vendorTable">
+                <thead class="small text-muted uppercase">
+                    <tr>
+                        <th>Company Name <button class="sort-btn" onclick="sortTable('vendor', 0)"><i class="fas fa-sort"></i></button></th>
+                        <th>Vendor Code</th>
+                        <th>Mfg Part No</th>
+                        <th class="text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for v in vendors %}
+                    <tr>
+                        <td class="font-weight-bold">{{ v.company_name }}</td>
+                        <td>{{ v.vendor_code }}</td>
+                        <td>{{ v.mfg_part_no }}</td>
+                        <td class="text-right">
+                            <button class="btn btn-light btn-sm rounded-pill px-3" onclick="confirmDelete('vendor', '{{ v.id }}')">
+                                <i class="fas fa-trash text-danger"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="tab-pane fade" id="hierarchy">
+            <div class="d-flex justify-content-between mb-3">
+                <h5 class="font-weight-bold">RDS Hierarchy</h5>
+                <button class="btn01-hover bn20 btn-sm" data-toggle="modal" data-target="#addHierarchyRdsModal">Add Hierarchy</button>
+            </div>
+            <table class="table table-hover border-0" id="hierarchyTable">
+                <thead class="small text-muted uppercase">
+                    <tr>
+                        <th>Dept</th>
+                        <th>Sub-Dept</th>
+                        <th>Class</th>
+                        <th>S-Class</th>
+                        <th>Name</th>
+                        <th class="text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for h in hierarchies %}
+                    <tr>
+                        <td>{{ h.dept }}</td>
+                        <td>{{ h.sdept }}</td>
+                        <td>{{ h.class_code }}</td>
+                        <td>{{ h.sclass }}</td>
+                        <td class="font-weight-bold">{{ h.sclass_name }}</td>
+                        <td class="text-right">
+                            <button class="btn btn-light btn-sm rounded-pill px-3" onclick="confirmDelete('hierarchy', '{{ h.id }}')">
+                                <i class="fas fa-trash text-danger"></i>
+                            </button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="tab-pane fade" id="price">
+            <div class="d-flex justify-content-between mb-3">
+                <h5 class="font-weight-bold">Price Points</h5>
+                <button class="btn01-hover bn20 btn-sm" data-toggle="modal" data-target="#addPricePointModal">Add Price Point</button>
+            </div>
+            <table class="table table-hover border-0" id="priceTable">
+                <thead class="small text-muted uppercase">
+                    <tr>
+                        <th>Code</th>
+                        <th>Description</th>
+                        <th class="text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for p in price_points %}
+                    <tr>
+                        <td class="font-weight-bold">{{ p.price_point_code }}</td>
+                        <td>{{ p.price_point_desc }}</td>
+                        <td class="text-right">
+                            <button class="btn btn-light btn-sm rounded-pill px-3" onclick="confirmDelete('price', '{{ p.id }}')"><i class="fas fa-trash text-danger"></i></button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        <div class="tab-pane fade" id="age">
+            <div class="d-flex justify-content-between mb-3">
+                <h5 class="font-weight-bold">Age Codes</h5>
+                <button class="btn01-hover bn20 btn-sm" data-toggle="modal" data-target="#addAgeCodeModal">Add Age Code</button>
+            </div>
+            <table class="table table-hover border-0" id="ageTable">
+                <thead class="small text-muted uppercase">
+                    <tr>
+                        <th>Code</th>
+                        <th>Description</th>
+                        <th class="text-right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for a in age_codes %}
+                    <tr>
+                        <td class="font-weight-bold">{{ a.age_code }}</td>
+                        <td>{{ a.description }}</td>
+                        <td class="text-right">
+                            <button class="btn btn-light btn-sm rounded-pill px-3" onclick="confirmDelete('age', '{{ a.id }}')"><i class="fas fa-trash text-danger"></i></button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<script>
+    // Mimicking the search logic from admin_management.html
+    const searchInput = document.getElementById('mgmtSearch');
+    const searchTarget = document.getElementById('searchTarget');
+
+    function updateDisplay(type) {
+        const filter = searchInput.value.toLowerCase();
+        const rows = document.querySelectorAll(`#${type}Table tbody tr`);
+        rows.forEach(row => {
+            const text = row.innerText.toLowerCase();
+            row.style.display = text.includes(filter) ? "" : "none";
+        });
+    }
+
+    searchInput.addEventListener('input', () => updateDisplay(searchTarget.value));
+    searchTarget.addEventListener('change', (e) => {
+        $(`#rdsTabs a[href="#${e.target.value}"]`).tab('show');
+        updateDisplay(e.target.value);
+    });
+
+    $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+        const targetId = $(e.target).attr("href").replace('#', '');
+        searchTarget.value = targetId;
+        updateDisplay(targetId);
+    });
+
+    function confirmDelete(type, id) {
+        if(confirm(`Confirm deletion of this ${type} record?`)) {
+            window.location.href = `/admin/management/rds/delete-${type}/${id}`;
+        }
+    }
+</script>
+{% endblock %}

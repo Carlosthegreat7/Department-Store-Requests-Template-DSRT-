@@ -2,137 +2,170 @@
 
 {% block content %}
 <style>
-    .add-container { padding-top: 40px; max-width: 600px; }
-    .card-header { font-weight: bold; background-color: #28a745; color: white; }
-    .is-invalid { border-color: #dc3545 !important; }
-    .invalid-feedback { display: none; color: #dc3545; font-size: 0.875em; margin-top: 0.25rem; }
-    .breadcrumb a { color: #28a745; }
+    .add-container { 
+        max-width: 600px; 
+        margin: 0 auto;
+        padding-top: 30px; 
+    }
+
+    /* --- GLASSMOPHISM HEADER --- */
+    .glass-header {
+        height: 120px;
+        background: #4361ee;
+        border-radius: 28px;
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        padding: 0 40px;
+        color: white;
+        margin-bottom: 30px;
+        border: 1px solid rgba(255, 255, 255, 0.1);
+        box-shadow: 0 15px 35px rgba(67, 97, 238, 0.2);
+    }
+
+    .glass-header::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        z-index: 1;
+    }
+
+    .header-text { z-index: 2; }
+    .header-text h2 { font-weight: 800; letter-spacing: -1px; margin-bottom: 0; }
+
+    /* --- BENTO FORM CONTROLS --- */
+    .form-control-bento {
+        border-radius: 50px !important;
+        padding: 12px 25px !important;
+        border: 1px solid #e9ecef !important;
+        background-color: #f8f9fa !important;
+        color: #2d3436 !important;
+        transition: all 0.3s ease;
+    }
+
+    .form-control-bento:focus {
+        background-color: #fff !important;
+        border-color: var(--accent-purple) !important;
+        box-shadow: 0 0 0 0.2rem rgba(86, 11, 173, 0.15) !important;
+    }
+
+    .btn-save {
+        background-image: linear-gradient(to right, #667eea, #764ba2, #6B8DD6, #8E37D7);
+        background-size: 300% 100%;
+        color: #fff !important;
+        border: none;
+        border-radius: 50px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        transition: all 0.4s ease-in-out;
+        box-shadow: 0 4px 15px 0 rgba(116, 79, 168, 0.45);
+    }
+
+    .btn-save:hover {
+        background-position: 100% 0;
+        transform: translateY(-2px);
+    }
+
+    .modal-glass {
+        backdrop-filter: blur(10px);
+        background: rgba(255,255,255,0.1);
+    }
+    .modal-content-bento {
+        border-radius: 30px;
+        border: none;
+        padding: 20px;
+    }
 </style>
 
-<div class="container add-container" transition-style="in:fade:slow">
-    <div class="row">
-        <div class="col-12">
-            <nav aria-label="breadcrumb">
-              <ol class="breadcrumb bg-transparent p-0">
-                <li class="breadcrumb-item"><a href="{{ url_for('admin_management', _anchor='vendor') }}">Management</a></li>
-                <li class="breadcrumb-item active" aria-current="page">Add Vendor</li>
-              </ol>
-            </nav>
-            <h2><i class="fas fa-plus-circle text-success"></i> Add New Vendor</h2>
-            <p class="text-muted">Register a new vendor to the Template for SM.</p>
-            <hr>
+<div class="container add-container">
+    <div class="d-flex justify-content-between align-items-center mb-3">
+        <a href="{{ url_for('admin_management') }}" class="btn btn-sm btn-light rounded-pill px-3 shadow-sm text-muted">
+            <i class="fas fa-arrow-left mr-1"></i> BACK TO DASHBOARD
+        </a>
+    </div>
+
+    <div class="glass-header">
+        <div class="header-text">
+            <h2><i class="fas fa-plus-circle mr-3"></i>Add Vendor</h2>
         </div>
     </div>
 
-    {% with messages = get_flashed_messages(with_categories=true) %}
-      {% if messages %}
-        {% for category, message in messages %}
-          <div class="alert alert-{{ category if category != 'message' else 'danger' }} alert-dismissible fade show shadow-sm" role="alert">
-            <i class="fas fa-exclamation-triangle mr-2"></i> {{ message }}
-            <button type="button" class="close" data-dismiss="alert" aria-label="Close">
-              <span aria-hidden="true">&times;</span>
-            </button>
-          </div>
-        {% endfor %}
-      {% endif %}
-    {% endwith %}
+    <div class="bento-tile shadow-lg">
+        <form id="addVendorForm" action="{{ url_for('vendor.add_vendor') }}" method="POST" autocomplete="off">
+            <div class="form-group mb-4">
+                <label class="small font-weight-bold text-muted uppercase ml-2">Vendor Code</label>
+                <input type="text" name="code" id="code" class="form-control form-control-bento" 
+                       placeholder="6-digit code (e.g., 014353)" pattern="\d{6}" required>
+            </div>
 
-    <div class="card shadow-sm border-0">
-        <div class="card-header d-flex align-items-center">
-            <i class="fas fa-info-circle mr-2"></i> Vendor Details
-        </div>
-        <div class="card-body bg-white">
-            <form id="addVendorForm" action="{{ url_for('vendor.add_vendor') }}" method="POST" novalidate autocomplete="off">
-                
-                <div class="form-group mb-3">
-                    <label for="code" class="font-weight-bold">Vendor Code <span class="text-danger">*</span></label>
-                    <input type="text" name="code" id="code" class="form-control" 
-                           placeholder="e.g., 014353" required pattern="^[0-9]+$">
-                    <div class="invalid-feedback" id="codeError">
-                        Please enter a valid numeric vendor code.
-                    </div>
-                </div>
+            <div class="form-group mb-4">
+                <label class="small font-weight-bold text-muted uppercase ml-2">Vendor Name</label>
+                <input type="text" name="name" id="name" class="form-control form-control-bento" 
+                       placeholder="Full Company Name" required>
+            </div>
 
-                <div class="form-group mb-4">
-                    <label for="name" class="font-weight-bold">Vendor Name <span class="text-danger">*</span></label>
-                    <input type="text" name="name" id="name" class="form-control" 
-                           placeholder="e.g., ABOUT TIME CORP." required minlength="2">
-                    <div class="invalid-feedback" id="nameError">
-                        Please enter a valid Vendor Name (Min 2 characters).
-                    </div>
-                </div>
+            <hr class="my-4 opacity-25">
 
-                <div class="d-flex justify-content-between border-top pt-3">
-                    <a href="{{ url_for('admin_management', _anchor='vendor') }}" class="btn btn-outline-secondary">
-                        <i class="fas fa-arrow-left"></i> Cancel
-                    </a>
-                    <button type="button" class="btn btn-success px-4" onclick="validateAndShowModal()">
-                        <i class="fas fa-save"></i> Save Vendor
-                    </button>
-                </div>
-            </form>
-        </div>
+            <div class="d-flex justify-content-between">
+                <a href="{{ url_for('admin_management') }}" class="btn btn-light rounded-pill px-4 font-weight-bold text-muted">CANCEL</a>
+                <button type="button" class="btn btn-save px-5 py-2" onclick="validateAndShowModal()">
+                    <i class="fas fa-check-circle mr-2"></i> Register Vendor
+                </button>
+            </div>
+        </form>
     </div>
 </div>
 
-<div class="modal fade" id="confirmAddModal" tabindex="-1" role="dialog" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered" role="document">
-    <div class="modal-content border-0 shadow-lg">
-      <div class="modal-header bg-success text-white">
-        <h5 class="modal-title"><i class="fas fa-check-circle"></i> Confirm Addition</h5>
-        <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
-          <span aria-hidden="true">&times;</span>
-        </button>
-      </div>
-      <div class="modal-body text-center p-4">
-        <p class="mb-2">Are you sure you want to add this vendor to the <strong>Excel Registry</strong>?</p>
-        <div class="alert alert-warning py-2 small mb-0">
-            <i class="fas fa-lock"></i> <strong>IMPORTANT:</strong> Double check the fields to ensure the information inputted is <strong>CORRECT</strong></stront> .
+<div class="modal fade modal-glass" id="confirmAddModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content modal-content-bento bento-tile shadow-2xl">
+            <div class="text-center p-4">
+                <i class="fas fa-question-circle fa-4x text-primary mb-4"></i>
+                <h3 class="font-weight-bold mb-3">Confirm Entry</h3>
+                <p class="text-muted">Are you sure you want to add this vendor to the master records?</p>
+                
+                <div class="d-flex justify-content-center mt-4">
+                    <button type="button" class="btn btn-light rounded-pill px-4 mr-3" data-dismiss="modal">Go Back</button>
+                    <button type="button" class="btn btn-primary rounded-pill px-4" onclick="submitForm()">Confirm & Save</button>
+                </div>
+            </div>
         </div>
-      </div>
-      <div class="modal-footer justify-content-center border-0 pb-4">
-        <button type="button" class="btn btn-secondary px-4" data-dismiss="modal">Go Back</button>
-        <button type="button" class="btn btn-success px-4" onclick="submitForm()">Confirm & Save</button>
-      </div>
     </div>
-  </div>
 </div>
 
 <script>
-    /**
-     * RESET LOGIC FOR BROWSER BACK BUTTON
-     * Detects if the page is loaded from cache (bfcache) and clears form.
-     */
+    // --- BROWSER NAVIGATION REFRESH FIX ---
     window.addEventListener('pageshow', function(event) {
-        const form = document.getElementById('addVendorForm');
-        // If event.persisted is true, the page was loaded from the back/forward cache
-        if (event.persisted || (window.performance && window.performance.navigation.type === 2)) {
-            form.reset(); // Clear all inputs
-            // Remove error highlights if they were left over
-            document.getElementById('code').classList.remove('is-invalid');
-            document.getElementById('name').classList.remove('is-invalid');
+        // Force a server-side refresh if navigating back/forward
+        const navEntries = performance.getEntriesByType("navigation");
+        if (event.persisted || (navEntries.length > 0 && navEntries[0].type === 'back_forward')) {
+            window.location.reload(); 
         }
     });
+
+    // Hard reset the form to clear browser-cached inputs
+    window.onload = function() {
+        document.getElementById('addVendorForm').reset();
+    };
 
     function validateAndShowModal() {
         const codeInput = document.getElementById('code');
         const nameInput = document.getElementById('name');
         let isValid = true;
 
-        codeInput.classList.remove('is-invalid');
-        nameInput.classList.remove('is-invalid');
-        document.getElementById('codeError').style.display = 'none';
-        document.getElementById('nameError').style.display = 'none';
+        [codeInput, nameInput].forEach(el => el.classList.remove('is-invalid'));
 
         if (!codeInput.checkValidity()) {
             codeInput.classList.add('is-invalid');
-            document.getElementById('codeError').style.display = 'block';
             isValid = false;
         }
-
         if (!nameInput.checkValidity()) {
             nameInput.classList.add('is-invalid');
-            document.getElementById('nameError').style.display = 'block';
             isValid = false;
         }
 

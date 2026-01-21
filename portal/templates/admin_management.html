@@ -3,302 +3,266 @@
 {% block content %}
 <style>
     .mgmt-container { padding-top: 20px; margin-bottom: 50px; }
+    
     .tab-content {
         background-color: #ffffff;
         border: 1px solid #dee2e6;
         border-top: none;
         padding: 25px;
-        border-bottom-left-radius: 8px;
-        border-bottom-right-radius: 8px;
+        border-bottom-left-radius: 20px;
+        border-bottom-right-radius: 20px;
         box-shadow: 0 4px 6px rgba(0,0,0,0.05);
     }
-    .nav-tabs .nav-link.active { font-weight: bold; color: #3498DB !important; border-bottom-color: #ffffff; }
-    .table thead th { background-color: #f8f9fa; color: #555; vertical-align: middle; position: relative; }
-    
-    .sort-btn {
-        background: none; border: none; color: #ccc; cursor: pointer; padding: 0 5px; transition: color 0.2s; font-size: 0.8rem;
-    }
-    .sort-btn.active { color: #3498DB; }
-    .action-cell { display: flex; justify-content: center; gap: 8px; }
-    .btn-action { width: 70px; height: 32px; display: flex; justify-content: center; align-items: center; font-size: 0.85rem; padding: 0; }
-    tbody tr { transition: opacity 0.3s ease-in-out; }
 
-    /* Navigator & Scroll Top */
-    .pagination .page-item .page-link { color: #3498DB; border-radius: 4px; margin: 0 2px; }
-    .pagination .page-item.active .page-link { background-color: #3498DB; border-color: #3498DB; color: white; }
-    #backToTop {
-        position: fixed; bottom: 30px; right: 30px; width: 50px; height: 50px;
-        background-color: #3498DB; color: white; border-radius: 50%;
-        display: none; justify-content: center; align-items: center;
-        font-size: 20px; border: none; cursor: pointer;
-        box-shadow: 0 4px 10px rgba(0,0,0,0.3); z-index: 1050;
-        transition: transform 0.2s, background-color 0.2s;
+    /* --- SORTABLE HEADER STYLES --- */
+    th.sortable {
+        cursor: pointer;
+        position: relative;
+        transition: background 0.2s;
     }
+    th.sortable:hover { background: #f8f9fa; }
+    th.sortable::after {
+        content: '\f0dc';
+        font-family: 'Font Awesome 5 Free';
+        font-weight: 900;
+        float: right;
+        color: #ccc;
+        font-size: 0.8rem;
+    }
+    th.sort-asc::after { content: '\f0de'; color: #560bad; }
+    th.sort-desc::after { content: '\f0dd'; color: #560bad; }
+
+    .nav-tabs .nav-link { 
+        border: none; color: #6c757d; font-weight: 600; padding: 12px 25px; transition: all 0.3s ease;
+    }
+    .nav-tabs .nav-link.active { 
+        color: #560bad !important; background: transparent; border-bottom: 3px solid #560bad;
+    }
+
+    /* Premium Button */
+    .btn01-hover {
+        padding: 10px 25px; border-radius: 50px; color: #fff; font-weight: 600; font-size: 14px;
+        background-image: linear-gradient(to right, #667eea, #764ba2, #6B8DD6, #8E37D7);
+        background-size: 300% 100%; transition: all .4s ease-in-out; border: none;
+        box-shadow: 0 4px 15px 0 rgba(116, 79, 168, 0.45);
+    }
+    .btn01-hover:hover { background-position: 100% 0; transform: translateY(-2px); color: #fff; text-decoration: none; }
+
+    /* Action Drawer */
+    .action-drawer {
+        display: flex; justify-content: flex-end; align-items: center; width: 40px; height: 35px;
+        background: #f8f9fa; border-radius: 20px; padding: 0 10px; margin-left: auto;
+        overflow: hidden; transition: width 0.4s ease; border: 1px solid rgba(0,0,0,0.05);
+    }
+    .action-drawer:hover { width: 100px; background: #fff; }
+    .action-btn { background: none; border: none; padding: 5px; opacity: 0.3; transition: 0.3s; }
+    .action-drawer:hover .action-btn { opacity: 1; }
+    .btn-edit { color: #560bad; }
+    .btn-delete { color: #f72585; margin-left: 10px; }
 </style>
 
-<div class="container mgmt-container" transition-style="in:fade:slow">
-    <div class="row">
+<div class="container mgmt-container">
+    <div class="row mb-4">
         <div class="col-12">
-            <h2 class="mb-0"><i class="fas fa-database text-primary"></i> System Data Management for SM</h2>
-            <p class="text-muted small">Live MySQL Registry Management with Column Sorting & Navigation</p>
-            <hr>
+            <h1 style="font-weight: 800; letter-spacing: -1px;">SM Master Configuration</h1>
+            <p class="text-muted">Click any table header to sort ascending or descending.</p>
         </div>
     </div>
 
-    <div class="card mb-4 border-0 shadow-sm">
-        <div class="card-header bg-dark text-white d-flex align-items-center">
-            <i class="fas fa-search mr-2"></i> <strong>Search Registry</strong>
-        </div>
-        <div class="card-body bg-light text-center">
-            <div class="form-inline justify-content-center">
-                <div class="form-group mr-2">
-                    <select class="form-control" id="searchTarget">
-                        <option value="vendor">Vendors</option>
-                        <option value="hierarchy">Hierarchy</option>
-                        <option value="subclass">Subclasses</option>
-                    </select>
-                </div>
-                <div class="form-group mr-2">
-                    <input type="text" id="liveSearchInput" class="form-control" placeholder="Search entries..." style="min-width: 400px;">
-                </div>
-                <button type="button" class="btn btn-secondary" onclick="resetSearch()"><i class="fas fa-undo"></i> Reset</button>
-            </div>
-        </div>
-    </div>
-
-    <ul class="nav nav-tabs" id="mgmtTabs" role="tablist">
-        <li class="nav-item"><a class="nav-link active" data-toggle="tab" href="#vendor" role="tab"><i class="fas fa-truck-loading"></i> Vendors</a></li>
-        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#hierarchy" role="tab"><i class="fas fa-sitemap"></i> Hierarchy</a></li>
-        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#subclass" role="tab"><i class="fas fa-tags"></i> Subclass</a></li>
+    <ul class="nav nav-tabs" id="smTabs" role="tablist">
+        <li class="nav-item"><a class="nav-link active" data-toggle="tab" href="#vendor">Vendors</a></li>
+        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#hierarchy">Hierarchy</a></li>
+        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#subclass">Subclasses</a></li>
     </ul>
 
-    <div class="tab-content" id="mgmtTabsContent">
-        <div class="tab-pane fade show active" id="vendor" role="tabpanel">
-            <div class="d-flex justify-content-end mb-3"><a href="{{ url_for('vendor.add_vendor') }}" class="btn btn-success btn-sm"><i class="fas fa-plus"></i> Add Vendor</a></div>
-            <div class="table-responsive">
-                <table class="table table-hover">
-                    <thead>
-                        <tr>
-                            <th onclick="manualSort('vendor', 0)">Vendor Code <button class="sort-btn"><i class="fas fa-sort"></i></button></th>
-                            <th onclick="manualSort('vendor', 1)">Vendor Name <button class="sort-btn"><i class="fas fa-sort"></i></button></th>
-                            <th class="text-center">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody id="vendorTbody">
-                        {% for v in vendors %}
-                        <tr class="vendor-row">
-                            <td>{{ v.vendor_code }}</td>
-                            <td>{{ v.vendor_name }}</td>
-                            <td>
-                                <div class="action-cell">
-                                    <a href="{{ url_for('vendor.edit_vendor', code=v.vendor_code) }}" class="btn btn-info btn-action">Edit</a>
-                                    <button class="btn02-delete btn-action" onclick="openDeleteModal('vendor', '{{ v.vendor_code }}')">Delete</button>
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+    <div class="tab-content mb-5">
+        <div class="tab-pane fade show active" id="vendor">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h5 class="font-weight-bold mb-0">SM Vendors</h5>
+                <a href="{{ url_for('vendor.add_vendor') }}" class="btn01-hover"><i class="fas fa-plus mr-2"></i> Add Vendor</a>
             </div>
-            <nav><ul class="pagination justify-content-center mt-3" id="vendorPagination"></ul></nav>
+            <table class="table table-hover border-0" id="vendorTable">
+                <thead class="small text-muted uppercase">
+                    <tr>
+                        <th class="sortable" onclick="sortTable(0, 'vendorTable')">Vendor Code</th>
+                        <th class="sortable" onclick="sortTable(1, 'vendorTable')">Vendor Name</th>
+                        <th class="text-right">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for v in vendors %}
+                    <tr>
+                        <td class="align-middle font-weight-bold">{{ v.vendor_code }}</td>
+                        <td class="align-middle">{{ v.vendor_name }}</td>
+                        <td class="text-right">
+                            <div class="action-drawer">
+                                <a href="{{ url_for('vendor.edit_vendor', code=v.vendor_code) }}" class="action-btn btn-edit"><i class="fas fa-edit"></i></a>
+                                <button class="action-btn btn-delete" onclick="confirmDelete('vendor', '{{ v.vendor_code }}')"><i class="fas fa-trash"></i></button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
 
-        <div class="tab-pane fade" id="hierarchy" role="tabpanel">
-            <div class="d-flex justify-content-end mb-3"><a href="{{ url_for('hierarchy.add_hierarchy') }}" class="btn btn-success btn-sm"><i class="fas fa-plus"></i> Add Hierarchy</a></div>
-            <div class="table-responsive">
-                <table class="table table-hover">
-                    <thead>
-                        <tr>
-                            <th onclick="manualSort('hierarchy', 0)">Brand <button class="sort-btn"><i class="fas fa-sort"></i></button></th>
-                            <th onclick="manualSort('hierarchy', 1)">Group <button class="sort-btn"><i class="fas fa-sort"></i></button></th>
-                            <th onclick="manualSort('hierarchy', 2)">Dept <button class="sort-btn"><i class="fas fa-sort"></i></button></th>
-                            <th onclick="manualSort('hierarchy', 3)">Sub Dept <button class="sort-btn"><i class="fas fa-sort"></i></button></th>
-                            <th onclick="manualSort('hierarchy', 4)">Class <button class="sort-btn"><i class="fas fa-sort"></i></button></th>
-                            <th class="text-center">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody id="hierarchyTbody">
-                        {% for h in hierarchies %}
-                        <tr class="hierarchy-row">
-                            <td>{{ h.brand_name }}</td><td>{{ h.product_group }}</td><td>{{ h.dept_code }}</td><td>{{ h.sub_dept_code }}</td><td>{{ h.class_code }}</td>
-                            <td>
-                                <div class="action-cell">
-                                    <a href="{{ url_for('hierarchy.edit_hierarchy', code=h.brand_name) }}" class="btn btn-info btn-action">Edit</a>
-                                    <button class="btn02-delete btn-action" onclick="openDeleteModal('hierarchy', '{{ h.brand_name }}')">Delete</button>
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+        <div class="tab-pane fade" id="hierarchy">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h5 class="font-weight-bold mb-0">Product Hierarchy</h5>
+                <a href="{{ url_for('hierarchy.add_hierarchy') }}" class="btn01-hover"><i class="fas fa-plus mr-2"></i> Add Brand</a>
             </div>
-            <nav><ul class="pagination justify-content-center mt-3" id="hierarchyPagination"></ul></nav>
+            <table class="table table-hover border-0" id="hierarchyTable">
+                <thead class="small text-muted uppercase">
+                    <tr>
+                        <th class="sortable" onclick="sortTable(0, 'hierarchyTable')">Brand</th>
+                        <th class="sortable" onclick="sortTable(1, 'hierarchyTable')">Group</th>
+                        <th class="sortable" onclick="sortTable(2, 'hierarchyTable')">Dept</th>
+                        <th class="sortable" onclick="sortTable(3, 'hierarchyTable')">Sub</th>
+                        <th class="sortable" onclick="sortTable(4, 'hierarchyTable')">Class</th>
+                        <th class="text-right">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for h in hierarchies %}
+                    <tr>
+                        <td class="font-weight-bold align-middle">{{ h.brand_name }}</td>
+                        <td class="align-middle">{{ h.product_group }}</td>
+                        <td class="align-middle">{{ h.dept_code }}</td>
+                        <td class="align-middle">{{ h.sub_dept_code }}</td>
+                        <td class="align-middle">{{ h.class_code }}</td>
+                        <td class="text-right">
+                            <div class="action-drawer">
+                                <a href="{{ url_for('hierarchy.edit_hierarchy', code=h.brand_name) }}" class="action-btn btn-edit"><i class="fas fa-edit"></i></a>
+                                <button class="action-btn btn-delete" onclick="confirmDelete('hierarchy', '{{ h.brand_name }}')"><i class="fas fa-trash"></i></button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
 
-        <div class="tab-pane fade" id="subclass" role="tabpanel">
-            <div class="d-flex justify-content-end mb-3"><a href="{{ url_for('subclass.add_subclass') }}" class="btn btn-success btn-sm"><i class="fas fa-plus"></i> Add Subclass</a></div>
-            <div class="table-responsive">
-                <table class="table table-hover">
-                    <thead>
-                        <tr>
-                            <th onclick="manualSort('subclass', 0)">Group <button class="sort-btn"><i class="fas fa-sort"></i></button></th>
-                            <th onclick="manualSort('subclass', 1)">Code <button class="sort-btn"><i class="fas fa-sort"></i></button></th>
-                            <th onclick="manualSort('subclass', 2)">Name <button class="sort-btn"><i class="fas fa-sort"></i></button></th>
-                            <th class="text-center">Action</th>
-                        </tr>
-                    </thead>
-                    <tbody id="subclassTbody">
-                        {% for s in subclasses %}
-                        <tr class="subclass-row">
-                            <td>{{ s.product_group }}</td><td>{{ s.subclass_code }}</td><td>{{ s.subclass_name }}</td>
-                            <td>
-                                <div class="action-cell">
-                                    <a href="{{ url_for('subclass.edit_subclass', group=s.product_group, code=s.subclass_code) }}" class="btn btn-info btn-action">Edit</a>
-                                    <button class="btn02-delete btn-action" onclick="openDeleteModal('subclass', '{{ s.product_group }}', '{{ s.subclass_code }}')">Delete</button>
-                                </div>
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                </table>
+        <div class="tab-pane fade" id="subclass">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h5 class="font-weight-bold mb-0">Material Subclasses</h5>
+                <a href="{{ url_for('subclass.add_subclass') }}" class="btn01-hover"><i class="fas fa-plus mr-2"></i> Add Subclass</a>
             </div>
-            <nav><ul class="pagination justify-content-center mt-3" id="subclassPagination"></ul></nav>
+            <table class="table table-hover border-0" id="subclassTable">
+                <thead class="small text-muted uppercase">
+                    <tr>
+                        <th class="sortable" onclick="sortTable(0, 'subclassTable')">Group</th>
+                        <th class="sortable" onclick="sortTable(1, 'subclassTable')">Code</th>
+                        <th class="sortable" onclick="sortTable(2, 'subclassTable')">Name</th>
+                        <th class="text-right">Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for s in subclasses %}
+                    <tr>
+                        <td class="font-weight-bold align-middle">{{ s.product_group }}</td>
+                        <td class="align-middle">{{ s.subclass_code }}</td>
+                        <td class="align-middle">{{ s.subclass_name }}</td>
+                        <td class="text-right">
+                            <div class="action-drawer">
+                                <a href="{{ url_for('subclass.edit_subclass', group=s.product_group, code=s.subclass_code) }}" class="action-btn btn-edit"><i class="fas fa-edit"></i></a>
+                                <button class="action-btn btn-delete" onclick="confirmDelete('subclass', '{{ s.product_group }}', '{{ s.subclass_code }}')"><i class="fas fa-trash"></i></button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
     </div>
 </div>
 
-<div class="modal fade" id="deleteConfirmModal" tabindex="-1" role="dialog" aria-hidden="true">
-    <div class="modal-dialog modal-dialog-centered" role="document">
-        <div class="modal-content border-0 shadow">
-            <div class="modal-header bg-danger text-white">
-                <h5 class="modal-title"><i class="fas fa-exclamation-triangle"></i> Confirm Deletion</h5>
-                <button type="button" class="close text-white" data-dismiss="modal"><span>&times;</span></button>
-            </div>
-            <div class="modal-body text-center py-4">
+<div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius: 25px; border: none;">
+            <div class="text-center p-4">
                 <i class="fas fa-trash-alt fa-3x text-danger mb-3"></i>
-                <p class="mb-0">Are you sure you want to delete this entry? This action cannot be undone.</p>
-                <form id="globalDeleteForm" method="POST">
-                    </form>
-            </div>
-            <div class="modal-footer justify-content-center border-0 pb-4">
-                <button type="button" class="btn btn-secondary px-4" data-dismiss="modal">Cancel</button>
-                <button type="button" class="btn btn-danger px-4" onclick="document.getElementById('globalDeleteForm').submit()">Confirm Delete</button>
+                <h4 class="font-weight-bold">Delete Entry?</h4>
+                <p class="text-muted">This action is permanent.</p>
+                <form id="deleteForm" method="POST">
+                    <button type="button" class="btn btn-light rounded-pill px-4 mr-2" data-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger rounded-pill px-4">Delete</button>
+                </form>
             </div>
         </div>
     </div>
 </div>
 
-<button id="backToTop" title="Go to top"><i class="fas fa-chevron-up"></i></button>
+<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.bundle.min.js"></script>
 
 <script>
-    // 1. DELETE MODAL HANDLER
-    function openDeleteModal(type, id1, id2 = null) {
-        const form = document.getElementById('globalDeleteForm');
-        let baseUrl = "";
+    /**
+     * SORTING LOGIC
+     * Sorts table columns in Ascending/Descending order.
+     */
+    function sortTable(n, tableId) {
+        var table = document.getElementById(tableId);
+        var rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
+        switching = true;
+        dir = "asc"; 
+        
+        // Remove existing sort classes
+        $(table).find('th').removeClass('sort-asc sort-desc');
 
-        if (type === 'vendor') {
-            baseUrl = "{{ url_for('vendor.delete_vendor', code='ID_PLACEHOLDER') }}".replace('ID_PLACEHOLDER', id1);
-        } else if (type === 'hierarchy') {
-            baseUrl = "{{ url_for('hierarchy.delete_hierarchy', code='ID_PLACEHOLDER') }}".replace('ID_PLACEHOLDER', id1);
-        } else if (type === 'subclass') {
-            baseUrl = "{{ url_for('subclass.delete_subclass', group='GP_PLACE', code='CD_PLACE') }}"
-                      .replace('GP_PLACE', id1).replace('CD_PLACE', id2);
-        }
+        while (switching) {
+            switching = false;
+            rows = table.rows;
+            for (i = 1; i < (rows.length - 1); i++) {
+                shouldSwitch = false;
+                x = rows[i].getElementsByTagName("TD")[n];
+                y = rows[i + 1].getElementsByTagName("TD")[n];
 
-        form.action = baseUrl;
-        $('#deleteConfirmModal').modal('show');
-    }
+                let xVal = x.innerText.toLowerCase();
+                let yVal = y.innerText.toLowerCase();
 
-    // --- RETAINED FEATURES: PAGINATION, SEARCH, SORTING ---
-    let sortState = { vendor: { col: -1, asc: true }, hierarchy: { col: -1, asc: true }, subclass: { col: -1, asc: true } };
-    const activePages = { vendor: 1, hierarchy: 1, subclass: 1 };
+                // Check if numeric
+                if (!isNaN(parseFloat(xVal)) && !isNaN(parseFloat(yVal))) {
+                    xVal = parseFloat(xVal);
+                    yVal = parseFloat(yVal);
+                }
 
-    document.addEventListener('DOMContentLoaded', function() {
-        const searchInput = document.getElementById('liveSearchInput');
-        const searchTarget = document.getElementById('searchTarget');
-        const backToTopBtn = document.getElementById('backToTop');
-        const config = {
-            vendor: { perPage: 6, rowClass: '.vendor-row', paginationId: 'vendorPagination', tbodyId: 'vendorTbody' },
-            hierarchy: { perPage: 10, rowClass: '.hierarchy-row', paginationId: 'hierarchyPagination', tbodyId: 'hierarchyTbody' },
-            subclass: { perPage: 10, rowClass: '.subclass-row', paginationId: 'subclassPagination', tbodyId: 'subclassTbody' }
-        };
-
-        function updateDisplay(type) {
-            const query = searchInput.value.toLowerCase();
-            const rows = Array.from(document.querySelectorAll(config[type].rowClass));
-            const matchedRows = rows.filter(row => {
-                row.style.display = 'none'; row.style.opacity = '0';
-                return row.innerText.toLowerCase().includes(query);
-            });
-            const perPage = config[type].perPage;
-            const totalPages = Math.ceil(matchedRows.length / perPage);
-            matchedRows.slice((activePages[type] - 1) * perPage, activePages[type] * perPage).forEach(row => {
-                row.style.display = ''; setTimeout(() => row.style.opacity = '1', 50);
-            });
-            renderNavigator(type, totalPages);
-        }
-
-        function renderNavigator(type, totalPages) {
-            const container = document.getElementById(config[type].paginationId);
-            container.innerHTML = ''; if (totalPages <= 1) return;
-            const current = activePages[type];
-            container.appendChild(createPageItem('«', 1, type, current === 1));
-            container.appendChild(createPageItem('‹', current - 1, type, current === 1));
-            for (let i = 1; i <= totalPages; i++) {
-                if (i === 1 || i === totalPages || (i >= current - 1 && i <= current + 1)) {
-                    container.appendChild(createPageItem(i, i, type, false, i === current));
-                } else if (i === current - 2 || i === current + 2) {
-                    const dots = document.createElement('li'); dots.className = 'page-item disabled'; dots.innerHTML = '<span class="page-link">...</span>';
-                    container.appendChild(dots);
+                if (dir == "asc") {
+                    if (xVal > yVal) { shouldSwitch = true; break; }
+                } else if (dir == "desc") {
+                    if (xVal < yVal) { shouldSwitch = true; break; }
                 }
             }
-            container.appendChild(createPageItem('›', current + 1, type, current === totalPages));
-            container.appendChild(createPageItem('»', totalPages, type, current === totalPages));
+            if (shouldSwitch) {
+                rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
+                switching = true;
+                switchcount++;
+            } else {
+                if (switchcount == 0 && dir == "asc") {
+                    dir = "desc";
+                    switching = true;
+                }
+            }
         }
+        
+        // Add visual indicator class
+        const header = table.getElementsByTagName("TH")[n];
+        header.classList.add(dir === "asc" ? "sort-asc" : "sort-desc");
+    }
 
-        function createPageItem(label, page, type, isDisabled, isActive) {
-            const li = document.createElement('li'); li.className = `page-item ${isDisabled ? 'disabled' : ''} ${isActive ? 'active' : ''}`;
-            li.innerHTML = `<a class="page-link" href="javascript:void(0)">${label}</a>`;
-            if (!isDisabled && !isActive) li.addEventListener('click', () => { activePages[type] = page; updateDisplay(type); });
-            return li;
-        }
-
-        window.manualSort = function(type, colIndex) {
-            const tbody = document.getElementById(config[type].tbodyId);
-            const rows = Array.from(tbody.querySelectorAll(config[type].rowClass));
-            sortState[type].asc = (sortState[type].col === colIndex) ? !sortState[type].asc : true;
-            sortState[type].col = colIndex;
-            rows.sort((a, b) => {
-                const valA = a.cells[colIndex].innerText.toLowerCase(), valB = b.cells[colIndex].innerText.toLowerCase();
-                return sortState[type].asc ? valA.localeCompare(valB) : valB.localeCompare(valA);
-            });
-            rows.forEach(row => tbody.appendChild(row));
-            activePages[type] = 1; updateDisplay(type);
-        };
-
-        // --- NEW: AUTO-UPDATE SEARCH DROPDOWN ON TAB CLICK ---
+    // Persist Tab across redirects
+    $(document).ready(function() {
+        let hash = window.location.hash;
+        if (hash) { $(`.nav-tabs a[href="${hash}"]`).tab('show'); }
         $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
-            const targetId = $(e.target).attr("href").replace('#', ''); 
-            searchTarget.value = targetId; 
-            updateDisplay(targetId);
+            window.history.replaceState(null, null, $(e.target).attr("href"));
         });
-
-        searchInput.addEventListener('input', () => { activePages[searchTarget.value] = 1; updateDisplay(searchTarget.value); });
-        searchTarget.addEventListener('change', () => { $('.nav-tabs a[href="#' + searchTarget.value + '"]').tab('show'); updateDisplay(searchTarget.value); });
-        window.onscroll = () => { backToTopBtn.style.display = (document.documentElement.scrollTop > 300) ? "flex" : "none"; };
-        backToTopBtn.addEventListener('click', () => { window.scrollTo({ top: 0, behavior: 'smooth' }); });
-
-        ['vendor', 'hierarchy', 'subclass'].forEach(updateDisplay);
-        if (window.location.hash) {
-            const h = window.location.hash.replace('#', '');
-            $('.nav-tabs a[href="' + window.location.hash + '"]').tab('show');
-            searchTarget.value = h; updateDisplay(h);
-        }
     });
 
-    function resetSearch() {
-        const input = document.getElementById('liveSearchInput');
-        input.value = ''; input.dispatchEvent(new Event('input'));
+    function confirmDelete(type, id1, id2 = null) {
+        let url = `/admin/delete_${type}/${id1}`;
+        if(id2) url += `/${id2}`;
+        document.getElementById('deleteForm').action = url;
+        $('#deleteConfirmModal').modal('show');
     }
 </script>
 {% endblock %}

@@ -1,7 +1,7 @@
 from flask import session, jsonify, request, render_template, redirect, url_for, flash
 from portal import app, loggedin_required
 from extensions import db
-from models import Vendor, Brand, SubClass
+from models import Vendor, Brand, SubClass, VendorRDS, HierarchyRDS, PricePointRDS, AgeCodeRDS
 from datetime import datetime, timedelta, date
 import ldap
 import pyodbc
@@ -11,6 +11,8 @@ from routes.vendor import vendor_bp
 from routes.hierarchy import hierarchy_bp
 from routes.subclass import subclass_bp
 from routes.transactions import transactions_bp
+from routes.rds_mng import rds_mng_bp
+
 
 # --- DATABASE CONFIGURATION ---
 app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:@localhost/myproject'
@@ -24,6 +26,7 @@ app.register_blueprint(vendor_bp)
 app.register_blueprint(hierarchy_bp)
 app.register_blueprint(subclass_bp)
 app.register_blueprint(transactions_bp)
+app.register_blueprint(rds_mng_bp)
 
 # --- HELPERS ---
 def generate_earliest_missing_date(days):

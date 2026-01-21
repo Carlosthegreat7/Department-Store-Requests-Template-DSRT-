@@ -2,162 +2,232 @@
 
 {% block content %}
 <style>
-  /* Bento Grid Layout for Dashboard */
-  .dashboard-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-    gap: 20px;
-    padding: 20px;
-    max-width: 1200px;
-    margin: 0 auto;
+  /* --- LIVING GLASS DASHBOARD STYLES --- */
+  .hero-cover {
+    height: 250px; 
+    background: #4361ee; 
+    border-radius: 28px;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    padding: 0 60px;
+    color: white;
+    margin-top: 20px;
+    margin-bottom: 40px; 
+    box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+    transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    border: 1px solid rgba(255, 255, 255, 0.1);
   }
 
-  .hero-img {
+  /* Glassmorphism Overlay */
+  .hero-cover::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.1);
+    backdrop-filter: blur(15px);
+    -webkit-backdrop-filter: blur(15px);
+    z-index: 1;
+  }
+
+  /* Living Blob 1 (The Ripple Effect) */
+  .hero-blob-1 {
+    position: absolute;
+    width: 300px;
+    height: 300px;
+    background: #7209b7;
+    border-radius: 50%;
+    top: -50px;
+    right: -50px;
+    filter: blur(40px);
+    z-index: 0;
+    transition: all 0.8s ease;
+  }
+
+  /* Living Blob 2 (Secondary Color) */
+  .hero-blob-2 {
+    position: absolute;
+    width: 250px;
+    height: 250px;
+    background: #4cc9f0;
+    border-radius: 50%;
+    bottom: -80px;
+    left: 20%;
+    filter: blur(50px);
+    z-index: 0;
+    transition: all 1s ease;
+  }
+
+  /* Interactive Hover Logic */
+  .hero-cover:hover {
+    transform: scale(1.01);
+  }
+
+  .hero-cover:hover .hero-blob-1 {
+    transform: translate(-100px, 50px) scale(1.4);
+    background: #f72585;
+  }
+
+  .hero-cover:hover .hero-blob-2 {
+    transform: translate(150px, -50px) scale(1.2);
+    background: #3f37c9;
+  }
+
+  .brand-logo-frame {
+    width: 110px;
+    height: 110px;
+    background: rgba(255, 255, 255, 0.95);
+    border-radius: 20px;
+    padding: 15px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 2;
+    box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+  }
+
+  .brand-logo-frame img {
     max-width: 100%;
-    height: auto;
-    max-height: 250px;
+    max-height: 100%;
     object-fit: contain;
   }
 
-  .content {
-    width: 90%;
-    margin: 0 auto;
+  .hero-text {
+    margin-left: 35px;
+    z-index: 2;
+    text-shadow: 0 2px 10px rgba(0,0,0,0.1);
   }
 
-  /* --- MINIMALIST LOADING SCREEN STYLES --- */
+  .hero-text h1 { 
+    font-weight: 800; 
+    font-size: 2.2rem; 
+    letter-spacing: -1.2px;
+    margin-bottom: 5px; 
+  }
+
+  .dashboard-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 25px;
+    z-index: 10;
+    padding-bottom: 50px;
+  }
+
+  .action-tile {
+    text-decoration: none !important;
+    color: var(--text-main) !important;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    text-align: center;
+    min-height: 200px;
+    transition: var(--transition);
+  }
+
+  .action-tile i {
+    font-size: 2.2rem;
+    margin-bottom: 15px;
+    color: var(--accent-purple);
+  }
+
+  .action-tile:hover {
+    transform: translateY(-8px);
+    box-shadow: 0 15px 35px rgba(0,0,0,0.1) !important;
+  }
+
+  /* --- AUTH & LOADING --- */
   #loading-overlay {
     position: fixed;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    background-color: rgba(248, 249, 250, 0.9); /* Matches --bg-color */
-    backdrop-filter: blur(8px); /* Premium glassmorphism effect */
-    display: none; /* Hidden until form submission */
+    top: 0; left: 0; width: 100%; height: 100%;
+    background: rgba(248, 249, 250, 0.9);
+    backdrop-filter: blur(10px);
+    display: none;
     z-index: 9999;
-    flex-direction: column;
     align-items: center;
     justify-content: center;
   }
 
-  .loader-bento {
-    width: 50px;
-    height: 50px;
-    border: 4px solid #e9ecef;
-    border-top: 4px solid var(--accent-purple); /* Uses your purple brand color */
+  .spinner-custom {
+    width: 45px;
+    height: 45px;
+    border: 5px solid #e9ecef;
+    border-top: 5px solid var(--accent-purple);
     border-radius: 50%;
-    animation: spin 1s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-    margin-bottom: 20px;
+    animation: spin 1s linear infinite;
   }
 
-  @keyframes spin {
-    0% { transform: rotate(0deg); }
-    100% { transform: rotate(360deg); }
-  }
-
-  .loading-text {
-    font-weight: 600;
-    font-family: 'Inter', sans-serif;
-    color: var(--text-main);
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    font-size: 0.8rem;
-    animation: pulse 1.5s ease-in-out infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-  }
-  /* --- END LOADING STYLES --- */
+  @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 </style>
 
-<body>
-  <div id="loading-overlay">
-    <div class="loader-bento"></div>
-    <div class="loading-text">Authenticating...</div>
-  </div>
+<div id="loading-overlay">
+  <div class="spinner-custom mb-3"></div>
+  <h5 class="font-weight-bold" style="letter-spacing: 1px;">AUTHENTICATING...</h5>
+</div>
 
+<div class="container">
   {% if not session['sdr_loggedin'] %}
     <div class="login-wrapper">
-      <div class="bento-tile shadow-lg" style="max-width: 900px; width: 100%;">
-        <div class="row align-items-center">
-          
-          <div class="col-md-6 text-center border-right">
-            <div transition-style="in:wipe:right">
-              <img src="{{url_for('static', filename='Newtrends.png')}}" class="hero-img mb-4" alt="DSRT Logo">
-              <p class="text-muted small mb-1">Newtrends International Corporation / About Time Corporation / Transcend Prime Corporation</p>
-              <h3 style="font-weight: 700; color: #333;">Department Store Requests Template</h3>
-            </div>
+      <div class="bento-tile shadow-lg text-center" style="max-width: 420px; width: 100%;">
+        <img src="{{ url_for('static', filename='newtrendslogo.png') }}" width="70" class="mb-4" style="object-fit: contain;">
+        <h2 style="font-weight: 800; letter-spacing: -1px;">Enterprise Login</h2>
+        <p class="text-muted mb-4 small">Access the DSRT Management Environment</p>
+        
+        <form id="login-form" method="POST">
+          <div class="form-group mb-3">
+            <input type="text" name="username" class="form-control rounded-pill px-4 border-0 bg-light" placeholder="Username" required>
           </div>
-
-          <div class="col-md-6">
-            <div class="p-4">
-              <h5 class="mb-4 font-weight-bold text-center">Account Login</h5>
-              <form id="login-form" action="{{ url_for('index', _external=True)}}" method="post">
-                <div class="mb-3">
-                  <label for="username" class="form-label font-weight-bold small">Username</label>
-                  <input type="text" class="form-control" name="username" id="username" placeholder="Enter username" required>
-                </div>
-                <div class="mb-3">
-                  <label for="password" class="form-label font-weight-bold small">Password</label>
-                  <input type="password" class="form-control" name="password" id="password" placeholder="••••••••" required>
-                </div>
-                <div class="mt-4 text-center">
-                  <button type="submit" class="btn01-hover bn20"> Log In</button>
-                </div>
-              </form>
-            </div>
+          <div class="form-group mb-4">
+            <input type="password" name="password" class="form-control rounded-pill px-4 border-0 bg-light" placeholder="Password" required>
           </div>
-
-        </div>
+          <button type="submit" class="btn01-hover bn20 w-100 py-3">Sign In</button>
+        </form>
       </div>
     </div>
 
   {% else %}
-    <div class="container py-5">
-      <div class="row mb-5">
-        <div class="col-12 text-center">
-          <div transition-style="in:wipe:right">
-            <p class="text-muted mb-1">Newtrends International Corporation / About Time Corporation / Transcend Prime Corporation</p>
-            <h2 style="font-weight: 800;">Department Store Requests Template</h2>
-            <h6 class="badge badge-primary px-3 py-2" style="font-size: 90%; border-radius: 50px;">
-              {{ session['sdr_usertype'] }}
-            </h6>
-          </div>
-        </div>
+    <div class="hero-cover shadow-lg">
+      <div class="hero-blob-1"></div>
+      <div class="hero-blob-2"></div>
+      
+      <div class="brand-logo-frame">
+        <img src="{{ url_for('static', filename='newtrendslogo.png') }}" alt="NIC Logo">
       </div>
-
-      <div class="dashboard-grid">
-        <div class="bento-tile" style="grid-column: span 2; display: flex; align-items: center; justify-content: space-around;">
-          <div style="max-width: 50%;">
-            <h4 class="font-weight-bold">System Dashboard</h4>
-            <p class="text-muted">
-              Welcome back, <b>{{ session['sdr_curr_user_username'].replace('.', ' ').title() }}!</b> 
-              Use the navigation bar above to manage price change requests, use new templates, etc..
-            </p>
-          </div>
-          <img src="{{url_for('static', filename='Newtrends.png')}}" class="img-fluid" style="max-height: 200px;" alt="Dashboard Graphic">
-        </div>
-
-        <div class="bento-tile text-center d-flex flex-column justify-content-center">
-          <i class="fas fa-info-circle fa-2x mb-3 text-primary"></i>
-          <h5 class="font-weight-bold">Status</h5>
-          <p class="small text-muted mb-0">System is online and operational.</p>
-        </div>
+      <div class="hero-text">
+        <h1>Hello, {{ session['sdr_curr_user_username'].split('.')[0].title() }}!</h1>
+        <p>Managed Services | <span class="badge badge-light text-primary rounded-pill px-3">{{ session['sdr_usertype'] }}</span></p>
       </div>
     </div>
+
+    <div class="dashboard-grid">
+      <a href="{{ url_for('transactions.transaction_generator') }}" class="bento-tile action-tile shadow-lg">
+        <i class="fas fa-plus-circle"></i>
+        <h5 class="font-weight-bold">New Request</h5>
+        <p class="small text-muted mb-0">Generate a price template</p>
+      </a>
+
+      <a href="{{ url_for('admin_management') }}" class="bento-tile action-tile shadow-lg">
+        <i class="fas fa-database"></i>
+        <h5 class="font-weight-bold">SM Master Codes</h5>
+        <p class="small text-muted mb-0">Maintain standard mappings</p>
+      </a>
+
+      <a href="{{ url_for('rds_mng.admin_management_rds') }}" class="bento-tile action-tile shadow-lg">
+        <i class="fas fa-store"></i>
+        <h5 class="font-weight-bold">RDS Master Codes</h5>
+        <p class="small text-muted mb-0">Configure RDS mappings</p>
+      </a>
+    </div>
   {% endif %}
+</div>
 
-  <script>
-    // Show minimalist loader on login form submit
-    const loginForm = document.getElementById('login-form');
-    if (loginForm) {
-        loginForm.addEventListener('submit', function() {
-            document.getElementById('loading-overlay').style.display = 'flex';
-        });
-    }
-  </script>
-</body>
-
+<script>
+  const loginForm = document.getElementById('login-form');
+  if (loginForm) {
+    loginForm.addEventListener('submit', () => {
+      document.getElementById('loading-overlay').style.display = 'flex';
+    });
+  }
+</script>
 {% endblock %}
