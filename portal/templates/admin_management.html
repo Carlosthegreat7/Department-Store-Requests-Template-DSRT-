@@ -2,6 +2,7 @@
 
 {% block content %}
 <style>
+    /* --- BENTO PAGE STYLES --- */
     .mgmt-container { padding-top: 20px; margin-bottom: 50px; }
     
     .tab-content {
@@ -32,11 +33,53 @@
     th.sort-asc::after { content: '\f0de'; color: #560bad; }
     th.sort-desc::after { content: '\f0dd'; color: #560bad; }
 
+    /* --- PAGINATION STYLES --- */
+    .pagination-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid #eee;
+    }
+    .page-btn {
+        padding: 8px 18px;
+        border-radius: 50px;
+        border: 1px solid #dee2e6;
+        background: white;
+        color: #6c757d;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        margin: 0 5px;
+    }
+    .page-btn:hover:not(:disabled) {
+        background: #f8f9fa;
+        color: #560bad;
+        border-color: #560bad;
+    }
+    .page-btn.active {
+        background: #560bad;
+        color: white;
+        border-color: #560bad;
+    }
+    .page-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
     .nav-tabs .nav-link { 
         border: none; color: #6c757d; font-weight: 600; padding: 12px 25px; transition: all 0.3s ease;
     }
     .nav-tabs .nav-link.active { 
         color: #560bad !important; background: transparent; border-bottom: 3px solid #560bad;
+    }
+
+    .search-container {
+        position: sticky; top: 80px; z-index: 1000;
+        background: #f8f9fa; padding: 15px 0;
+    }
+    .bento-tile {
+        background: white; border-radius: 20px; padding: 20px; border: 1px solid rgba(0,0,0,0.05);
     }
 
     /* Premium Button */
@@ -65,18 +108,36 @@
     <div class="row mb-4">
         <div class="col-12">
             <h1 style="font-weight: 800; letter-spacing: -1px;">SM Master Configuration</h1>
-            <p class="text-muted">Click any table header to sort ascending or descending.</p>
+            <p class="text-muted">Maintain standard mappings for SM vendors and hierarchy.</p>
         </div>
     </div>
 
-    <ul class="nav nav-tabs" id="smTabs" role="tablist">
-        <li class="nav-item"><a class="nav-link active" data-toggle="tab" href="#vendor">Vendors</a></li>
-        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#hierarchy">Hierarchy</a></li>
-        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#subclass">Subclasses</a></li>
+    <div class="search-container">
+        <div class="bento-tile shadow-sm d-flex align-items-center">
+            <div class="input-group" style="max-width: 550px;">
+                <div class="input-group-prepend">
+                    <span class="input-group-text bg-white border-right-0" style="border-radius: 50px 0 0 50px;">
+                        <i class="fas fa-search text-muted"></i>
+                    </span>
+                </div>
+                <input type="text" id="mgmtSearch" class="form-control border-left-0" placeholder="Type to search..." style="border-radius: 0 50px 50px 0;">
+            </div>
+            <select id="searchTarget" class="form-control ml-3 rounded-pill" style="max-width: 180px;">
+                <option value="vendor">Vendors</option>
+                <option value="hierarchy">Hierarchy</option>
+                <option value="subclass">Subclasses</option>
+            </select>
+        </div>
+    </div>
+
+    <ul class="nav nav-tabs mt-4" id="smTabs" role="tablist">
+        <li class="nav-item"><a class="nav-link active" data-toggle="tab" href="#vendor" role="tab">Vendors</a></li>
+        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#hierarchy" role="tab">Hierarchy</a></li>
+        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#subclass" role="tab">Subclasses</a></li>
     </ul>
 
     <div class="tab-content mb-5">
-        <div class="tab-pane fade show active" id="vendor">
+        <div class="tab-pane fade show active" id="vendor" role="tabpanel">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h5 class="font-weight-bold mb-0">SM Vendors</h5>
                 <a href="{{ url_for('vendor.add_vendor') }}" class="btn01-hover"><i class="fas fa-plus mr-2"></i> Add Vendor</a>
@@ -104,9 +165,10 @@
                     {% endfor %}
                 </tbody>
             </table>
+            <div id="vendorPagination" class="pagination-container"></div>
         </div>
 
-        <div class="tab-pane fade" id="hierarchy">
+        <div class="tab-pane fade" id="hierarchy" role="tabpanel">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h5 class="font-weight-bold mb-0">Product Hierarchy</h5>
                 <a href="{{ url_for('hierarchy.add_hierarchy') }}" class="btn01-hover"><i class="fas fa-plus mr-2"></i> Add Brand</a>
@@ -140,9 +202,10 @@
                     {% endfor %}
                 </tbody>
             </table>
+            <div id="hierarchyPagination" class="pagination-container"></div>
         </div>
 
-        <div class="tab-pane fade" id="subclass">
+        <div class="tab-pane fade" id="subclass" role="tabpanel">
             <div class="d-flex justify-content-between align-items-center mb-4">
                 <h5 class="font-weight-bold mb-0">Material Subclasses</h5>
                 <a href="{{ url_for('subclass.add_subclass') }}" class="btn01-hover"><i class="fas fa-plus mr-2"></i> Add Subclass</a>
@@ -172,6 +235,7 @@
                     {% endfor %}
                 </tbody>
             </table>
+            <div id="subclassPagination" class="pagination-container"></div>
         </div>
     </div>
 </div>
@@ -197,16 +261,122 @@
 
 <script>
     /**
-     * SORTING LOGIC
-     * Sorts table columns in Ascending/Descending order.
+     * PAGINATION ENGINE
+     * Handles dynamic paging for tables with scroll-to-top logic.
      */
-    function sortTable(n, tableId) {
+    const ROWS_PER_PAGE = 10;
+    const tableStates = {
+        vendor: { currentPage: 1 },
+        hierarchy: { currentPage: 1 },
+        subclass: { currentPage: 1 }
+    };
+
+    function paginateTable(type) {
+        const table = document.getElementById(`${type}Table`);
+        const searchVal = document.getElementById('mgmtSearch').value.toLowerCase();
+        
+        // Filter rows based on search first
+        let allRows = Array.from(table.querySelectorAll('tbody tr'));
+        let visibleRows = allRows.filter(row => row.innerText.toLowerCase().includes(searchVal));
+        
+        const totalRows = visibleRows.length;
+        const totalPages = Math.ceil(totalRows / ROWS_PER_PAGE);
+        
+        // Reset to page 1 if current page is out of bounds
+        if (tableStates[type].currentPage > totalPages) tableStates[type].currentPage = 1;
+        if (tableStates[type].currentPage < 1) tableStates[type].currentPage = 1;
+
+        const start = (tableStates[type].currentPage - 1) * ROWS_PER_PAGE;
+        const end = start + ROWS_PER_PAGE;
+
+        // Hide all, show only current page
+        allRows.forEach(row => row.style.display = 'none');
+        visibleRows.slice(start, end).forEach(row => row.style.display = '');
+
+        renderPaginationUI(type, totalPages, totalRows);
+    }
+
+    function renderPaginationUI(type, totalPages, totalRows) {
+        const container = document.getElementById(`${type}Pagination`);
+        let html = `<span class="small text-muted">Showing <b>${totalRows}</b> results</span><div>`;
+        
+        // Previous Button
+        html += `<button class="page-btn" ${tableStates[type].currentPage === 1 ? 'disabled' : ''} 
+                 onclick="changePage('${type}', ${tableStates[type].currentPage - 1})"><i class="fas fa-chevron-left"></i></button>`;
+
+        // Page Numbers (limited)
+        for(let i=1; i <= totalPages; i++) {
+            if(i === 1 || i === totalPages || (i >= tableStates[type].currentPage - 1 && i <= tableStates[type].currentPage + 1)) {
+                html += `<button class="page-btn ${tableStates[type].currentPage === i ? 'active' : ''}" 
+                         onclick="changePage('${type}', ${i})">${i}</button>`;
+            } else if (i === tableStates[type].currentPage - 2 || i === tableStates[type].currentPage + 2) {
+                html += `<span class="text-muted mx-1">...</span>`;
+            }
+        }
+
+        // Next Button
+        html += `<button class="page-btn" ${tableStates[type].currentPage === totalPages ? 'disabled' : ''} 
+                 onclick="changePage('${type}', ${tableStates[type].currentPage + 1})"><i class="fas fa-chevron-right"></i></button>`;
+        
+        html += `</div>`;
+        container.innerHTML = totalPages > 1 ? html : '';
+    }
+
+    /**
+     * SMOOTH SCROLL PAGE CHANGE
+     */
+    window.changePage = function(type, page) {
+        tableStates[type].currentPage = page;
+        paginateTable(type);
+        
+        // Smoothly scroll to top of management section
+        window.scrollTo({
+            top: $('.mgmt-container').offset().top - 100,
+            behavior: 'smooth'
+        });
+    }
+
+    $(document).ready(function() {
+        // Initial pagination
+        ['vendor', 'hierarchy', 'subclass'].forEach(paginateTable);
+
+        // Search integration
+        $('#mgmtSearch').on('input', function() {
+            ['vendor', 'hierarchy', 'subclass'].forEach(type => {
+                tableStates[type].currentPage = 1;
+                paginateTable(type);
+            });
+        });
+
+        // Tab Sync
+        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+            const target = $(e.target).attr("href").replace('#', '');
+            document.getElementById('searchTarget').value = target;
+            paginateTable(target);
+            window.history.replaceState(null, null, $(e.target).attr("href"));
+        });
+
+        // Dropdown Sync
+        $('#searchTarget').on('change', function() {
+            $(`#smTabs a[href="#${this.value}"]`).tab('show');
+        });
+
+        // Recover tab from hash
+        let hash = window.location.hash;
+        if (hash) {
+            $(`.nav-tabs a[href="${hash}"]`).tab('show');
+            document.getElementById('searchTarget').value = hash.replace('#', '');
+        }
+    });
+
+    /**
+     * SORTING LOGIC
+     */
+    window.sortTable = function(n, tableId) {
         var table = document.getElementById(tableId);
         var rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
         switching = true;
         dir = "asc"; 
-        
-        // Remove existing sort classes
         $(table).find('th').removeClass('sort-asc sort-desc');
 
         while (switching) {
@@ -220,7 +390,6 @@
                 let xVal = x.innerText.toLowerCase();
                 let yVal = y.innerText.toLowerCase();
 
-                // Check if numeric
                 if (!isNaN(parseFloat(xVal)) && !isNaN(parseFloat(yVal))) {
                     xVal = parseFloat(xVal);
                     yVal = parseFloat(yVal);
@@ -243,22 +412,13 @@
                 }
             }
         }
+        table.getElementsByTagName("TH")[n].classList.add(dir === "asc" ? "sort-asc" : "sort-desc");
         
-        // Add visual indicator class
-        const header = table.getElementsByTagName("TH")[n];
-        header.classList.add(dir === "asc" ? "sort-asc" : "sort-desc");
+        // Re-paginate after sorting
+        paginateTable(tableId.replace('Table', ''));
     }
 
-    // Persist Tab across redirects
-    $(document).ready(function() {
-        let hash = window.location.hash;
-        if (hash) { $(`.nav-tabs a[href="${hash}"]`).tab('show'); }
-        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
-            window.history.replaceState(null, null, $(e.target).attr("href"));
-        });
-    });
-
-    function confirmDelete(type, id1, id2 = null) {
+    window.confirmDelete = function(type, id1, id2 = null) {
         let url = `/admin/delete_${type}/${id1}`;
         if(id2) url += `/${id2}`;
         document.getElementById('deleteForm').action = url;

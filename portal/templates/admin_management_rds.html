@@ -2,7 +2,9 @@
 
 {% block content %}
 <style>
+    /* --- BENTO PAGE STYLES --- */
     .mgmt-container { padding-top: 20px; margin-bottom: 50px; }
+    
     .tab-content {
         background-color: #ffffff;
         border: 1px solid #dee2e6;
@@ -10,32 +12,97 @@
         padding: 25px;
         border-bottom-left-radius: 20px;
         border-bottom-right-radius: 20px;
-        box-shadow: var(--shadow);
+        box-shadow: 0 4px 6px rgba(0,0,0,0.05);
     }
-    .nav-tabs { border-bottom: 2px solid #dee2e6; }
+
+    /* --- SORTABLE HEADER STYLES --- */
+    th.sortable {
+        cursor: pointer;
+        position: relative;
+        transition: background 0.2s;
+    }
+    th.sortable:hover { background: #f8f9fa; }
+    th.sortable::after {
+        content: '\f0dc';
+        font-family: 'Font Awesome 5 Free';
+        font-weight: 900;
+        float: right;
+        color: #ccc;
+        font-size: 0.8rem;
+    }
+    th.sort-asc::after { content: '\f0de'; color: #560bad; }
+    th.sort-desc::after { content: '\f0dd'; color: #560bad; }
+
+    /* --- PAGINATION STYLES --- */
+    .pagination-container {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        margin-top: 30px;
+        padding-top: 20px;
+        border-top: 1px solid #eee;
+    }
+    .page-btn {
+        padding: 8px 18px;
+        border-radius: 50px;
+        border: 1px solid #dee2e6;
+        background: white;
+        color: #6c757d;
+        font-weight: 600;
+        transition: all 0.3s ease;
+        margin: 0 5px;
+    }
+    .page-btn:hover:not(:disabled) {
+        background: #f8f9fa;
+        color: #560bad;
+        border-color: #560bad;
+    }
+    .page-btn.active {
+        background: #560bad;
+        color: white;
+        border-color: #560bad;
+    }
+    .page-btn:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+    }
+
     .nav-tabs .nav-link { 
-        border: none; 
-        color: #6c757d; 
-        font-weight: 600; 
-        padding: 12px 25px;
-        transition: var(--transition);
+        border: none; color: #6c757d; font-weight: 600; padding: 12px 25px; transition: all 0.3s ease;
     }
     .nav-tabs .nav-link.active { 
-        color: var(--accent-purple) !important; 
-        background: transparent;
-        border-bottom: 3px solid var(--accent-purple);
+        color: #560bad !important; background: transparent; border-bottom: 3px solid #560bad;
     }
+
     .search-container {
-        position: sticky;
-        top: 80px;
-        z-index: 1000;
-        background: var(--bg-color);
-        padding: 15px 0;
+        position: sticky; top: 80px; z-index: 1000;
+        background: #f8f9fa; padding: 15px 0;
     }
-    .sort-btn {
-        background: none; border: none; color: #ccc; cursor: pointer; padding: 0 5px; font-size: 0.8rem;
+    .bento-tile {
+        background: white; border-radius: 20px; padding: 20px; border: 1px solid rgba(0,0,0,0.05);
     }
-    .sort-btn.active { color: var(--accent-purple); }
+
+    /* Premium Button */
+    .btn01-hover {
+        padding: 10px 25px; border-radius: 50px; color: #fff; font-weight: 600; font-size: 14px;
+        background-image: linear-gradient(to right, #667eea, #764ba2, #6B8DD6, #8E37D7);
+        background-size: 300% 100%; transition: all .4s ease-in-out; border: none;
+        box-shadow: 0 4px 15px 0 rgba(116, 79, 168, 0.45);
+        display: inline-block;
+    }
+    .btn01-hover:hover { background-position: 100% 0; transform: translateY(-2px); color: #fff; text-decoration: none; }
+
+    /* Action Drawer */
+    .action-drawer {
+        display: flex; justify-content: flex-end; align-items: center; width: 40px; height: 35px;
+        background: #f8f9fa; border-radius: 20px; padding: 0 10px; margin-left: auto;
+        overflow: hidden; transition: width 0.4s ease; border: 1px solid rgba(0,0,0,0.05);
+    }
+    .action-drawer:hover { width: 60px; background: #fff; }
+    .action-btn { background: none; border: none; padding: 5px; opacity: 0.3; transition: 0.3s; cursor: pointer; }
+    .action-drawer:hover .action-btn { opacity: 1; }
+    .btn-edit { color: #560bad; }
+    .btn-delete { color: #f72585; }
 </style>
 
 <div class="container mgmt-container">
@@ -47,16 +114,16 @@
     </div>
 
     <div class="search-container">
-        <div class="bento-tile p-3 d-flex align-items-center">
-            <div class="input-group" style="max-width: 600px;">
+        <div class="bento-tile shadow-sm d-flex align-items-center">
+            <div class="input-group" style="max-width: 550px;">
                 <div class="input-group-prepend">
                     <span class="input-group-text bg-white border-right-0" style="border-radius: 50px 0 0 50px;">
                         <i class="fas fa-search text-muted"></i>
                     </span>
                 </div>
-                <input type="text" id="mgmtSearch" class="form-control border-left-0" placeholder="Search across RDS records..." style="border-radius: 0 50px 50px 0;">
+                <input type="text" id="mgmtSearch" class="form-control border-left-0" placeholder="Type to search RDS records..." style="border-radius: 0 50px 50px 0;">
             </div>
-            <select id="searchTarget" class="form-control ml-3 rounded-pill" style="max-width: 200px;">
+            <select id="searchTarget" class="form-control ml-3 rounded-pill" style="max-width: 180px;">
                 <option value="vendor">Vendors</option>
                 <option value="hierarchy">Hierarchy</option>
                 <option value="price">Price Points</option>
@@ -66,165 +133,282 @@
     </div>
 
     <ul class="nav nav-tabs mt-4" id="rdsTabs" role="tablist">
-        <li class="nav-item"><a class="nav-link active" data-toggle="tab" href="#vendor">Vendors</a></li>
-        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#hierarchy">Hierarchy</a></li>
-        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#price">Price Points</a></li>
-        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#age">Age Codes</a></li>
+        <li class="nav-item"><a class="nav-link active" data-toggle="tab" href="#vendor" role="tab">Vendors</a></li>
+        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#hierarchy" role="tab">Hierarchy</a></li>
+        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#price" role="tab">Price Points</a></li>
+        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#age" role="tab">Age Codes</a></li>
     </ul>
 
     <div class="tab-content mb-5">
-        <div class="tab-pane fade show active" id="vendor">
-            <div class="d-flex justify-content-between mb-3">
-                <h5 class="font-weight-bold">RDS Vendors</h5>
-                <button class="btn01-hover bn20 btn-sm" data-toggle="modal" data-target="#addVendorRdsModal">Add Vendor</button>
+        <div class="tab-pane fade show active" id="vendor" role="tabpanel">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h5 class="font-weight-bold mb-0">RDS Vendors</h5>
+                <button class="btn01-hover" data-toggle="modal" data-target="#addVendorRdsModal"><i class="fas fa-plus mr-2"></i> Add Vendor</button>
             </div>
             <table class="table table-hover border-0" id="vendorTable">
                 <thead class="small text-muted uppercase">
                     <tr>
-                        <th>Company Name <button class="sort-btn" onclick="sortTable('vendor', 0)"><i class="fas fa-sort"></i></button></th>
-                        <th>Vendor Code</th>
-                        <th>Mfg Part No</th>
-                        <th class="text-right">Actions</th>
+                        <th class="sortable" onclick="sortTable(0, 'vendorTable')">Company Name</th>
+                        <th class="sortable" onclick="sortTable(1, 'vendorTable')">Vendor Code</th>
+                        <th class="sortable" onclick="sortTable(2, 'vendorTable')">Mfg Part No</th>
+                        <th class="text-right">Action</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for v in vendors %}
                     <tr>
-                        <td class="font-weight-bold">{{ v.company_name }}</td>
-                        <td>{{ v.vendor_code }}</td>
-                        <td>{{ v.mfg_part_no }}</td>
+                        <td class="align-middle font-weight-bold">{{ v.company_name }}</td>
+                        <td class="align-middle">{{ v.vendor_code }}</td>
+                        <td class="align-middle">{{ v.mfg_part_no }}</td>
                         <td class="text-right">
-                            <button class="btn btn-light btn-sm rounded-pill px-3" onclick="confirmDelete('vendor', '{{ v.id }}')">
-                                <i class="fas fa-trash text-danger"></i>
-                            </button>
+                            <div class="action-drawer">
+                                <button class="action-btn btn-delete" onclick="confirmDelete('vendor', '{{ v.id }}')"><i class="fas fa-trash"></i></button>
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
+            <div id="vendorPagination" class="pagination-container"></div>
         </div>
 
-        <div class="tab-pane fade" id="hierarchy">
-            <div class="d-flex justify-content-between mb-3">
-                <h5 class="font-weight-bold">RDS Hierarchy</h5>
-                <button class="btn01-hover bn20 btn-sm" data-toggle="modal" data-target="#addHierarchyRdsModal">Add Hierarchy</button>
+        <div class="tab-pane fade" id="hierarchy" role="tabpanel">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h5 class="font-weight-bold mb-0">RDS Hierarchy</h5>
+                <button class="btn01-hover" data-toggle="modal" data-target="#addHierarchyRdsModal"><i class="fas fa-plus mr-2"></i> Add Hierarchy</button>
             </div>
             <table class="table table-hover border-0" id="hierarchyTable">
                 <thead class="small text-muted uppercase">
                     <tr>
-                        <th>Dept</th>
-                        <th>Sub-Dept</th>
-                        <th>Class</th>
-                        <th>S-Class</th>
-                        <th>Name</th>
-                        <th class="text-right">Actions</th>
+                        <th class="sortable" onclick="sortTable(0, 'hierarchyTable')">Dept</th>
+                        <th class="sortable" onclick="sortTable(1, 'hierarchyTable')">Sub-Dept</th>
+                        <th class="sortable" onclick="sortTable(2, 'hierarchyTable')">Class</th>
+                        <th class="sortable" onclick="sortTable(3, 'hierarchyTable')">S-Class</th>
+                        <th class="sortable" onclick="sortTable(4, 'hierarchyTable')">Name</th>
+                        <th class="text-right">Action</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for h in hierarchies %}
                     <tr>
-                        <td>{{ h.dept }}</td>
-                        <td>{{ h.sdept }}</td>
-                        <td>{{ h.class_code }}</td>
-                        <td>{{ h.sclass }}</td>
-                        <td class="font-weight-bold">{{ h.sclass_name }}</td>
+                        <td class="align-middle">{{ h.dept }}</td>
+                        <td class="align-middle">{{ h.sdept }}</td>
+                        <td class="align-middle">{{ h.class_code }}</td>
+                        <td class="align-middle">{{ h.sclass }}</td>
+                        <td class="align-middle font-weight-bold">{{ h.sclass_name }}</td>
                         <td class="text-right">
-                            <button class="btn btn-light btn-sm rounded-pill px-3" onclick="confirmDelete('hierarchy', '{{ h.id }}')">
-                                <i class="fas fa-trash text-danger"></i>
-                            </button>
+                            <div class="action-drawer">
+                                <button class="action-btn btn-delete" onclick="confirmDelete('hierarchy', '{{ h.id }}')"><i class="fas fa-trash"></i></button>
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
+            <div id="hierarchyPagination" class="pagination-container"></div>
         </div>
 
-        <div class="tab-pane fade" id="price">
-            <div class="d-flex justify-content-between mb-3">
-                <h5 class="font-weight-bold">Price Points</h5>
-                <button class="btn01-hover bn20 btn-sm" data-toggle="modal" data-target="#addPricePointModal">Add Price Point</button>
+        <div class="tab-pane fade" id="price" role="tabpanel">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h5 class="font-weight-bold mb-0">Price Points</h5>
+                <button class="btn01-hover" data-toggle="modal" data-target="#addPricePointModal"><i class="fas fa-plus mr-2"></i> Add Price Point</button>
             </div>
             <table class="table table-hover border-0" id="priceTable">
                 <thead class="small text-muted uppercase">
                     <tr>
-                        <th>Code</th>
-                        <th>Description</th>
-                        <th class="text-right">Actions</th>
+                        <th class="sortable" onclick="sortTable(0, 'priceTable')">Code</th>
+                        <th class="sortable" onclick="sortTable(1, 'priceTable')">Description</th>
+                        <th class="text-right">Action</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for p in price_points %}
                     <tr>
-                        <td class="font-weight-bold">{{ p.price_point_code }}</td>
-                        <td>{{ p.price_point_desc }}</td>
+                        <td class="align-middle font-weight-bold">{{ p.price_point_code }}</td>
+                        <td class="align-middle">{{ p.price_point_desc }}</td>
                         <td class="text-right">
-                            <button class="btn btn-light btn-sm rounded-pill px-3" onclick="confirmDelete('price', '{{ p.id }}')"><i class="fas fa-trash text-danger"></i></button>
+                            <div class="action-drawer">
+                                <button class="action-btn btn-delete" onclick="confirmDelete('price', '{{ p.id }}')"><i class="fas fa-trash"></i></button>
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
+            <div id="pricePagination" class="pagination-container"></div>
         </div>
 
-        <div class="tab-pane fade" id="age">
-            <div class="d-flex justify-content-between mb-3">
-                <h5 class="font-weight-bold">Age Codes</h5>
-                <button class="btn01-hover bn20 btn-sm" data-toggle="modal" data-target="#addAgeCodeModal">Add Age Code</button>
+        <div class="tab-pane fade" id="age" role="tabpanel">
+            <div class="d-flex justify-content-between align-items-center mb-4">
+                <h5 class="font-weight-bold mb-0">Age Codes</h5>
+                <button class="btn01-hover" data-toggle="modal" data-target="#addAgeCodeModal"><i class="fas fa-plus mr-2"></i> Add Age Code</button>
             </div>
             <table class="table table-hover border-0" id="ageTable">
                 <thead class="small text-muted uppercase">
                     <tr>
-                        <th>Code</th>
-                        <th>Description</th>
-                        <th class="text-right">Actions</th>
+                        <th class="sortable" onclick="sortTable(0, 'ageTable')">Code</th>
+                        <th class="sortable" onclick="sortTable(1, 'ageTable')">Description</th>
+                        <th class="text-right">Action</th>
                     </tr>
                 </thead>
                 <tbody>
                     {% for a in age_codes %}
                     <tr>
-                        <td class="font-weight-bold">{{ a.age_code }}</td>
-                        <td>{{ a.description }}</td>
+                        <td class="align-middle font-weight-bold">{{ a.age_code }}</td>
+                        <td class="align-middle">{{ a.description }}</td>
                         <td class="text-right">
-                            <button class="btn btn-light btn-sm rounded-pill px-3" onclick="confirmDelete('age', '{{ a.id }}')"><i class="fas fa-trash text-danger"></i></button>
+                            <div class="action-drawer">
+                                <button class="action-btn btn-delete" onclick="confirmDelete('age', '{{ a.id }}')"><i class="fas fa-trash"></i></button>
+                            </div>
                         </td>
                     </tr>
                     {% endfor %}
                 </tbody>
             </table>
+            <div id="agePagination" class="pagination-container"></div>
         </div>
     </div>
 </div>
 
-<script>
-    // Mimicking the search logic from admin_management.html
-    const searchInput = document.getElementById('mgmtSearch');
-    const searchTarget = document.getElementById('searchTarget');
+<div class="modal fade" id="deleteConfirmModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content" style="border-radius: 25px; border: none;">
+            <div class="text-center p-4">
+                <i class="fas fa-trash-alt fa-3x text-danger mb-3"></i>
+                <h4 class="font-weight-bold">Delete RDS Record?</h4>
+                <p class="text-muted">This action is permanent and may affect RDS standard mapping.</p>
+                <form id="deleteForm" method="POST">
+                    <button type="button" class="btn btn-light rounded-pill px-4 mr-2" data-dismiss="modal">Cancel</button>
+                    <button type="submit" class="btn btn-danger rounded-pill px-4">Confirm Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
 
-    function updateDisplay(type) {
-        const filter = searchInput.value.toLowerCase();
-        const rows = document.querySelectorAll(`#${type}Table tbody tr`);
-        rows.forEach(row => {
-            const text = row.innerText.toLowerCase();
-            row.style.display = text.includes(filter) ? "" : "none";
-        });
+<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.bundle.min.js"></script>
+
+<script>
+    /**
+     * PAGINATION & SEARCH ENGINE
+     */
+    const ROWS_PER_PAGE = 10;
+    const tableStates = {
+        vendor: { currentPage: 1 },
+        hierarchy: { currentPage: 1 },
+        price: { currentPage: 1 },
+        age: { currentPage: 1 }
+    };
+
+    function paginateTable(type) {
+        const table = document.getElementById(`${type}Table`);
+        const searchVal = document.getElementById('mgmtSearch').value.toLowerCase();
+        
+        let allRows = Array.from(table.querySelectorAll('tbody tr'));
+        let visibleRows = allRows.filter(row => row.innerText.toLowerCase().includes(searchVal));
+        
+        const totalRows = visibleRows.length;
+        const totalPages = Math.ceil(totalRows / ROWS_PER_PAGE);
+        
+        if (tableStates[type].currentPage > totalPages) tableStates[type].currentPage = 1;
+
+        const start = (tableStates[type].currentPage - 1) * ROWS_PER_PAGE;
+        const end = start + ROWS_PER_PAGE;
+
+        allRows.forEach(row => row.style.display = 'none');
+        visibleRows.slice(start, end).forEach(row => row.style.display = '');
+
+        renderPaginationUI(type, totalPages, totalRows);
     }
 
-    searchInput.addEventListener('input', () => updateDisplay(searchTarget.value));
-    searchTarget.addEventListener('change', (e) => {
-        $(`#rdsTabs a[href="#${e.target.value}"]`).tab('show');
-        updateDisplay(e.target.value);
-    });
+    function renderPaginationUI(type, totalPages, totalRows) {
+        const container = document.getElementById(`${type}Pagination`);
+        let html = `<span class="small text-muted">Showing <b>${totalRows}</b> results</span><div>`;
+        
+        html += `<button class="page-btn" ${tableStates[type].currentPage === 1 ? 'disabled' : ''} 
+                 onclick="changePage('${type}', ${tableStates[type].currentPage - 1})"><i class="fas fa-chevron-left"></i></button>`;
 
-    $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
-        const targetId = $(e.target).attr("href").replace('#', '');
-        searchTarget.value = targetId;
-        updateDisplay(targetId);
-    });
-
-    function confirmDelete(type, id) {
-        if(confirm(`Confirm deletion of this ${type} record?`)) {
-            window.location.href = `/admin/management/rds/delete-${type}/${id}`;
+        for(let i=1; i <= totalPages; i++) {
+            if(i === 1 || i === totalPages || (i >= tableStates[type].currentPage - 1 && i <= tableStates[type].currentPage + 1)) {
+                html += `<button class="page-btn ${tableStates[type].currentPage === i ? 'active' : ''}" 
+                         onclick="changePage('${type}', ${i})">${i}</button>`;
+            } else if (i === tableStates[type].currentPage - 2 || i === tableStates[type].currentPage + 2) {
+                html += `<span class="text-muted mx-1">...</span>`;
+            }
         }
+
+        html += `<button class="page-btn" ${tableStates[type].currentPage === totalPages ? 'disabled' : ''} 
+                 onclick="changePage('${type}', ${tableStates[type].currentPage + 1})"><i class="fas fa-chevron-right"></i></button>`;
+        
+        html += `</div>`;
+        container.innerHTML = totalPages > 1 ? html : '';
+    }
+
+    window.changePage = function(type, page) {
+        tableStates[type].currentPage = page;
+        paginateTable(type);
+        window.scrollTo({ top: $('.mgmt-container').offset().top - 100, behavior: 'smooth' });
+    }
+
+    $(document).ready(function() {
+        ['vendor', 'hierarchy', 'price', 'age'].forEach(paginateTable);
+
+        $('#mgmtSearch').on('input', function() {
+            ['vendor', 'hierarchy', 'price', 'age'].forEach(type => {
+                tableStates[type].currentPage = 1;
+                paginateTable(type);
+            });
+        });
+
+        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
+            const target = $(e.target).attr("href").replace('#', '');
+            document.getElementById('searchTarget').value = target;
+            paginateTable(target);
+        });
+
+        $('#searchTarget').on('change', function() {
+            $(`#rdsTabs a[href="#${this.value}"]`).tab('show');
+        });
+    });
+
+    /**
+     * SORTING LOGIC
+     */
+    window.sortTable = function(n, tableId) {
+        var table = document.getElementById(tableId);
+        var rows, switching, i, x, y, shouldSwitch, dir, switchcount = 0;
+        switching = true;
+        dir = "asc"; 
+        $(table).find('th').removeClass('sort-asc sort-desc');
+
+        while (switching) {
+            switching = false;
+            rows = table.rows;
+            for (i = 1; i < (rows.length - 1); i++) {
+                shouldSwitch = false;
+                x = rows[i].getElementsByTagName("TD")[n];
+                y = rows[i + 1].getElementsByTagName("TD")[n];
+                let xVal = x.innerText.toLowerCase();
+                let yVal = y.innerText.toLowerCase();
+                if (dir == "asc") { if (xVal > yVal) { shouldSwitch = true; break; } } 
+                else if (dir == "desc") { if (xVal < yVal) { shouldSwitch = true; break; } }
+            }
+            if (shouldSwitch) {
+                rows[i].parentNode.insertBefore(rows[i + 1], rows[i]);
+                switching = true;
+                switchcount++;
+            } else {
+                if (switchcount == 0 && dir == "asc") { dir = "desc"; switching = true; }
+            }
+        }
+        table.getElementsByTagName("TH")[n].classList.add(dir === "asc" ? "sort-asc" : "sort-desc");
+        paginateTable(tableId.replace('Table', ''));
+    }
+
+    window.confirmDelete = function(type, id) {
+        document.getElementById('deleteForm').action = `/admin/management/rds/delete-${type}/${id}`;
+        $('#deleteConfirmModal').modal('show');
     }
 </script>
 {% endblock %}
