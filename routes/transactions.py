@@ -2,12 +2,18 @@ import os
 import pandas as pd
 import io
 import json
+import zipfile
 import calendar
 import traceback
+import logging
 import mysql.connector
 from datetime import datetime, timedelta
 from PIL import Image
 from flask import Blueprint, render_template, request, jsonify, session, flash, redirect, url_for, send_file, make_response, Response
+
+# Setup Logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 # Import SQLconnect from the portal package
 try:
@@ -20,14 +26,10 @@ except ImportError:
 
 transactions_bp = Blueprint('transactions', __name__)
 
-# Global progress tracker for the animated loading bar
 progress_data = {"current": 0, "total": 0, "status": "Initializing..."}
-
-# Official network path for product images
 NETWORK_IMAGE_PATH = r'\\mgsvr09\niccatalog'
 
 def get_mysql_conn():
-    """Safety-wrapped MySQL connection for the local hierarchy database."""
     try:
         return mysql.connector.connect(
             host="localhost",
@@ -39,7 +41,6 @@ def get_mysql_conn():
         return None
 
 def find_image_recursive(base_path, item_no):
-    """Searches through all subfolders for a file matching the item number."""
     extensions = ['.jpg', '.JPG', '.jpeg', '.png']
     item_no_lower = str(item_no).strip().lower()
     try:
@@ -50,12 +51,11 @@ def find_image_recursive(base_path, item_no):
                 if name_part.startswith(item_no_lower) and ext_part in extensions:
                     return os.path.join(root, filename)
     except Exception as e:
-        print(f"Directory access error: {e}")
+        logger.error(f"Directory access error: {e}")
     return None
 
 @transactions_bp.route('/progress')
 def progress():
-    """Streams real-time progress data to the frontend loading bar."""
     def generate():
         while True:
             yield f"data: {json.dumps(progress_data)}\n\n"
@@ -63,51 +63,18 @@ def progress():
                 break
     return Response(generate(), mimetype='text/event-stream')
 
-@transactions_bp.route('/validate-request', methods=['POST'])
-def validate_request():
-    """Performs a case-insensitive check against the Price table for the form feedback."""
-    pc_memo = request.form.get('pc_memo', '').strip().upper()
-    sales_code = request.form.get('sales_code', '').strip().upper()
-    
-    if not pc_memo or not sales_code:
-        return jsonify({'exists': False})
-
-    conn, cursor, prefix = SQLconnect('NICREP', "DSRT")
-    if conn is None:
-        return jsonify({'exists': False, 'error': 'Database Connection Failed'})
-
-    try:
-        check_qry = ('SELECT TOP 1 "Item No_" FROM dbo."Newtrends International Corp_$Sales Price" WITH (NOLOCK) '
-                     'WHERE "Sales Code"=? AND "PC Memo No"=?' )
-        df = pd.read_sql(check_qry, conn, params=[sales_code, pc_memo])
-        return jsonify({'exists': not df.empty})
-    except Exception as e:
-        return jsonify({'exists': False, 'error': str(e)})
-    finally:
-        if conn: conn.close()
-
-@transactions_bp.route('/transaction-generator')
-def transaction_generator():
-    if not session.get('sdr_loggedin'):
-        return render_template('home.html')
-    return render_template('transaction_form.html')
-
 @transactions_bp.route('/process-template', methods=['POST'])
 def process_template():
     global progress_data
-    
-    # Reset progress
-    progress_data["current"] = 0
-    progress_data["total"] = 0
-    progress_data["status"] = "Accessing Navision SQL..."
+    progress_data.update({"current": 0, "total": 0, "status": "Accessing Navision SQL..."})
 
     company_selection = request.form.get('company', '').strip().upper()
-    pc_memo = request.form.get('pc_memo').strip().upper()
-    sales_code = request.form.get('sales_code').strip().upper()
+    pc_memo = request.form.get('pc_memo', '').strip().upper()
+    sales_code = request.form.get('sales_code', '').strip().upper()
     
     conn, cursor, prefix = SQLconnect('NICREP', "DSRT")
     if conn is None:
-        return "Database Connection Failed", 500
+        return jsonify({"error": "Database Connection Failed"}), 500
 
     try:
         # 1. Fetch Price Data
@@ -117,9 +84,9 @@ def process_template():
         prices_df = pd.read_sql(price_qry, conn, params=[sales_code, pc_memo])
 
         if prices_df.empty:
-            return "No records found", 404
+            return jsonify({"error": "No records found in Navision for the provided codes."}), 404
 
-        # 2. Fetch Extended Item Details
+        # 2. Fetch Item Details
         item_list = prices_df['Item No_'].tolist()
         placeholders = ', '.join(['?'] * len(item_list))
         item_qry = (f'SELECT "No_" AS "Item No_", "Description", "Product Group Code" AS "Brand", '
@@ -129,44 +96,16 @@ def process_template():
                     f'FROM dbo."Newtrends International Corp_$Item" WITH (NOLOCK) '
                     f'WHERE "No_" IN ({placeholders})')
         items_df = pd.read_sql(item_qry, conn, params=item_list)
-        
         merged_df = pd.merge(items_df, prices_df, on="Item No_")
 
-        # 3. Filename Formatting (MySQL Lookups)
-        vendor_code, dept_sub, class_sub = "000000", "000000", "000000"
-        mysql_conn = get_mysql_conn()
-        
-        if mysql_conn:
-            vendor_map = {"NIC": "NEWTRENDS INTERNATIONAL CORP.", "ATC": "ABOUT TIME CORP.", "TPC": "TIME PLUS CORP."}
-            full_vendor = vendor_map.get(company_selection, "")
-            
-            # Fetch Vendor Code
-            v_df = pd.read_sql("SELECT vendor_code FROM vendors WHERE vendor_name = %s LIMIT 1", mysql_conn, params=[full_vendor])
-            if not v_df.empty: vendor_code = str(v_df['vendor_code'].iloc[0])
+        # --- MEMORY SAFETY CHECK (Error Handling 3) ---
+        if len(merged_df) > 5000:
+            return jsonify({"error": "Request too large. Please limit to 5,000 items per batch."}), 400
 
-            # Fetch Hierarchy codes for the first item
-            first_brand = merged_df['Brand'].iloc[0] if not merged_df.empty else ""
-            h_qry = """
-                SELECT b.dept_code, b.sub_dept_code, b.class_code, s.subclass_code 
-                FROM brands b LEFT JOIN sub_classes s ON b.product_group = s.product_group 
-                WHERE b.product_group = %s LIMIT 1
-            """
-            h_df = pd.read_sql(h_qry, mysql_conn, params=[first_brand])
-            if not h_df.empty:
-                dept_sub = f"{h_df['dept_code'].iloc[0]}{h_df['sub_dept_code'].iloc[0]}"
-                class_sub = f"{h_df['class_code'].iloc[0]}{h_df['subclass_code'].iloc[0]}"
-            mysql_conn.close()
-
-        # Build Filename: SC[VendorCode]_[DeptSub]_[ClassSub]_[DateStamp].xlsx
-        time_stamp = datetime.now().strftime('%m%d%H%M')
-        filename = f"SC{vendor_code}_{dept_sub}_{class_sub}_{time_stamp}.xlsx"
-
-        # 4. Apply Logic (Existing Features)
+        # 3. Data Transformations
         merged_df['DESCRIPTION'] = (
-            merged_df['Brand'].fillna('') + " " + 
-            merged_df['Description'].fillna('') + " " + 
-            merged_df['Dial Color'].fillna('') + " " + 
-            merged_df['Case _Frame Size'].fillna('') + " " + 
+            merged_df['Brand'].fillna('') + " " + merged_df['Description'].fillna('') + " " + 
+            merged_df['Dial Color'].fillna('') + " " + merged_df['Case _Frame Size'].fillna('') + " " + 
             merged_df['Style_Stockcode'].fillna('')
         ).str.replace(r'[^a-zA-Z0-9\s]', '', regex=True).str[:50]
         
@@ -174,21 +113,19 @@ def process_template():
         merged_df['SIZES'] = merged_df['Case _Frame Size'].fillna('')
         merged_df['SRP'] = merged_df['SRP'].map('{:,.2f}'.format)
         
-        # Delivery Date Logic
         now = datetime.now()
-        month = now.month + 1
-        year = now.year + (month - 1) // 12
-        month = (month - 1) % 12 + 1
+        month = (now.month % 12) + 1
+        year = now.year + (1 if now.month == 12 else 0)
         day = min(now.day, calendar.monthrange(year, month)[1])
         merged_df['EXP_DEL_MONTH'] = datetime(year, month, day).strftime('%m/%d/%Y')
 
-        # Weights and Dimensions
         merged_df['SOURCE_MARKED'] = ""; merged_df['REMARKS'] = ""; merged_df['ONLINE ITEMS'] = "NO"
         merged_df['PACKAGE WEIGHT IN KG'] = merged_df['Gross Weight']
         merged_df['PRODUCT WEIGHT IN KG'] = merged_df['Net Weight']
         for dim_col in ['PACKAGE LENGTH IN CM', 'PACKAGE WIDTH IN CM', 'PACKAGE HEIGHT IN CM', 
                         'PRODUCT LENGTH IN CM', 'PRODUCT WIDTH IN CM', 'PRODUCT HEIGHT IN CM']:
             merged_df[dim_col] = "-"
+        merged_df['IMAGES'] = ""
 
         final_cols = [
             'DESCRIPTION', 'COLOR', 'SIZES', 'Style_Stockcode', 'SOURCE_MARKED', 
@@ -197,58 +134,115 @@ def process_template():
             'PACKAGE HEIGHT IN CM', 'PACKAGE WEIGHT IN KG', 'PRODUCT LENGTH IN CM', 
             'PRODUCT WIDTH IN CM', 'PRODUCT HEIGHT IN CM', 'PRODUCT WEIGHT IN KG'
         ]
-        merged_df['IMAGES'] = ""
-        
+
+        # 4. Metadata Lookup
+        mysql_conn = get_mysql_conn()
+        vendor_code, brand_meta_map = "000000", {}
+
+        if mysql_conn:
+            try:
+                vendor_map = {"NIC": "NEWTRENDS INTERNATIONAL CORP.", "ATC": "ABOUT TIME CORP.", "TPC": "TIME PLUS CORP."}
+                v_df = pd.read_sql("SELECT vendor_code FROM vendors WHERE vendor_name = %s LIMIT 1", 
+                                   mysql_conn, params=[vendor_map.get(company_selection, "")])
+                if not v_df.empty: vendor_code = str(v_df['vendor_code'].iloc[0])
+
+                unique_brands = merged_df['Brand'].unique().tolist()
+                placeholders_sql = ', '.join(['%s'] * len(unique_brands))
+                h_qry = f"""
+                    SELECT b.product_group as Brand, b.dept_code, b.sub_dept_code, b.class_code, s.subclass_code 
+                    FROM brands b LEFT JOIN sub_classes s ON b.product_group = s.product_group 
+                    WHERE b.product_group IN ({placeholders_sql})
+                """
+                h_df = pd.read_sql(h_qry, mysql_conn, params=unique_brands)
+                for _, row in h_df.iterrows():
+                    brand_meta_map[row['Brand']] = {
+                        'dept_sub': f"{row['dept_code']}{row['sub_dept_code']}",
+                        'class_sub': f"{row['class_code']}{row['subclass_code']}"
+                    }
+            finally:
+                mysql_conn.close()
+
+        # 5. ZIP Generation with Bucket Resilience (Error Handling 4)
         progress_data["total"] = len(merged_df)
-        found_count = 0
-        output = io.BytesIO()
-        BOX_SIZE_PX, ROW_HEIGHT_PT, COL_WIDTH_PX = 180, 150, 215
+        time_stamp = datetime.now().strftime('%m%d%H%M')
+        zip_output = io.BytesIO()
+        total_found_images, processed_count = 0, 0
 
-        with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-            merged_df[final_cols].to_excel(writer, sheet_name='Template', index=False, startrow=1)
-            workbook, worksheet = writer.book, writer.sheets['Template']
-            header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
-            
-            for col_num, value in enumerate(final_cols):
-                worksheet.write(1, col_num, value, header_fmt)
-            
-            img_col_idx = final_cols.index('IMAGES')
-            worksheet.set_column(img_col_idx, img_col_idx, 30)
+        with zipfile.ZipFile(zip_output, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+            for brand_name, bucket_df in merged_df.groupby('Brand'):
+                try:
+                    meta = brand_meta_map.get(brand_name, {'dept_sub': '000000', 'class_sub': '000000'})
+                    filename = f"SC{vendor_code}_{meta['dept_sub']}_{meta['class_sub']}_{time_stamp}.xlsx"
+                    
+                    excel_output = io.BytesIO()
+                    BOX_SIZE_PX, ROW_HEIGHT_PT, COL_WIDTH_PX = 180, 150, 215
 
-            for i, item_no in enumerate(merged_df['Item No_']):
-                worksheet.set_row(i + 2, ROW_HEIGHT_PT)
-                progress_data["current"] = i + 1
-                progress_data["status"] = f"Searching for: {item_no}"
+                    with pd.ExcelWriter(excel_output, engine='xlsxwriter') as writer:
+                        bucket_df[final_cols].to_excel(writer, sheet_name='Template', index=False, startrow=1)
+                        workbook, worksheet = writer.book, writer.sheets['Template']
+                        header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
+                        
+                        for col_num, value in enumerate(final_cols):
+                            worksheet.write(1, col_num, value, header_fmt)
+                        
+                        img_col_idx = final_cols.index('IMAGES')
+                        worksheet.set_column(img_col_idx, img_col_idx, 30)
+
+                        for i, item_no in enumerate(bucket_df['Item No_']):
+                            processed_count += 1
+                            progress_data.update({"current": processed_count, "status": f"Processing {brand_name}: {item_no}"})
+                            worksheet.set_row(i + 2, ROW_HEIGHT_PT)
+                            
+                            img_path = find_image_recursive(NETWORK_IMAGE_PATH, item_no)
+                            if img_path:
+                                # --- GRACEFUL IMAGE HANDLING (Error Handling 2) ---
+                                try:
+                                    with Image.open(img_path) as img:
+                                        w, h = img.size
+                                    scale = min(BOX_SIZE_PX/w, BOX_SIZE_PX/h)
+                                    worksheet.insert_image(i + 2, img_col_idx, img_path, {
+                                        'x_scale': scale, 'y_scale': scale,
+                                        'x_offset': (COL_WIDTH_PX - (w * scale)) / 2, 
+                                        'y_offset': ((ROW_HEIGHT_PT / 0.75) - (h * scale)) / 2,
+                                        'object_position': 1
+                                    })
+                                    total_found_images += 1
+                                except Exception as img_err:
+                                    logger.warning(f"Image corrupt or unreadable for {item_no}: {img_err}")
+                                    worksheet.write(i + 2, img_col_idx, "CORRUPT IMAGE")
+                            else:
+                                worksheet.write(i + 2, img_col_idx, "IMAGE NOT FOUND")
+
+                    excel_output.seek(0)
+                    zip_file.writestr(filename, excel_output.read())
                 
-                img_path = find_image_recursive(NETWORK_IMAGE_PATH, item_no)
-                if img_path:
-                    try:
-                        with Image.open(img_path) as img:
-                            w, h = img.size
-                        scale = min(BOX_SIZE_PX/w, BOX_SIZE_PX/h)
-                        scaled_w, scaled_h = w * scale, h * scale
-                        worksheet.insert_image(i + 2, img_col_idx, img_path, {
-                            'x_scale': scale, 'y_scale': scale,
-                            'x_offset': (COL_WIDTH_PX - scaled_w) / 2, 
-                            'y_offset': ((ROW_HEIGHT_PT / 0.75) - scaled_h) / 2,
-                            'object_position': 1
-                        })
-                        found_count += 1
-                    except: pass
+                except Exception as bucket_err:
+                    logger.error(f"Bucket {brand_name} failed: {bucket_err}")
+                    continue # Error Handling 4: Continue to next bucket if one fails
 
-        output.seek(0)
-        # FIX: Explicitly set mimetype to prevent ".jpg" conversion
-        excel_mimetype = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        response = make_response(send_file(output, download_name=filename, as_attachment=True, mimetype=excel_mimetype))
+        zip_output.seek(0)
+        zip_filename = f"SC_Transactions_{time_stamp}.zip"
         
-        response.headers['X-Total-Items'] = str(progress_data["total"])
-        response.headers['X-Images-Found'] = str(found_count)
-        response.headers['X-Filename'] = filename
-        response.headers['Access-Control-Expose-Headers'] = 'X-Total-Items, X-Images-Found, X-Filename'
+        response = make_response(send_file(zip_output, mimetype='application/zip', 
+                                           as_attachment=True, download_name=zip_filename))
         
+        response.headers.update({
+            'X-Total-Items': str(progress_data["total"]),
+            'X-Images-Found': str(total_found_images),
+            'X-Filename': zip_filename,
+            'Access-Control-Expose-Headers': 'X-Total-Items, X-Images-Found, X-Filename'
+        })
         return response
 
     except Exception as e:
-        return f"Error: {str(e)}\n\n{traceback.format_exc()}", 500
+        logger.error(f"Global Failure: {traceback.format_exc()}")
+        return jsonify({"error": "A server error occurred. Please try again with fewer items."}), 500
     finally:
         if conn: conn.close()
+
+@transactions_bp.route('/transaction-generator')
+def transaction_generator():
+    """Renders the main transaction generation form."""
+    if not session.get('sdr_loggedin'):
+        return render_template('home.html')
+    return render_template('transaction_form.html')
