@@ -221,7 +221,7 @@ def process_template():
                     continue # Error Handling 4: Continue to next bucket if one fails
 
         zip_output.seek(0)
-        zip_filename = f"SC_Transactions_{time_stamp}.zip"
+        zip_filename = f"SC_{vendor_code}_{time_stamp}.zip"
         
         response = make_response(send_file(zip_output, mimetype='application/zip', 
                                            as_attachment=True, download_name=zip_filename))
