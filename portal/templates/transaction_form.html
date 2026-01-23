@@ -34,22 +34,111 @@
 
     .bento-form-container { max-width: 800px; margin: 0 auto; }
 
+    /* --- DROPDOWN & INPUT CUSTOMIZATION --- */
+    .select-wrapper {
+        position: relative;
+        height: 50px;
+    }
+
     .form-control-bento {
-        border-radius: 50px !important;
+        border-radius: 25px !important;
         padding: 12px 25px !important;
-        border: 1px solid #e9ecef !important;
+        border: 2px solid #e9ecef !important;
         background-color: #f8f9fa !important;
         color: #2d3436 !important;
         transition: all 0.3s ease;
-        height: auto !important;
+        height: 50px !important;
+        cursor: pointer;
     }
 
-    select.form-control-bento {
-        appearance: none;
-        background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='currentColor' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e");
-        background-repeat: no-repeat;
-        background-position: right 20px center;
-        background-size: 16px;
+    .form-control-bento:focus {
+        border-color: #4361ee !important;
+        box-shadow: 0 0 0 4px rgba(67, 97, 238, 0.1) !important;
+    }
+
+    /* --- VERIFICATION BADGES --- */
+    .validation-badge {
+        font-size: 0.75rem;
+        font-weight: 700;
+        margin-top: 6px;
+        margin-left: 15px;
+        display: none;
+        align-items: center;
+        transition: all 0.3s ease;
+    }
+    .valid-text { color: #2ecc71; }
+    .invalid-text { color: #ff4d4d; }
+
+    /* --- HOLD TO CANCEL BUTTON --- */
+    .cancel-btn-container {
+        margin-top: 30px;
+        display: flex;
+        justify-content: center;
+    }
+
+    .hold-btn {
+        background: white;
+        border: 2px solid #ff4d4d;
+        color: #ff4d4d;
+        border-radius: 50px;
+        padding: 12px 35px;
+        font-weight: 800;
+        cursor: pointer;
+        position: relative;
+        overflow: hidden;
+        transition: all 0.3s;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+    }
+
+    .hold-progress-fill {
+        position: absolute;
+        left: 0;
+        top: 0;
+        height: 100%;
+        background: #ff4d4d;
+        width: 0%;
+        transition: none;
+        z-index: 0;
+        opacity: 0.2;
+    }
+
+    .hold-btn span { position: relative; z-index: 1; }
+    .hold-btn:active { transform: scale(0.95); }
+
+    /* --- OVERLAYS & LIVE PROGRESS BAR --- */
+    #processing-overlay, #success-overlay {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(255, 255, 255, 0.9); 
+        backdrop-filter: blur(15px); 
+        display: none; z-index: 3000; justify-content: center; align-items: center; flex-direction: column;
+    }
+
+    .progress-wrapper {
+        width: 100%;
+        max-width: 500px;
+        background: rgba(0,0,0,0.05);
+        border-radius: 20px;
+        height: 12px;
+        overflow: hidden;
+        margin: 20px 0;
+    }
+
+    .progress-bar-custom {
+        height: 100%;
+        background: linear-gradient(90deg, #4361ee, #f72585);
+        width: 0%;
+        transition: width 0.4s ease;
+    }
+
+    .expand-dropdown {
+        position: absolute !important;
+        z-index: 1000;
+        height: auto !important;
+        box-shadow: 0 15px 35px rgba(0,0,0,0.15) !important;
+        border-color: #4361ee !important;
+        background: white !important;
+        border-radius: 18px !important;
     }
 
     .btn-generate {
@@ -66,52 +155,6 @@
     }
 
     .btn-generate:hover { background-position: 100% 0; transform: translateY(-2px); }
-
-    /* --- OVERLAYS --- */
-    #processing-overlay, #construction-overlay, #success-overlay {
-        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-        background: rgba(255, 255, 255, 0.8); 
-        backdrop-filter: blur(12px); 
-        display: none; z-index: 3000; justify-content: center; align-items: center; flex-direction: column;
-    }
-
-    /* --- SUCCESS MODAL ANIMATION --- */
-    .success-card {
-        background: rgba(255, 255, 255, 0.95);
-        border: 1px solid rgba(255, 255, 255, 0.4);
-        border-radius: 35px;
-        padding: 40px;
-        text-align: center;
-        max-width: 550px;
-        width: 90%;
-        box-shadow: 0 25px 50px rgba(0,0,0,0.1);
-        transform: scale(0.5); /* Start small for pop effect */
-        opacity: 0;
-        transition: all 0.5s cubic-bezier(0.34, 1.56, 0.64, 1);
-    }
-
-    #success-overlay.active { display: flex !important; }
-    #success-overlay.active .success-card { transform: scale(1); opacity: 1; }
-
-    .summary-box {
-        background: #f8f9fa;
-        border-radius: 20px;
-        padding: 20px;
-        margin: 20px 0;
-        text-align: left;
-    }
-
-    .stat-row { display: flex; justify-content: space-between; margin-bottom: 8px; font-size: 0.95rem; }
-
-    .progress-wrapper {
-        width: 100%; max-width: 500px; background: rgba(0,0,0,0.05);
-        border-radius: 20px; height: 12px; overflow: hidden; margin: 20px 0;
-    }
-
-    .progress-bar-custom {
-        height: 100%; background: linear-gradient(90deg, #4361ee, #f72585);
-        width: 0%; transition: width 0.4s ease;
-    }
 </style>
 
 <div class="container py-4">
@@ -123,51 +166,55 @@
             </div>
         </div>
 
-        <div class="bento-tile shadow-lg">
+        <div class="bento-tile shadow-lg p-4 bg-white" style="border-radius: 30px;">
             <form id="templateForm" method="POST" action="{{ url_for('transactions.process_template') }}">
                 <div class="row">
                     <div class="col-md-6 mb-4">
                         <label class="small font-weight-bold text-muted uppercase ml-2">Retail Chain</label>
-                        <select name="chain" id="chainSelect" class="form-control form-control-bento" required>
-                            <option value="" disabled selected>Select Chain</option>
-                            <option value="SM">SM Department Store</option>
-                            <option value="RDS" disabled>Robinsons (RDS)</option>
-                            <option value="RUSTANS">Rustans</option>
-                            <option value="GCAP" disabled>GCAP</option>
-                            <option value="METRO" disabled>Metro</option>
-                            <option value="KCC" disabled>KCC</option>
-                            <option value="ALTURAS" disabled>Alturas</option>
-                            <option value="LEE_PLAZA" disabled>LEE PLAZA</option>
-                            <option value="BQ" disabled>BQ</option>
-                            <option value="TIONGSAN" disabled>TIONGSAN</option>
-                            <option value="GGRAND" disabled>GGRAND</option>
-                            <option value="GMALL_DAVAO" disabled>GMall Davao</option>
-                            <option value="GMALL_CDO" disabled>GMall CDO</option>
-                            <option value="NCCC" disabled>NCCC</option>
-                        </select>
+                        <div class="select-wrapper">
+                            <select name="chain" id="chainSelect" class="form-control form-control-bento" required>
+                                <option value="" disabled selected>Select Chain</option>
+                                <option value="SM">SM Department Store</option>
+                                <option value="RDS" disabled>Robinsons (RDS)</option>
+                                <option value="RUSTANS">Rustans</option>
+                                <option value="GCAP" disabled>GCAP</option>
+                                <option value="METRO" disabled>Metro</option>
+                                <option value="KCC" disabled>KCC</option>
+                                <option value="ALTURAS" disabled>Alturas</option>
+                                <option value="LEE_PLAZA" disabled>LEE PLAZA</option>
+                                <option value="BQ" disabled>BQ</option>
+                                <option value="TIONGSAN" disabled>TIONGSAN</option>
+                                <option value="GGRAND" disabled>GGRAND</option>
+                                <option value="GMALL_DAVAO" disabled>GMall Davao</option>
+                                <option value="GMALL_CDO" disabled>GMall CDO</option>
+                                <option value="NCCC" disabled>NCCC</option>
+                            </select>
+                        </div>
                     </div>
+
                     <div class="col-md-6 mb-4">
                         <label class="small font-weight-bold text-muted uppercase ml-2">Company Entity</label>
-                        <select name="company" id="companySelect" class="form-control form-control-bento" required>
-                            <option value="" disabled selected>Select Company</option>
-                            <option value="NIC">NIC (Newtrends)</option>
-                            <option value="ATC">ATC (About Time)</option>
-                            <option value="TPC">TPC (Transcend Prime)</option>
-                        </select>
+                        <div class="select-wrapper">
+                            <select name="company" id="companySelect" class="form-control form-control-bento" required>
+                                <option value="" disabled selected>Select Company</option>
+                                <option value="NIC">NIC (Newtrends)</option>
+                                <option value="ATC">ATC (About Time)</option>
+                                <option value="TPC">TPC (Transcend Prime)</option>
+                            </select>
+                        </div>
                     </div>
                 </div>
 
                 <div class="row">
                     <div class="col-md-6 mb-4">
                         <label class="small font-weight-bold text-muted uppercase ml-2">Sales Code</label>
-                        <input type="text" name="sales_code" id="salesCodeInput" class="form-control form-control-bento" placeholder="e.g. S001" required>
+                        <input type="text" name="sales_code" id="salesCodeInput" class="form-control form-control-bento" placeholder="e.g. S001" required autocomplete="off">
+                        <div id="salesValidation" class="validation-badge"></div>
                     </div>
                     <div class="col-md-6 mb-4">
                         <label class="small font-weight-bold text-muted uppercase ml-2">PC Memo No.</label>
-                        <div class="position-relative">
-                            <input type="text" name="pc_memo" id="pcMemoInput" class="form-control form-control-bento" placeholder="e.g. PCM-2024-001" required>
-                            <small id="validationFeedback" class="position-absolute" style="right: 20px; top: 14px; display: none;"></small>
-                        </div>
+                        <input type="text" name="pc_memo" id="pcMemoInput" class="form-control form-control-bento" placeholder="e.g. PCM-2024-001" required autocomplete="off">
+                        <div id="memoValidation" class="validation-badge"></div>
                     </div>
                 </div>
 
@@ -185,57 +232,142 @@
     <div class="spinner-border text-primary mb-4" style="width: 3rem; height: 3rem; border-width: 0.3em;"></div>
     <h3 class="font-weight-bold mb-1" id="statusText">Processing...</h3>
     <p class="text-muted" id="itemCount">Connecting to SQL Server</p>
+    
     <div class="progress-wrapper shadow-sm">
         <div class="progress-bar-custom" id="progressBar"></div>
+    </div>
+
+    <div class="cancel-btn-container">
+        <button type="button" class="hold-btn" id="cancelHoldBtn">
+            <div class="hold-progress-fill" id="holdProgress"></div>
+            <span>Hold to Cancel (5s)</span>
+        </button>
     </div>
 </div>
 
 <div id="success-overlay">
     <div class="success-card shadow-lg">
-        <div class="mb-4">
-            <i class="fas fa-check-circle fa-5x text-success"></i>
-        </div>
+        <div class="mb-4"><i class="fas fa-check-circle fa-5x text-success"></i></div>
         <h2 class="font-weight-bold mb-1">Success!</h2>
-        <p class="text-muted">Template processing completed successfully.</p>
-        
-        <div class="summary-box">
-            <div class="stat-row">
-                <span class="text-muted font-weight-bold">Filename:</span>
-                <span id="resFilename" class="font-weight-bold text-primary">--</span>
+        <div class="summary-box" style="background: #f8f9fa; border-radius: 20px; padding: 20px; margin: 20px 0; text-align: left;">
+            <div class="stat-row" style="display: flex; justify-content: space-between; margin-bottom: 8px;">
+                <span class="text-muted">Filename:</span><span id="resFilename" class="font-weight-bold text-primary">--</span>
             </div>
-            <div class="stat-row">
-                <span class="text-muted">Total Items:</span>
-                <span id="resTotal" class="font-weight-bold">0</span>
-            </div>
-            <div class="stat-row">
-                <span class="text-muted">Images Fetched:</span>
-                <span id="resFound" class="font-weight-bold text-success">0</span>
-            </div>
-            <div class="stat-row">
-                <span class="text-muted">Missing Images:</span>
-                <span id="resFailed" class="font-weight-bold text-danger">0</span>
+            <div class="stat-row" style="display: flex; justify-content: space-between;">
+                <span class="text-muted">Total Items:</span><span id="resTotal" class="font-weight-bold">0</span>
             </div>
         </div>
-
-        <button class="btn btn-primary rounded-pill px-5 py-2 font-weight-bold" onclick="closeSuccess()">DONE</button>
-        <p class="mt-3 small text-muted">Closing automatically in <span id="countdownText" class="font-weight-bold text-danger">15</span> seconds...</p>
+        <button class="btn btn-primary rounded-pill px-5 py-2" onclick="closeSuccess()">DONE</button>
+        <p class="mt-3 small text-muted">Closing in <span id="countdownText" class="font-weight-bold text-danger">15</span>s...</p>
     </div>
 </div>
 
 <script>
-    let autoCloseTimer;
     let countdownInterval;
+    let holdInterval;
+    let abortController;
 
     $(document).ready(function() {
-        $('#templateForm').on('submit', function(e) {
+        // --- 1. ALPHABETICAL SORTING ---
+        function sortDropdown(selectId) {
+            const $select = $(selectId);
+            const options = $select.find('option').not(':first').get();
+            options.sort(function(a, b) {
+                return $(a).text().toUpperCase().localeCompare($(b).text().toUpperCase());
+            });
+            $.each(options, function(i, opt) { $select.append(opt); });
+        }
+        sortDropdown('#chainSelect');
+        sortDropdown('#companySelect');
+
+        // --- 2. DROPDOWN BEHAVIOR (SCROLL & SELECT) ---
+        $('select.form-control-bento').on('mousedown', function(e) {
+            const $this = $(this);
+            if ($this.attr('size') > 1) return;
+            if ($(window).width() > 768) {
+                e.preventDefault();
+                $this.attr('size', '6').addClass('expand-dropdown');
+                setTimeout(() => $this.focus(), 50);
+            }
+        });
+        $('select.form-control-bento').on('change click blur', function(e) {
+            const $this = $(this);
+            if (e.type === 'change' || (e.type === 'click' && $this.attr('size') > 1) || e.type === 'blur') {
+                $this.attr('size', '1').removeClass('expand-dropdown');
+            }
+        });
+
+        // --- 3. REAL-TIME VERIFICATION BADGES ---
+        let vTimeout;
+        $('#salesCodeInput, #pcMemoInput').on('input', function() {
+            clearTimeout(vTimeout);
+            vTimeout = setTimeout(async () => {
+                const sc = $('#salesCodeInput').val().trim();
+                const pm = $('#pcMemoInput').val().trim();
+                const $badge = $('.validation-badge');
+
+                if (!sc || !pm) {
+                    $badge.hide();
+                    return;
+                }
+
+                try {
+                    const res = await fetch("{{ url_for('transactions.verify_codes') }}", {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                        body: `sales_code=${sc}&pc_memo=${pm}`
+                    });
+                    const data = await res.json();
+                    if (data.success) {
+                        $badge.html(`<i class="fas fa-check-circle"></i> Verified: ${data.count} items found`).addClass('valid-text').removeClass('invalid-text').fadeIn();
+                    } else {
+                        $badge.html(`<i class="fas fa-times-circle"></i> No records found`).addClass('invalid-text').removeClass('valid-text').fadeIn();
+                    }
+                } catch(e) { console.error("Validation failed"); }
+            }, 800);
+        });
+
+        // --- 4. HOLD TO CANCEL LOGIC ---
+        const $cancelBtn = $('#cancelHoldBtn');
+        const $holdProgress = $('#holdProgress');
+
+        $cancelBtn.on('mousedown touchstart', function() {
+            let start = 0;
+            const duration = 5000;
+            $holdProgress.stop().css('width', '0%');
+            
+            holdInterval = setInterval(() => {
+                start += 100;
+                let pct = (start / duration) * 100;
+                $holdProgress.css('width', pct + '%');
+                if (start >= duration) {
+                    clearInterval(holdInterval);
+                    if (abortController) abortController.abort();
+                    location.reload(); 
+                }
+            }, 100);
+        });
+
+        $(document).on('mouseup touchend', function() {
+            clearInterval(holdInterval);
+            $holdProgress.css('width', '0%');
+        });
+
+        // --- 5. FORM SUBMISSION ---
+        $('#templateForm').on('submit', async function(e) {
             e.preventDefault();
             $('#processing-overlay').css('display', 'flex');
+            abortController = new AbortController();
             
+            // RESET PROGRESS BAR ON START
+            $('#progressBar').css('width', '0%');
+
             const eventSource = new EventSource("{{ url_for('transactions.progress') }}");
-            
             eventSource.onmessage = function(e) {
                 const data = JSON.parse(e.data);
                 $('#statusText').text(data.status);
+                
+                // UPDATE LIVE PROGRESS BAR
                 if (data.total > 0) {
                     let percent = (data.current / data.total) * 100;
                     $('#progressBar').css('width', percent + '%');
@@ -244,54 +376,53 @@
             };
 
             const formData = new FormData(this);
-            fetch(this.action, { method: 'POST', body: formData })
-                .then(response => {
-                    const total = parseInt(response.headers.get('X-Total-Items')) || 0;
-                    const found = parseInt(response.headers.get('X-Images-Found')) || 0;
-                    const filename = response.headers.get('X-Filename') || 'DSRT_Template.xlsx';
-                    
-                    $('#resFilename').text(filename);
-                    $('#resTotal').text(total);
-                    $('#resFound').text(found);
-                    $('#resFailed').text(total - found);
-
-                    return response.blob().then(blob => ({ blob, filename }));
-                })
-                .then(({ blob, filename }) => {
-                    eventSource.close();
-                    const url = window.URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url; a.download = filename;
-                    document.body.appendChild(a); a.click();
-                    
-                    $('#processing-overlay').hide();
-                    
-                    // Trigger Pop Animation and Confetti
-                    const overlay = $('#success-overlay');
-                    overlay.show().addClass('active');
-                    
-                    confetti({ 
-                        particleCount: 150, 
-                        spread: 70, 
-                        origin: { y: 0.6 },
-                        colors: ['#560BAD', '#4361ee', '#28a745']
-                    });
-
-                    // Start Dynamic Timer
-                    let timeLeft = 15;
-                    $('#countdownText').text(timeLeft);
-                    
-                    countdownInterval = setInterval(() => {
-                        timeLeft--;
-                        $('#countdownText').text(timeLeft);
-                        if(timeLeft <= 0) closeSuccess();
-                    }, 1000);
+            try {
+                const response = await fetch(this.action, { 
+                    method: 'POST', 
+                    body: formData, 
+                    signal: abortController.signal 
                 });
+                
+                if (!response.ok) throw new Error("Processing failed");
+
+                const filename = response.headers.get('X-Filename') || 'Template.xlsx';
+                $('#resFilename').text(filename);
+                $('#resTotal').text(response.headers.get('X-Total-Items') || '0');
+                
+                const blob = await response.blob();
+                eventSource.close();
+                
+                const url = window.URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url; a.download = filename;
+                document.body.appendChild(a); a.click();
+                
+                $('#processing-overlay').hide();
+                const overlay = $('#success-overlay');
+                overlay.show().addClass('active');
+                
+                confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+
+                let timeLeft = 15;
+                countdownInterval = setInterval(() => {
+                    timeLeft--;
+                    $('#countdownText').text(timeLeft);
+                    if(timeLeft <= 0) closeSuccess();
+                }, 1000);
+
+            } catch (err) {
+                if (err.name === 'AbortError') {
+                    console.log('User cancelled process');
+                } else {
+                    alert("A server error occurred. Verify connection.");
+                    $('#processing-overlay').hide();
+                }
+            }
         });
     });
 
     function closeSuccess() {
-        clearInterval(countdownInterval);
+        if(countdownInterval) clearInterval(countdownInterval);
         $('#success-overlay').removeClass('active').fadeOut(300);
     }
 </script>

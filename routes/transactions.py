@@ -63,6 +63,30 @@ def progress():
                 break
     return Response(generate(), mimetype='text/event-stream')
 
+@transactions_bp.route('/verify-codes', methods=['POST'])
+def verify_codes():
+    pc_memo = request.form.get('pc_memo', '').strip().upper()
+    sales_code = request.form.get('sales_code', '').strip().upper()
+    
+    conn, cursor, prefix = SQLconnect('NICREP', "DSRT")
+    if conn is None:
+        return jsonify({"success": False, "error": "Database Connection Failed"}), 500
+
+    try:
+        # Quick count check to see if records exist
+        check_qry = 'SELECT COUNT(*) as cnt FROM dbo."Newtrends International Corp_$Sales Price" WHERE "Sales Code"=? AND "PC Memo No"=?'
+        cursor.execute(check_qry, (sales_code, pc_memo))
+        result = cursor.fetchone()
+        
+        if result and result[0] > 0:
+            return jsonify({"success": True, "count": result[0]})
+        else:
+            return jsonify({"success": False, "error": "No records found for these codes."})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)})
+    finally:
+        conn.close()
+
 @transactions_bp.route('/process-template', methods=['POST'])
 def process_template():
     global progress_data
