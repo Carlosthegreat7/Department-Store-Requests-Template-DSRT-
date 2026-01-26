@@ -131,17 +131,25 @@ def process_template():
         if len(merged_df) > 5000:
             return jsonify({"error": "Request too large. Please limit to 5,000 items per batch."}), 400
 
-        # --- DYNAMIC COLUMN LOGIC BASED ON CHAIN ---
+        # --- DYNAMIC COLUMN LOGIC ---
         if chain_selection == "RUSTANS":
-            # Correct Mapping for Rustans NIC
             vendor_code_val = "703921" if company_selection == "NIC" else "000000"
             
-            merged_df['RCC SKU'] = ""
-            merged_df['IMAGE'] = ""
+            merged_df['RCC SKU'] = ""; merged_df['IMAGE'] = ""
             merged_df['VENDOR ITEM CODE'] = merged_df['Item No_']
-            merged_df['PRODUCT MEDIUM DESCRIPTION (CHAR. LIMIT = 30)'] = merged_df['Description'].fillna('').str[:30]
+            
+            # REVISION: Concatenate Description, Color, Vendor Item No (Style_Stockcode), and Brand
+            combined_desc_str = (
+                merged_df['Description'].fillna('') + " " + 
+                merged_df['Dial Color'].fillna('') + " " + 
+                merged_df['Style_Stockcode'].fillna('') + " " + 
+                merged_df['Brand'].fillna('')
+            ).str.strip()
+
+            merged_df['PRODUCT MEDIUM DESCRIPTION (CHAR. LIMIT = 30)'] = combined_desc_str.str[:30]
             merged_df['PRODUCT SHORT DESCRIPTION (CHAR. LIMIT = 10)'] = merged_df['Description'].fillna('').str[:10]
-            merged_df['PRODUCT LONG DESCRIPTION (CHAR. LIMIT = 50)'] = merged_df['Description'].fillna('').str[:50]
+            merged_df['PRODUCT LONG DESCRIPTION (CHAR. LIMIT = 50)'] = combined_desc_str.str[:50]
+            
             merged_df['VENDOR CODE'] = vendor_code_val
             merged_df['BRAND CODE'] = ""
             merged_df['RETAIL PRICE'] = merged_df['SRP'].fillna(0).apply(lambda x: '{:.2f}'.format(x)) 
@@ -149,7 +157,6 @@ def process_template():
             merged_df['SIZE'] = merged_df['Case _Frame Size'].fillna('')
             merged_df['Gender'] = merged_df['Gender'].fillna('')
 
-            # Placeholder columns to match sheet structure exactly
             placeholders_list = [
                 'DEPARTMENT', 'SUBDEPARTMENT', 'CLASS', 'SUB CLASS', 'MERCHANDISER', 'BUYER', 
                 'SEASON CODE', 'THEME', 'COLLECTION', 'SIZE RUN', 'SET / PC', 'MAKATI', 
@@ -157,8 +164,7 @@ def process_template():
                 'TOTAL RETAIL VALUE', 'SIZE SPECIFICATIONS', 'PRODUCT & CARE DETAILS', 
                 'MATERIAL', 'LINK TO HI-RES IMAGE'
             ]
-            for col in placeholders_list:
-                merged_df[col] = ""
+            for col in placeholders_list: merged_df[col] = ""
 
             final_cols = [
                 'RCC SKU', 'IMAGE', 'VENDOR ITEM CODE', 'PRODUCT MEDIUM DESCRIPTION (CHAR. LIMIT = 30)', 
@@ -169,8 +175,7 @@ def process_template():
                 'E-COMM (FOR PO)', 'TOTAL', 'TOTAL RETAIL VALUE', 'SIZE SPECIFICATIONS', 
                 'PRODUCT & CARE DETAILS', 'MATERIAL', 'LINK TO HI-RES IMAGE', 'Gender'
             ]
-            img_col_name = 'IMAGE'
-            sheet_name_val = "Rustans Template"
+            img_col_name, sheet_name_val = 'IMAGE', "Rustans Template"
         else:
             # Standard SM Logic
             merged_df['DESCRIPTION'] = (
@@ -178,7 +183,6 @@ def process_template():
                 merged_df['Dial Color'].fillna('') + " " + merged_df['Case _Frame Size'].fillna('') + " " + 
                 merged_df['Style_Stockcode'].fillna('')
             ).str.replace(r'[^a-zA-Z0-9\s]', '', regex=True).str[:50]
-            
             merged_df['COLOR'] = merged_df['Dial Color'].fillna('')
             merged_df['SIZES'] = merged_df['Case _Frame Size'].fillna('')
             merged_df['SRP_FMT'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
@@ -204,20 +208,16 @@ def process_template():
                 'PACKAGE HEIGHT IN CM', 'PACKAGE WEIGHT IN KG', 'PRODUCT LENGTH IN CM', 
                 'PRODUCT WIDTH IN CM', 'PRODUCT HEIGHT IN CM', 'PRODUCT WEIGHT IN KG'
             ]
-            img_col_name = 'IMAGES'
-            sheet_name_val = "Template"
+            img_col_name, sheet_name_val = 'IMAGES', "Template"
 
         # --- VENDOR CODE & BRAND MAPPING ---
-        mysql_conn = None
-        vendor_code, brand_meta_map = "000000", {}
-        
-        if company_selection == "NIC":
-            vendor_code = "703921" if chain_selection == "RUSTANS" else "144011"
-
         mysql_conn = get_mysql_conn()
+        vendor_code, brand_meta_map = "000000", {}
         if mysql_conn:
             try:
-                if company_selection != "NIC":
+                if company_selection == "NIC":
+                    vendor_code = "703921" if chain_selection == "RUSTANS" else "144011"
+                else:
                     vendor_map = {"ATC": "ABOUT TIME CORP.", "TPC": "TIME PLUS CORP."}
                     v_df = pd.read_sql("SELECT vendor_code FROM vendors WHERE vendor_name = %s LIMIT 1", 
                                        mysql_conn, params=[vendor_map.get(company_selection, "")])
@@ -250,14 +250,12 @@ def process_template():
             for brand_name, bucket_df in merged_df.groupby('Brand'):
                 try:
                     meta = brand_meta_map.get(brand_name, {'dept_sub': '000000', 'class_sub': '000000'})
-                    
-                    if chain_selection == "RUSTANS":
-                        filename = f"RUSTANS_{sales_code}_{time_stamp}.xlsx"
-                    else:
-                        filename = f"SC{vendor_code}_{meta['dept_sub']}_{meta['class_sub']}_{time_stamp}.xlsx"
+                    filename = f"RUSTANS_{sales_code}_{time_stamp}.xlsx" if chain_selection == "RUSTANS" else f"SC{vendor_code}_{meta['dept_sub']}_{meta['class_sub']}_{time_stamp}.xlsx"
                     
                     excel_output = io.BytesIO()
-                    BOX_SIZE_PX, ROW_HEIGHT_PT, COL_WIDTH_PX = 200, 180, 240
+                    COL_WIDTH_PX = 240
+                    ROW_HEIGHT_PT = 180
+                    ROW_HEIGHT_PX = int(ROW_HEIGHT_PT / 0.75) 
 
                     with pd.ExcelWriter(excel_output, engine='xlsxwriter') as writer:
                         bucket_df[final_cols].to_excel(writer, sheet_name=sheet_name_val, index=False, startrow=1)
@@ -278,17 +276,22 @@ def process_template():
                             img_path = find_image_recursive(NETWORK_IMAGE_PATH, item_no)
                             if img_path:
                                 try:
+                                    # STRETCH REVISION: Physically resize image data using PIL to fill cell
                                     with Image.open(img_path) as img:
-                                        w, h = img.size
-                                    scale = min(BOX_SIZE_PX/w, BOX_SIZE_PX/h)
-                                    worksheet.insert_image(i + 2, img_col_idx, img_path, {
-                                        'x_scale': scale, 'y_scale': scale,
-                                        'x_offset': (COL_WIDTH_PX - (w * scale)) / 2, 
-                                        'y_offset': ((ROW_HEIGHT_PT / 0.75) - (h * scale)) / 2,
+                                        img_resized = img.resize((COL_WIDTH_PX, ROW_HEIGHT_PX), Image.Resampling.LANCZOS)
+                                        img_byte_arr = io.BytesIO()
+                                        img_resized.save(img_byte_arr, format='PNG')
+                                        img_byte_arr.seek(0)
+
+                                    worksheet.insert_image(i + 2, img_col_idx, f"{item_no}.png", {
+                                        'image_data': img_byte_arr,
+                                        'x_offset': 0, 
+                                        'y_offset': 0,
                                         'object_position': 1
                                     })
                                     total_found_images += 1
-                                except Exception:
+                                except Exception as e:
+                                    logger.error(f"Resize failed for {item_no}: {e}")
                                     worksheet.write(i + 2, img_col_idx, "CORRUPT IMAGE")
                             else:
                                 worksheet.write(i + 2, img_col_idx, "IMAGE NOT FOUND")
@@ -301,11 +304,7 @@ def process_template():
 
         zip_output.seek(0)
         zip_time = datetime.now().strftime('%m%d%H%M')
-        
-        if chain_selection == "RUSTANS":
-            zip_filename = f"RST_{vendor_code}_{zip_time}.zip"
-        else:
-            zip_filename = f"SC_{vendor_code}_{zip_time}.zip"
+        zip_filename = f"RST_{vendor_code}_{zip_time}.zip" if chain_selection == "RUSTANS" else f"SC_{vendor_code}_{zip_time}.zip"
             
         response = make_response(send_file(zip_output, mimetype='application/zip', as_attachment=True, download_name=zip_filename))
         response.headers.update({
