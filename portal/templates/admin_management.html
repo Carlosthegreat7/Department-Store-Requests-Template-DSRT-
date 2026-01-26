@@ -261,8 +261,7 @@
 
 <script>
     /**
-     * PAGINATION ENGINE
-     * Handles dynamic paging for tables with scroll-to-top logic.
+     * PAGINATION & SEARCH LOGIC
      */
     const ROWS_PER_PAGE = 10;
     const tableStates = {
@@ -273,23 +272,20 @@
 
     function paginateTable(type) {
         const table = document.getElementById(`${type}Table`);
+        if (!table) return;
+
         const searchVal = document.getElementById('mgmtSearch').value.toLowerCase();
-        
-        // Filter rows based on search first
         let allRows = Array.from(table.querySelectorAll('tbody tr'));
         let visibleRows = allRows.filter(row => row.innerText.toLowerCase().includes(searchVal));
         
         const totalRows = visibleRows.length;
         const totalPages = Math.ceil(totalRows / ROWS_PER_PAGE);
         
-        // Reset to page 1 if current page is out of bounds
         if (tableStates[type].currentPage > totalPages) tableStates[type].currentPage = 1;
-        if (tableStates[type].currentPage < 1) tableStates[type].currentPage = 1;
 
         const start = (tableStates[type].currentPage - 1) * ROWS_PER_PAGE;
         const end = start + ROWS_PER_PAGE;
 
-        // Hide all, show only current page
         allRows.forEach(row => row.style.display = 'none');
         visibleRows.slice(start, end).forEach(row => row.style.display = '');
 
@@ -300,11 +296,9 @@
         const container = document.getElementById(`${type}Pagination`);
         let html = `<span class="small text-muted">Showing <b>${totalRows}</b> results</span><div>`;
         
-        // Previous Button
         html += `<button class="page-btn" ${tableStates[type].currentPage === 1 ? 'disabled' : ''} 
                  onclick="changePage('${type}', ${tableStates[type].currentPage - 1})"><i class="fas fa-chevron-left"></i></button>`;
 
-        // Page Numbers (limited)
         for(let i=1; i <= totalPages; i++) {
             if(i === 1 || i === totalPages || (i >= tableStates[type].currentPage - 1 && i <= tableStates[type].currentPage + 1)) {
                 html += `<button class="page-btn ${tableStates[type].currentPage === i ? 'active' : ''}" 
@@ -314,7 +308,6 @@
             }
         }
 
-        // Next Button
         html += `<button class="page-btn" ${tableStates[type].currentPage === totalPages ? 'disabled' : ''} 
                  onclick="changePage('${type}', ${tableStates[type].currentPage + 1})"><i class="fas fa-chevron-right"></i></button>`;
         
@@ -322,25 +315,17 @@
         container.innerHTML = totalPages > 1 ? html : '';
     }
 
-    /**
-     * SMOOTH SCROLL PAGE CHANGE
-     */
     window.changePage = function(type, page) {
         tableStates[type].currentPage = page;
         paginateTable(type);
-        
-        // Smoothly scroll to top of management section
-        window.scrollTo({
-            top: $('.mgmt-container').offset().top - 100,
-            behavior: 'smooth'
-        });
+        window.scrollTo({ top: $('.mgmt-container').offset().top - 100, behavior: 'smooth' });
     }
 
     $(document).ready(function() {
-        // Initial pagination
+        // Initial pagination load
         ['vendor', 'hierarchy', 'subclass'].forEach(paginateTable);
 
-        // Search integration
+        // SEARCH INPUT TRIGGER
         $('#mgmtSearch').on('input', function() {
             ['vendor', 'hierarchy', 'subclass'].forEach(type => {
                 tableStates[type].currentPage = 1;
@@ -348,24 +333,46 @@
             });
         });
 
-        // Tab Sync
-        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
-            const target = $(e.target).attr("href").replace('#', '');
-            document.getElementById('searchTarget').value = target;
-            paginateTable(target);
+        /**
+         * UPDATED SYNC ENGINE (TAB -> DROPDOWN)
+         */
+        $(document).on('shown.bs.tab', 'a[data-toggle="tab"]', function (e) {
+            // 1. Get the ID of the new active tab (e.g., #hierarchy)
+            const targetId = $(e.target).attr("href").replace('#', '');
+            
+            // 2. Force the dropdown to select this value
+            const dropdown = document.getElementById('searchTarget');
+            if(dropdown) {
+                dropdown.value = targetId;
+            }
+            
+            // 3. Update table filtering for the current tab
+            paginateTable(targetId);
+            
+            // 4. Preserve URL state
             window.history.replaceState(null, null, $(e.target).attr("href"));
         });
 
-        // Dropdown Sync
+        /**
+         * UPDATED SYNC ENGINE (DROPDOWN -> TAB)
+         */
         $('#searchTarget').on('change', function() {
-            $(`#smTabs a[href="#${this.value}"]`).tab('show');
+            const selectedTab = this.value;
+            // Triggers the 'shown.bs.tab' event above automatically
+            $(`#smTabs a[href="#${selectedTab}"]`).tab('show');
         });
 
-        // Recover tab from hash
+        // RECOVER STATE FROM URL HASH
         let hash = window.location.hash;
         if (hash) {
             $(`.nav-tabs a[href="${hash}"]`).tab('show');
-            document.getElementById('searchTarget').value = hash.replace('#', '');
+            const dropdown = document.getElementById('searchTarget');
+            if(dropdown) dropdown.value = hash.replace('#', '');
+        } else {
+            // Set default on load
+            const activeTab = $('#smTabs a.active').attr('href').replace('#', '');
+            const dropdown = document.getElementById('searchTarget');
+            if(dropdown) dropdown.value = activeTab;
         }
     });
 
@@ -413,8 +420,6 @@
             }
         }
         table.getElementsByTagName("TH")[n].classList.add(dir === "asc" ? "sort-asc" : "sort-desc");
-        
-        // Re-paginate after sorting
         paginateTable(tableId.replace('Table', ''));
     }
 
@@ -427,5 +432,4 @@
 </script>
 {% endblock %}
 
-
-<!-- carlosthegreat was here -->
+<!-- CarlosTheGreat was here -->
