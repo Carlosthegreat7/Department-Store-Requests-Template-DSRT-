@@ -2,129 +2,94 @@
 
 {% block content %}
 <style>
-    .add-container { 
-        max-width: 600px; 
-        margin: 0 auto;
-        padding-top: 30px; 
-    }
+    .add-container { max-width: 600px; margin: 0 auto; padding-top: 30px; }
 
     /* --- GLASSMOPHISM HEADER --- */
     .glass-header {
-        height: 120px;
-        background: #4361ee;
-        border-radius: 28px;
-        position: relative;
-        overflow: hidden;
-        display: flex;
-        align-items: center;
-        padding: 0 40px;
-        color: white;
-        margin-bottom: 30px;
-        border: 1px solid rgba(255, 255, 255, 0.1);
+        height: 120px; background: #4361ee; border-radius: 28px;
+        position: relative; overflow: hidden; display: flex;
+        align-items: center; padding: 0 40px; color: white;
+        margin-bottom: 30px; border: 1px solid rgba(255, 255, 255, 0.1);
         box-shadow: 0 15px 35px rgba(67, 97, 238, 0.2);
     }
-
     .glass-header::before {
-        content: "";
-        position: absolute;
-        inset: 0;
-        background: rgba(255, 255, 255, 0.1);
-        backdrop-filter: blur(10px);
-        -webkit-backdrop-filter: blur(10px);
+        content: ""; position: absolute; inset: 0;
+        background: rgba(255, 255, 255, 0.1); backdrop-filter: blur(10px);
         z-index: 1;
     }
-
-    .header-text { z-index: 2; }
-    .header-text h2 { font-weight: 800; letter-spacing: -1px; margin-bottom: 0; }
+    .header-text { z-index: 2; font-weight: 800; letter-spacing: -1px; margin-bottom: 0; }
 
     /* --- BENTO FORM CONTROLS --- */
     .form-control-bento {
-        border-radius: 50px !important;
-        padding: 12px 25px !important;
-        border: 1px solid #e9ecef !important;
-        background-color: #f8f9fa !important;
-        color: #2d3436 !important;
-        transition: all 0.3s ease;
+        border-radius: 50px !important; padding: 12px 25px !important;
+        border: 1px solid #e9ecef !important; background-color: #f8f9fa !important;
+        color: #2d3436 !important; transition: all 0.3s ease;
     }
-
     .form-control-bento:focus {
-        background-color: #fff !important;
-        border-color: var(--accent-purple) !important;
-        box-shadow: 0 0 0 0.2rem rgba(86, 11, 173, 0.15) !important;
-        outline: none;
+        background-color: #fff !important; border-color: #4361ee !important;
+        box-shadow: 0 0 0 0.2rem rgba(67, 97, 238, 0.15) !important; outline: none;
     }
+    .form-control-bento.is-invalid { border-color: #f72585 !important; background-color: rgba(247, 37, 133, 0.05) !important; }
 
-    .form-control-bento.is-invalid {
-        border-color: #f72585 !important;
-        background-color: rgba(247, 37, 133, 0.05) !important;
+    /* --- AUTOCOMPLETE DROPDOWN --- */
+    .autocomplete-items {
+        position: absolute; border-radius: 20px; border: 1px solid #e9ecef;
+        background: white; z-index: 99; top: 100%; left: 20px; right: 20px;
+        box-shadow: 0 10px 25px rgba(0,0,0,0.1); overflow: hidden; display: none;
     }
+    .autocomplete-item {
+        padding: 12px 25px; cursor: pointer; transition: background 0.2s;
+        border-bottom: 1px solid #f8f9fa; font-size: 0.9rem;
+    }
+    .autocomplete-item:hover { background: #f0f3ff; color: #4361ee; }
 
     .btn-save {
         background-image: linear-gradient(to right, #667eea, #764ba2, #6B8DD6, #8E37D7);
-        background-size: 300% 100%;
-        color: #fff !important;
-        border: none;
-        border-radius: 50px;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 1px;
-        transition: all 0.4s ease-in-out;
+        background-size: 300% 100%; color: #fff !important; border: none;
+        border-radius: 50px; font-weight: 700; text-transform: uppercase;
+        letter-spacing: 1px; transition: all 0.4s ease-in-out;
         box-shadow: 0 4px 15px 0 rgba(116, 79, 168, 0.45);
     }
-
-    .btn-save:hover {
-        background-position: 100% 0;
-        transform: translateY(-2px);
-    }
-
-    .modal-glass {
-        backdrop-filter: blur(10px);
-        background: rgba(255,255,255,0.1);
-    }
-    .modal-content-bento {
-        border-radius: 30px;
-        border: none;
-        padding: 20px;
-    }
+    .btn-save:hover { background-position: 100% 0; transform: translateY(-2px); }
 </style>
 
 <div class="container add-container">
     <div class="d-flex justify-content-between align-items-center mb-3">
-        <a href="{{ url_for('admin_management') }}" class="btn btn-sm btn-light rounded-pill px-3 shadow-sm text-muted">
+        <a href="{{ url_for('admin_management', _anchor='subclass') }}" class="btn btn-sm btn-light rounded-pill px-3 shadow-sm text-muted">
             <i class="fas fa-arrow-left mr-1"></i> BACK TO DASHBOARD
         </a>
     </div>
 
     <div class="glass-header shadow-sm">
-        <div class="header-text">
-            <h2><i class="fas fa-tags mr-3"></i>New Subclass</h2>
-        </div>
+        <div class="header-text"><h2><i class="fas fa-tags mr-3"></i>New Subclass</h2></div>
     </div>
 
-    <div class="bento-tile shadow-lg">
+    <div class="bento-tile shadow-lg bg-white p-4" style="border-radius: 35px;">
         <form id="addSubclassForm" action="{{ url_for('subclass.add_subclass') }}" method="POST" autocomplete="off">
-            <div class="form-group mb-4">
-                <label class="small font-weight-bold text-muted uppercase ml-2">Product Group</label>
-                <input type="text" name="product_group" id="product_group" class="form-control form-control-bento" 
-                       placeholder="e.g. GIORD" required>
+            <div class="form-group mb-4 position-relative">
+                <label class="small font-weight-bold text-muted uppercase ml-2">Product Group (Parent)</label>
+                <input type="text" name="product_group" id="pgInput" class="form-control form-control-bento text-uppercase" 
+                       placeholder="Start typing Group Code..." required>
+                <div id="autocompleteList" class="autocomplete-items"></div>
+                <small class="text-muted ml-3">This link is required for data hierarchy.</small>
             </div>
 
             <div class="form-group mb-4">
                 <label class="small font-weight-bold text-muted uppercase ml-2">Subclass Code</label>
-                <input type="text" name="subclass_code" id="subclass_code" class="form-control form-control-bento" 
-                       placeholder="3-digit code" maxlength="3" required>
+                <input type="text" name="subclass_code" class="form-control form-control-bento num-only" 
+                       placeholder="e.g. 013" maxlength="3" pattern="\d{3}" required>
             </div>
 
             <div class="form-group mb-4">
                 <label class="small font-weight-bold text-muted uppercase ml-2">Subclass Name</label>
-                <input type="text" name="subclass_name" id="subclass_name" class="form-control form-control-bento" 
-                       placeholder="Enter description" required>
+                <input type="text" name="subclass_name" class="form-control form-control-bento text-uppercase" 
+                       placeholder="e.g. LEATHER" required>
             </div>
 
             <hr class="my-4 opacity-25">
 
             <div class="d-flex justify-content-between">
-                <a href="{{ url_for('admin_management') }}" class="btn btn-light rounded-pill px-4 font-weight-bold text-muted">CANCEL</a>
+                <a href="{{ url_for('admin_management', _anchor='subclass') }}" class="btn btn-light rounded-pill px-4 font-weight-bold text-muted">CANCEL</a>
                 <button type="button" class="btn btn-save px-5 py-2" onclick="validateAndShowModal()">
                     <i class="fas fa-check-circle mr-2"></i> Register Subclass
                 </button>
@@ -133,14 +98,25 @@
     </div>
 </div>
 
-<div class="modal fade modal-glass" id="confirmAddModal" tabindex="-1" role="dialog" aria-hidden="true">
+<div class="modal fade modal-glass" id="confirmAddModal" tabindex="-1">
     <div class="modal-dialog modal-dialog-centered">
-        <div class="modal-content modal-content-bento bento-tile shadow-2xl">
-            <div class="text-center p-4">
-                <i class="fas fa-question-circle fa-4x text-primary mb-4"></i>
-                <h3 class="font-weight-bold mb-3">Confirm Entry</h3>
-                <p class="text-muted">Are you sure you want to add this subclass to the master database?</p>
+        <div class="modal-content modal-content-bento bento-tile shadow-2xl bg-white p-4">
+            <div class="text-center">
+                <i class="fas fa-link fa-4x text-primary mb-4" style="opacity: 0.8;"></i>
+                <h3 class="font-weight-bold mb-3">Verify Mapping</h3>
+                <p class="text-muted">You are about to link a new subclass to this master group:</p>
                 
+                <div class="bg-light p-3 my-3" style="border-radius: 20px; text-align: left;">
+                    <div class="d-flex justify-content-between mb-2">
+                        <span class="text-muted small">Parent Group:</span>
+                        <span id="prevPG" class="font-weight-bold text-primary">--</span>
+                    </div>
+                    <div class="d-flex justify-content-between">
+                        <span class="text-muted small">Subclass:</span>
+                        <span class="font-weight-bold"><span id="prevName">--</span> (<span id="prevCode">--</span>)</span>
+                    </div>
+                </div>
+
                 <div class="d-flex justify-content-center mt-4">
                     <button type="button" class="btn btn-light rounded-pill px-4 mr-3" data-dismiss="modal">Go Back</button>
                     <button type="button" class="btn btn-primary rounded-pill px-4" onclick="submitForm()">Confirm & Save</button>
@@ -151,42 +127,98 @@
 </div>
 
 <script>
-    // --- BROWSER NAVIGATION REFRESH FIX ---
-    window.addEventListener('pageshow', function(event) {
-        // Force a server-side refresh if navigating back/forward
-        const navEntries = performance.getEntriesByType("navigation");
-        const isBackForward = navEntries.length > 0 && navEntries[0].type === 'back_forward';
-        
-        if (event.persisted || isBackForward) {
-            window.location.reload(); 
-        }
+    $(document).ready(function() {
+        // --- 1. INPUT GUARDS ---
+        $('.num-only').on('input', function() { this.value = this.value.replace(/[^0-9]/g, ''); });
+        $('input[type="text"]').on('input', function() { this.value = this.value.toUpperCase(); });
+
+        // --- 2. AUTOCOMPLETE ALGORITHM ---
+        let fetchTimeout;
+        $('#pgInput').on('input', function() {
+            clearTimeout(fetchTimeout);
+            const query = $(this).val();
+            const $list = $('#autocompleteList');
+
+            if (query.length < 1) { $list.hide(); return; }
+
+            fetchTimeout = setTimeout(() => {
+                fetch(`/admin/api/search_groups?q=${query}`)
+                    .then(res => res.json())
+                    .then(data => {
+                        $list.empty();
+                        if (data.length > 0) {
+                            data.forEach(item => {
+                                $list.append(`<div class="autocomplete-item" onclick="selectGroup('${item.code}')">
+                                    <strong>${item.code}</strong> - <span class="text-muted small">${item.name}</span>
+                                </div>`);
+                            });
+                            $list.fadeIn(200);
+                        } else { $list.hide(); }
+                    });
+            }, 300);
+        });
+
+        // Hide list when clicking outside
+        $(document).click(function(e) { if (!$(e.target).closest('#pgInput').length) $('#autocompleteList').hide(); });
     });
 
-    // Hard reset the form to clear browser-cached inputs on load
-    window.onload = function() {
-        document.getElementById('addSubclassForm').reset();
-    };
+    function selectGroup(code) {
+        $('#pgInput').val(code);
+        $('#autocompleteList').hide();
+    }
 
     function validateAndShowModal() {
         const form = document.getElementById('addSubclassForm');
         let isValid = true;
-
-        const inputs = form.querySelectorAll('input[required]');
-        inputs.forEach(input => {
+        
+        form.querySelectorAll('input[required]').forEach(input => {
             input.classList.remove('is-invalid');
-            if (!input.value.trim()) {
+            if (!input.value.trim() || (input.pattern && !new RegExp(input.pattern).test(input.value))) {
                 input.classList.add('is-invalid');
                 isValid = false;
             }
         });
 
         if (isValid) {
+            $('#prevPG').text($('#pgInput').val());
+            $('#prevCode').text($('input[name="subclass_code"]').val());
+            $('#prevName').text($('input[name="subclass_name"]').val());
             $('#confirmAddModal').modal('show');
         }
     }
 
-    function submitForm() {
-        document.getElementById('addSubclassForm').submit();
-    }
+    function submitForm() { document.getElementById('addSubclassForm').submit(); }
+
+    // --- AUTOCOMPLETE ALGORITHM ---
+        let fetchTimeout;
+        $('#pgInput').on('input', function() {
+            clearTimeout(fetchTimeout);
+            const query = $(this).val();
+            const $list = $('#autocompleteList');
+
+            if (query.length < 1) { $list.hide(); return; }
+
+            fetchTimeout = setTimeout(() => {
+                // USE url_for IF POSSIBLE, or ensure this path matches your Blueprint
+                // Try this dynamic path if you aren't sure of the prefix:
+                fetch("{{ url_for('subclass.search_groups') }}?q=" + query)
+                    .then(res => {
+                        if (!res.ok) throw new Error("API Path not found");
+                        return res.json();
+                    })
+                    .then(data => {
+                        $list.empty();
+                        if (data.length > 0) {
+                            data.forEach(item => {
+                                $list.append(`<div class="autocomplete-item" onclick="selectGroup('${item.code}')">
+                                    <strong>${item.code}</strong> - <span class="text-muted small">${item.name}</span>
+                                </div>`);
+                            });
+                            $list.fadeIn(200);
+                        } else { $list.hide(); }
+                    })
+                    .catch(err => console.error("Smart Search Error:", err));
+            }, 300);
+        });
 </script>
 {% endblock %}
