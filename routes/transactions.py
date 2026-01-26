@@ -73,7 +73,6 @@ def verify_codes():
         return jsonify({"success": False, "error": "Database Connection Failed"}), 500
 
     try:
-        # Quick count check to see if records exist
         check_qry = 'SELECT COUNT(*) as cnt FROM dbo."Newtrends International Corp_$Sales Price" WHERE "Sales Code"=? AND "PC Memo No"=?'
         cursor.execute(check_qry, (sales_code, pc_memo))
         result = cursor.fetchone()
@@ -86,6 +85,30 @@ def verify_codes():
         return jsonify({"success": False, "error": str(e)})
     finally:
         conn.close()
+
+# --- START NEW ROUTE ---
+@transactions_bp.route('/get-vendor-code', methods=['POST'])
+def get_vendor_code():
+    """Fetches the specific vendor code mapping from the local MySQL database."""
+    chain = request.json.get('chain')
+    company = request.json.get('company')
+    
+    mysql_conn = get_mysql_conn()
+    vendor_code = "000000" # Fallback
+    
+    if mysql_conn:
+        try:
+            cursor = mysql_conn.cursor(dictionary=True)
+            query = "SELECT vendor_code FROM vendor_chain_mappings WHERE chain_name = %s AND company_selection = %s LIMIT 1"
+            cursor.execute(query, (chain, company))
+            result = cursor.fetchone()
+            if result:
+                vendor_code = result['vendor_code']
+        finally:
+            mysql_conn.close()
+            
+    return jsonify({"vendor_code": vendor_code})
+# --- END NEW ROUTE ---
 
 @transactions_bp.route('/process-template', methods=['POST'])
 def process_template():
@@ -101,7 +124,6 @@ def process_template():
         return jsonify({"error": "Database Connection Failed"}), 500
 
     try:
-        # 1. Fetch Price Data
         price_qry = ('SELECT "Item No_", "Unit Price" AS SRP '
                      'FROM dbo."Newtrends International Corp_$Sales Price" WITH (NOLOCK) '
                      'WHERE "Sales Code"=? AND "PC Memo No"=?' )
@@ -110,7 +132,6 @@ def process_template():
         if prices_df.empty:
             return jsonify({"error": "No records found in Navision for the provided codes."}), 404
 
-        # 2. Fetch Item Details
         item_list = prices_df['Item No_'].tolist()
         placeholders = ', '.join(['?'] * len(item_list))
         item_qry = (f'SELECT "No_" AS "Item No_", "Description", "Product Group Code" AS "Brand", '
@@ -122,11 +143,9 @@ def process_template():
         items_df = pd.read_sql(item_qry, conn, params=item_list)
         merged_df = pd.merge(items_df, prices_df, on="Item No_")
 
-        # --- MEMORY SAFETY CHECK (Error Handling 3) ---
         if len(merged_df) > 5000:
             return jsonify({"error": "Request too large. Please limit to 5,000 items per batch."}), 400
 
-        # 3. Data Transformations
         merged_df['DESCRIPTION'] = (
             merged_df['Brand'].fillna('') + " " + merged_df['Description'].fillna('') + " " + 
             merged_df['Dial Color'].fillna('') + " " + merged_df['Case _Frame Size'].fillna('') + " " + 
@@ -159,7 +178,6 @@ def process_template():
             'PRODUCT WIDTH IN CM', 'PRODUCT HEIGHT IN CM', 'PRODUCT WEIGHT IN KG'
         ]
 
-        # 4. Metadata Lookup
         mysql_conn = get_mysql_conn()
         vendor_code, brand_meta_map = "000000", {}
 
@@ -186,7 +204,6 @@ def process_template():
             finally:
                 mysql_conn.close()
 
-        # 5. ZIP Generation with Bucket Resilience (Error Handling 4)
         progress_data["total"] = len(merged_df)
         time_stamp = datetime.now().strftime('%m%d%H%M')
         zip_output = io.BytesIO()
@@ -219,7 +236,6 @@ def process_template():
                             
                             img_path = find_image_recursive(NETWORK_IMAGE_PATH, item_no)
                             if img_path:
-                                # --- GRACEFUL IMAGE HANDLING (Error Handling 2) ---
                                 try:
                                     with Image.open(img_path) as img:
                                         w, h = img.size
@@ -242,7 +258,7 @@ def process_template():
                 
                 except Exception as bucket_err:
                     logger.error(f"Bucket {brand_name} failed: {bucket_err}")
-                    continue # Error Handling 4: Continue to next bucket if one fails
+                    continue
 
         zip_output.seek(0)
         zip_filename = f"SC_{vendor_code}_{time_stamp}.zip"
