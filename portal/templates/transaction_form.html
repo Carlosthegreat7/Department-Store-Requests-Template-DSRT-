@@ -187,10 +187,8 @@
 
                     <div class="col-md-6 mb-4">
                         <label class="small font-weight-bold text-muted uppercase ml-2">Company Entity</label>
-                        <select name="company" id="companySelect" class="form-control form-control-bento" required>
-                            <option value="" disabled selected>Select Company</option>
-                            <option value="NIC">NIC (Newtrends)</option>
-                            <option value="ATC">ATC (About Time)</option>
+                        <select name="company" id="companySelect" class="form-control form-control-bento" required disabled>
+                            <option value="" disabled selected>Select Chain First</option>
                         </select>
                     </div>
                 </div>
@@ -261,15 +259,42 @@
     let abortController;
 
     $(document).ready(function() {
-        // --- 1. DROPDOWN SORTING ---
-        function sortDropdown(selectId) {
-            const $select = $(selectId);
-            const options = $select.find('option').not(':first').get();
-            options.sort((a, b) => $(a).text().toUpperCase().localeCompare($(b).text().toUpperCase()));
-            $.each(options, (i, opt) => $select.append(opt));
-        }
-        sortDropdown('#chainSelect');
-        sortDropdown('#companySelect');
+        // --- 1. DYNAMIC DROPDOWN ALGORITHM ---
+        // Fetch valid companies whenever the chain changes
+        $('#chainSelect').on('change', async function() {
+            const chain = $(this).val();
+            const $companySelect = $('#companySelect');
+            const $submitBtn = $('#submitBtn');
+            const $badge = $('#sharedValidation');
+            
+            // Reset state
+            $companySelect.empty().append('<option value="" disabled selected>Loading...</option>').prop('disabled', true);
+            $submitBtn.prop('disabled', true);
+            $badge.hide();
+
+            if (!chain) return;
+
+            try {
+                // Pointing to your new dynamic route
+                const response = await fetch(`/get-companies/${chain}`);
+                const companies = await response.json();
+
+                $companySelect.empty().append('<option value="" disabled selected>Select Company</option>');
+                
+                if (companies.length > 0) {
+                    companies.forEach(c => {
+                        // Value is the internal ID (NIC/ATC), label shows the DB vendor code
+                        $companySelect.append(`<option value="${c.company_selection}">${c.company_selection} (${c.vendor_code})</option>`);
+                    });
+                    $companySelect.prop('disabled', false);
+                } else {
+                    $companySelect.append('<option value="" disabled>No vendors mapped in DB</option>');
+                }
+            } catch (error) {
+                console.error("Fetch error:", error);
+                $companySelect.empty().append('<option value="" disabled>Error loading vendors</option>');
+            }
+        });
 
         // --- 2. FAST VERIFICATION LOGIC (300ms) ---
         let vTimeout;
@@ -287,7 +312,6 @@
                 return;
             }
 
-            // Show Spinner Immediately
             $badge.html('<i class="fas fa-circle-notch fa-spin mr-2"></i>Verifying...').removeClass('valid-text invalid-text').addClass('verifying-text').fadeIn();
 
             vTimeout = setTimeout(async () => {
@@ -313,7 +337,7 @@
             }, 300); 
         });
 
-        // --- 3. HOLD TO CANCEL LOGIC (RESTORED) ---
+        // --- 3. HOLD TO CANCEL LOGIC ---
         const $cancelBtn = $('#cancelHoldBtn');
         const $holdProgress = $('#holdProgress');
 

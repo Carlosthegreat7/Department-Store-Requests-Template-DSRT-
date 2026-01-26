@@ -92,6 +92,22 @@ def verify_codes():
     finally:
         if conn: conn.close()
 
+# dynamic dropdowns
+@transactions_bp.route('/get-companies/<chain>')
+def get_companies(chain):
+    mysql_conn = get_mysql_conn()
+    if not mysql_conn:
+        return jsonify([])
+    try:
+        cursor = mysql_conn.cursor(dictionary=True)
+        # Query your mapping table for the selected chain
+        query = "SELECT company_selection, vendor_code FROM vendor_chain_mappings WHERE chain_name = %s"
+        cursor.execute(query, (chain.upper(),))
+        results = cursor.fetchall()
+        return jsonify(results)
+    finally:
+        mysql_conn.close()
+
 @transactions_bp.route('/process-template', methods=['POST'])
 def process_template():
     global progress_data
@@ -104,6 +120,7 @@ def process_template():
     
     conn = None
     try:
+        # --- 1. NAVISION DATA RETRIEVAL ---
         conn, cursor, prefix = SQLconnect('NICREP', "DSRT")
         if conn is None:
             return jsonify({"error": "Database Connection Failed"}), 500
@@ -131,14 +148,43 @@ def process_template():
         if len(merged_df) > 5000:
             return jsonify({"error": "Request too large. Please limit to 5,000 items per batch."}), 400
 
-        # --- DYNAMIC COLUMN LOGIC ---
+        # --- 2. DYNAMIC VENDOR & BRAND LOOKUP (MYSQL) ---
+        mysql_conn = get_mysql_conn()
+        vendor_code, brand_meta_map = "000000", {}
+        
+        if mysql_conn:
+            try:
+                # DYNAMIC ALGO: Get vendor_code from your mapping table
+                v_cursor = mysql_conn.cursor()
+                v_qry = "SELECT vendor_code FROM vendor_chain_mappings WHERE chain_name = %s AND company_selection = %s"
+                v_cursor.execute(v_qry, (chain_selection, company_selection))
+                v_res = v_cursor.fetchone()
+                if v_res:
+                    vendor_code = str(v_res[0])
+
+                # Fetch brand hierarchy
+                unique_brands = merged_df['Brand'].unique().tolist()
+                if unique_brands:
+                    placeholders_sql = ', '.join(['%s'] * len(unique_brands))
+                    h_qry = f"""
+                        SELECT b.product_group as Brand, b.dept_code, b.sub_dept_code, b.class_code, s.subclass_code 
+                        FROM brands b LEFT JOIN sub_classes s ON b.product_group = s.product_group 
+                        WHERE b.product_group IN ({placeholders_sql})
+                    """
+                    h_df = pd.read_sql(h_qry, mysql_conn, params=unique_brands)
+                    for _, row in h_df.iterrows():
+                        brand_meta_map[row['Brand']] = {
+                            'dept_sub': f"{row['dept_code']}{row['sub_dept_code']}",
+                            'class_sub': f"{row['class_code']}{row['subclass_code']}"
+                        }
+            finally:
+                mysql_conn.close()
+
+        # --- 3. DYNAMIC COLUMN LOGIC ---
         if chain_selection == "RUSTANS":
-            vendor_code_val = "703921" if company_selection == "NIC" else "000000"
-            
             merged_df['RCC SKU'] = ""; merged_df['IMAGE'] = ""
             merged_df['VENDOR ITEM CODE'] = merged_df['Item No_']
             
-            # REVISION: Concatenate Description, Color, Vendor Item No (Style_Stockcode), and Brand
             combined_desc_str = (
                 merged_df['Description'].fillna('') + " " + 
                 merged_df['Dial Color'].fillna('') + " " + 
@@ -150,7 +196,7 @@ def process_template():
             merged_df['PRODUCT SHORT DESCRIPTION (CHAR. LIMIT = 10)'] = merged_df['Description'].fillna('').str[:10]
             merged_df['PRODUCT LONG DESCRIPTION (CHAR. LIMIT = 50)'] = combined_desc_str.str[:50]
             
-            merged_df['VENDOR CODE'] = vendor_code_val
+            merged_df['VENDOR CODE'] = vendor_code # Now dynamic from MySQL
             merged_df['BRAND CODE'] = ""
             merged_df['RETAIL PRICE'] = merged_df['SRP'].fillna(0).apply(lambda x: '{:.2f}'.format(x)) 
             merged_df['COLOR'] = merged_df['Dial Color'].fillna('')
@@ -210,37 +256,7 @@ def process_template():
             ]
             img_col_name, sheet_name_val = 'IMAGES', "Template"
 
-        # --- VENDOR CODE & BRAND MAPPING ---
-        mysql_conn = get_mysql_conn()
-        vendor_code, brand_meta_map = "000000", {}
-        if mysql_conn:
-            try:
-                if company_selection == "NIC":
-                    vendor_code = "703921" if chain_selection == "RUSTANS" else "144011"
-                else:
-                    vendor_map = {"ATC": "ABOUT TIME CORP.", "TPC": "TIME PLUS CORP."}
-                    v_df = pd.read_sql("SELECT vendor_code FROM vendors WHERE vendor_name = %s LIMIT 1", 
-                                       mysql_conn, params=[vendor_map.get(company_selection, "")])
-                    if not v_df.empty: vendor_code = str(v_df['vendor_code'].iloc[0])
-
-                unique_brands = merged_df['Brand'].unique().tolist()
-                if unique_brands:
-                    placeholders_sql = ', '.join(['%s'] * len(unique_brands))
-                    h_qry = f"""
-                        SELECT b.product_group as Brand, b.dept_code, b.sub_dept_code, b.class_code, s.subclass_code 
-                        FROM brands b LEFT JOIN sub_classes s ON b.product_group = s.product_group 
-                        WHERE b.product_group IN ({placeholders_sql})
-                    """
-                    h_df = pd.read_sql(h_qry, mysql_conn, params=unique_brands)
-                    for _, row in h_df.iterrows():
-                        brand_meta_map[row['Brand']] = {
-                            'dept_sub': f"{row['dept_code']}{row['sub_dept_code']}",
-                            'class_sub': f"{row['class_code']}{row['subclass_code']}"
-                        }
-            finally:
-                mysql_conn.close()
-
-        # --- PACKAGING AND ZIP GENERATION ---
+        # --- 4. PACKAGING AND ZIP GENERATION ---
         progress_data["total"] = len(merged_df)
         time_stamp = datetime.now().strftime('%m%d%H%M')
         zip_output = io.BytesIO()
@@ -253,8 +269,7 @@ def process_template():
                     filename = f"RUSTANS_{sales_code}_{time_stamp}.xlsx" if chain_selection == "RUSTANS" else f"SC{vendor_code}_{meta['dept_sub']}_{meta['class_sub']}_{time_stamp}.xlsx"
                     
                     excel_output = io.BytesIO()
-                    COL_WIDTH_PX = 240
-                    ROW_HEIGHT_PT = 180
+                    COL_WIDTH_PX, ROW_HEIGHT_PT = 240, 180
                     ROW_HEIGHT_PX = int(ROW_HEIGHT_PT / 0.75) 
 
                     with pd.ExcelWriter(excel_output, engine='xlsxwriter') as writer:
@@ -276,7 +291,6 @@ def process_template():
                             img_path = find_image_recursive(NETWORK_IMAGE_PATH, item_no)
                             if img_path:
                                 try:
-                                    # STRETCH REVISION: Physically resize image data using PIL to fill cell
                                     with Image.open(img_path) as img:
                                         img_resized = img.resize((COL_WIDTH_PX, ROW_HEIGHT_PX), Image.Resampling.LANCZOS)
                                         img_byte_arr = io.BytesIO()
@@ -285,9 +299,7 @@ def process_template():
 
                                     worksheet.insert_image(i + 2, img_col_idx, f"{item_no}.png", {
                                         'image_data': img_byte_arr,
-                                        'x_offset': 0, 
-                                        'y_offset': 0,
-                                        'object_position': 1
+                                        'x_offset': 0, 'y_offset': 0, 'object_position': 1
                                     })
                                     total_found_images += 1
                                 except Exception as e:
