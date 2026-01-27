@@ -2,9 +2,21 @@ from flask import Blueprint, render_template, session, redirect, url_for, flash,
 from portal import loggedin_required
 from models import VendorRDS, HierarchyRDS, PricePointRDS, AgeCodeRDS
 from extensions import db
+import mysql.connector
 
 # Define the blueprint
 rds_mng_bp = Blueprint('rds_mng', __name__)
+
+def get_mysql_conn():
+    try:
+        return mysql.connector.connect(
+            host="localhost",
+            user="root",
+            password="",
+            database="myproject"
+        )
+    except Exception:
+        return None
 
 @rds_mng_bp.route('/admin/management/rds', methods=['GET'])
 @loggedin_required()
@@ -55,6 +67,25 @@ def add_vendor_rds():
         )
         db.session.add(new_vendor)
         db.session.commit()
+
+        # === MYSQL SYNC FOR TRANSACTION FORM ===
+        try:
+            conn = get_mysql_conn()
+            if conn:
+                cursor = conn.cursor()
+                # Ensure it appears in the transaction dropdown for RUSTANS
+                sync_qry = (
+                    "INSERT INTO vendor_chain_mappings (chain_name, company_selection, vendor_code) "
+                    "VALUES (%s, %s, %s) "
+                    "ON DUPLICATE KEY UPDATE vendor_code=%s"
+                )
+                cursor.execute(sync_qry, ('RUSTANS', company_name, vendor_code, vendor_code))
+                conn.commit()
+                conn.close()
+        except Exception as e:
+            # Non-critical, just log or silent fail, transaction form works via VendorRDS fallback now anyway
+            print(f"MySQL Sync Warning: {e}")
+
         flash("RDS Vendor successfully added", "success")
     except Exception as e:
         db.session.rollback()
@@ -87,11 +118,26 @@ def edit_vendor_rds(id):
             return redirect(url_for('rds_mng.admin_management_rds'))
 
     try:
+        old_vendor_code = vendor.vendor_code
         vendor.company_name = company_name
         vendor.vendor_code = vendor_code
         vendor.mfg_part_no = mfg_part_no
         
         db.session.commit()
+
+        # === MYSQL SYNC FOR TRANSACTION FORM ===
+        if old_vendor_code != vendor_code:
+            try:
+                conn = get_mysql_conn()
+                if conn:
+                    cursor = conn.cursor()
+                    update_qry = "UPDATE vendor_chain_mappings SET vendor_code=%s WHERE vendor_code=%s AND chain_name='RUSTANS'"
+                    cursor.execute(update_qry, (vendor_code, old_vendor_code))
+                    conn.commit()
+                    conn.close()
+            except Exception as e:
+                print(f"MySQL Sync Warning: {e}")
+
         flash("RDS Vendor successfully updated", "success")
     except Exception as e:
         db.session.rollback()
