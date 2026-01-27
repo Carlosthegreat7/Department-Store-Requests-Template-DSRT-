@@ -25,9 +25,12 @@
     </div>
 
     <ul class="nav nav-tabs mt-4" id="smTabs" role="tablist">
-        <li class="nav-item"><a class="nav-link active" data-toggle="tab" href="#vendor" role="tab">Vendors</a></li>
-        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#hierarchy" role="tab">Hierarchy</a></li>
-        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#subclass" role="tab">Subclasses</a></li>
+        <li class="nav-item"><a class="nav-link active" data-toggle="tab" href="#vendor" role="tab"
+                onclick="syncDropdown(this)">Vendors</a></li>
+        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#hierarchy" role="tab"
+                onclick="syncDropdown(this)">Hierarchy</a></li>
+        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#subclass" role="tab"
+                onclick="syncDropdown(this)">Subclasses</a></li>
     </ul>
 
     <div class="tab-content tab-glass mb-5">
@@ -160,9 +163,6 @@
     </div>
 </div>
 
-<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.bundle.min.js"></script>
-
 <script>
     /**
      * PAGINATION & SEARCH LOGIC
@@ -225,6 +225,30 @@
         window.scrollTo({ top: $('.mgmt-container').offset().top - 100, behavior: 'smooth' });
     }
 
+    // --- FINAL ROBUST SYNC LOGIC ---
+
+    // Exposed function called directly by onclick in HTML
+    window.syncDropdown = function (element) {
+        // slight delay to ensure tab switch logic doesn't conflict
+        setTimeout(() => {
+            const href = element.getAttribute('href');
+            if (href) {
+                const targetId = href.replace('#', '');
+
+                // Force update
+                const dropdown = document.getElementById('searchTarget');
+                if (dropdown) dropdown.value = targetId;
+
+                paginateTable(targetId);
+
+                // Update URL State
+                if (history.pushState) {
+                    history.pushState(null, null, '#' + targetId);
+                }
+            }
+        }, 50);
+    };
+
     $(document).ready(function () {
         // Initial pagination load
         ['vendor', 'hierarchy', 'subclass'].forEach(paginateTable);
@@ -237,46 +261,30 @@
             });
         });
 
-        /**
-         * UPDATED SYNC ENGINE (TAB -> DROPDOWN)
-         */
-        $(document).on('shown.bs.tab', 'a[data-toggle="tab"]', function (e) {
-            // 1. Get the ID of the new active tab (e.g., #hierarchy)
-            const targetId = $(e.target).attr("href").replace('#', '');
-
-            // 2. Force the dropdown to select this value
-            const dropdown = document.getElementById('searchTarget');
-            if (dropdown) {
-                dropdown.value = targetId;
-            }
-
-            // 3. Update table filtering for the current tab
-            paginateTable(targetId);
-
-            // 4. Preserve URL state
-            window.history.replaceState(null, null, $(e.target).attr("href"));
-        });
-
-        /**
-         * UPDATED SYNC ENGINE (DROPDOWN -> TAB)
-         */
+        // 2. Dropdown Change -> Update Tab
         $('#searchTarget').on('change', function () {
             const selectedTab = this.value;
-            // Triggers the 'shown.bs.tab' event above automatically
+            // Activate the tab
             $(`#smTabs a[href="#${selectedTab}"]`).tab('show');
+            // Update table
+            paginateTable(selectedTab);
         });
 
-        // RECOVER STATE FROM URL HASH
+        // 3. Handle Hash on Load (Recover State)
         let hash = window.location.hash;
         if (hash) {
-            $(`.nav-tabs a[href="${hash}"]`).tab('show');
-            const dropdown = document.getElementById('searchTarget');
-            if (dropdown) dropdown.value = hash.replace('#', '');
+            const cleanHash = hash.replace('#', '');
+            if ($(`#smTabs a[href="#${cleanHash}"]`).length) {
+                $(`#smTabs a[href="#${cleanHash}"]`).tab('show');
+                $('#searchTarget').val(cleanHash);
+            }
         } else {
-            // Set default on load
-            const activeTab = $('#smTabs a.active').attr('href').replace('#', '');
-            const dropdown = document.getElementById('searchTarget');
-            if (dropdown) dropdown.value = activeTab;
+            // Sync initial state if no hash
+            const activeLink = document.querySelector('#smTabs .nav-link.active');
+            if (activeLink) {
+                const activeId = activeLink.getAttribute('href').replace('#', '');
+                $('#searchTarget').val(activeId);
+            }
         }
     });
 

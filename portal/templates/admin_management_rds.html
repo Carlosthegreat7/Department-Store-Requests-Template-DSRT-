@@ -107,10 +107,14 @@
     </div>
 
     <ul class="nav nav-tabs mt-4" id="rdsTabs" role="tablist">
-        <li class="nav-item"><a class="nav-link active" data-toggle="tab" href="#vendor" role="tab">Vendors</a></li>
-        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#hierarchy" role="tab">Hierarchy</a></li>
-        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#price" role="tab">Price Points</a></li>
-        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#age" role="tab">Age Codes</a></li>
+        <li class="nav-item"><a class="nav-link active" data-toggle="tab" href="#vendor" role="tab"
+                onclick="syncDropdown(this)">Vendors</a></li>
+        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#hierarchy" role="tab"
+                onclick="syncDropdown(this)">Hierarchy</a></li>
+        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#price" role="tab"
+                onclick="syncDropdown(this)">Price Points</a></li>
+        <li class="nav-item"><a class="nav-link" data-toggle="tab" href="#age" role="tab"
+                onclick="syncDropdown(this)">Age Codes</a></li>
     </ul>
 
     <div class="tab-content tab-glass mb-5">
@@ -469,8 +473,9 @@
     </div>
 </div>
 
-<script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.5.2/dist/js/bootstrap.bundle.min.js"></script>
+</div>
+
+<!-- Edit script tags removed: relying on base.html includes -->
 
 <script>
     /**
@@ -535,6 +540,30 @@
         window.scrollTo({ top: $('.mgmt-container').offset().top - 100, behavior: 'smooth' });
     }
 
+    // --- FINAL ROBUST SYNC LOGIC ---
+
+    // Exposed function called directly by onclick in HTML
+    window.syncDropdown = function (element) {
+        // slight delay to ensure tab switch logic doesn't conflict
+        setTimeout(() => {
+            const href = element.getAttribute('href');
+            if (href) {
+                const targetId = href.replace('#', '');
+
+                // Force update
+                const dropdown = document.getElementById('searchTarget');
+                if (dropdown) dropdown.value = targetId;
+
+                paginateTable(targetId);
+
+                // Update URL State
+                if (history.pushState) {
+                    history.pushState(null, null, '#' + targetId);
+                }
+            }
+        }, 50);
+    };
+
     $(document).ready(function () {
         // Initial pagination load
         ['vendor', 'hierarchy', 'price', 'age'].forEach(paginateTable);
@@ -547,38 +576,29 @@
             });
         });
 
-        // --- IMPROVED SYNC LOGIC ---
-
-        // 1. When Tab is Clicked -> Update Dropdown
-        $('a[data-toggle="tab"]').on('shown.bs.tab', function (e) {
-            const targetId = $(e.target).attr("href").replace('#', '');
-            const dropdown = document.getElementById('searchTarget');
-            if (dropdown) {
-                dropdown.value = targetId;
-                // Also update pagination for the new tab to be safe
-                paginateTable(targetId);
-            }
-            // Update URL hash without jumping
-            if (history.pushState) {
-                history.pushState(null, null, '#' + targetId);
-            } else {
-                location.hash = '#' + targetId;
-            }
-        });
-
-        // 2. When Dropdown Changed -> Switch Tab
+        // 2. Dropdown Change -> Update Tab
         $('#searchTarget').on('change', function () {
             const selectedTab = this.value;
+            // Activate the tab
             $(`#rdsTabs a[href="#${selectedTab}"]`).tab('show');
+            // Update table
+            paginateTable(selectedTab);
         });
 
-        // 3. Handle Hash on Load
+        // 3. Handle Hash on Load (Recover State)
         let hash = window.location.hash;
         if (hash) {
             const cleanHash = hash.replace('#', '');
             if ($(`#rdsTabs a[href="#${cleanHash}"]`).length) {
                 $(`#rdsTabs a[href="#${cleanHash}"]`).tab('show');
                 $('#searchTarget').val(cleanHash);
+            }
+        } else {
+            // Sync initial state if no hash
+            const activeLink = document.querySelector('#rdsTabs .nav-link.active');
+            if (activeLink) {
+                const activeId = activeLink.getAttribute('href').replace('#', '');
+                $('#searchTarget').val(activeId);
             }
         }
     });
