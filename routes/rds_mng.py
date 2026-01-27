@@ -27,7 +27,7 @@ def admin_management_rds():
         return redirect(url_for('index'))
     
     # Fetch all RDS data from the database
-    vendors_rds = VendorRDS.query.all()
+    vendors_rds = VendorRDS.query.order_by(VendorRDS.id.desc()).all()
     hierarchies_rds = HierarchyRDS.query.all()
     price_points_rds = PricePointRDS.query.all()
     age_codes_rds = AgeCodeRDS.query.all()
@@ -144,3 +144,124 @@ def edit_vendor_rds(id):
         flash(f"Database Error: {str(e)}")
 
     return redirect(url_for('rds_mng.admin_management_rds'))
+
+@rds_mng_bp.route('/admin/management/rds/delete-vendor/<int:id>', methods=['POST'])
+@loggedin_required()
+def delete_vendor_rds(id):
+    if session.get('sdr_usertype') != 'Head Office':
+        flash("Unauthorized Access")
+        return redirect(url_for('index'))
+
+    vendor = VendorRDS.query.get_or_404(id)
+    vendor_code = vendor.vendor_code
+    
+    try:
+        # === MYSQL SYNC DELETE ===
+        try:
+            conn = get_mysql_conn()
+            if conn:
+                cursor = conn.cursor()
+                del_qry = "DELETE FROM vendor_chain_mappings WHERE vendor_code=%s AND chain_name='RUSTANS'"
+                cursor.execute(del_qry, (vendor_code,))
+                conn.commit()
+                conn.close()
+        except Exception as e:
+            print(f"MySQL Sync Delete Warning: {e}")
+
+        db.session.delete(vendor)
+        db.session.commit()
+        flash("RDS Vendor deleted successfully", "success")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Database Error: {str(e)}")
+
+    return redirect(url_for('rds_mng.admin_management_rds'))
+
+# --- HIERARCHY MANAGEMENT ---
+
+@rds_mng_bp.route('/admin/management/rds/add_hierarchy', methods=['POST'])
+@loggedin_required()
+def add_hierarchy_rds():
+    if session.get('sdr_usertype') != 'Head Office':
+        flash("Unauthorized Access")
+        return redirect(url_for('index'))
+
+    dept = request.form.get('dept')
+    sdept = request.form.get('sdept')
+    class_code = request.form.get('class_code')
+    sclass = request.form.get('sclass')
+    sclass_name = request.form.get('sclass_name')
+
+    if not all([dept, sdept, class_code, sclass, sclass_name]):
+        flash("Error: All fields are required")
+        return redirect(url_for('rds_mng.admin_management_rds', _anchor='hierarchy'))
+
+    try:
+        new_hierarchy = HierarchyRDS(
+            dept=dept,
+            sdept=sdept,
+            class_code=class_code,
+            sclass=sclass,
+            sclass_name=sclass_name
+        )
+        db.session.add(new_hierarchy)
+        db.session.commit()
+        flash("Hierarchy added successfully", "success")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Database Error: {str(e)}")
+
+    return redirect(url_for('rds_mng.admin_management_rds', _anchor='hierarchy'))
+
+@rds_mng_bp.route('/admin/management/rds/edit_hierarchy/<int:id>', methods=['POST'])
+@loggedin_required()
+def edit_hierarchy_rds(id):
+    if session.get('sdr_usertype') != 'Head Office':
+        flash("Unauthorized Access")
+        return redirect(url_for('index'))
+
+    h = HierarchyRDS.query.get_or_404(id)
+    
+    dept = request.form.get('dept')
+    sdept = request.form.get('sdept')
+    class_code = request.form.get('class_code')
+    sclass = request.form.get('sclass')
+    sclass_name = request.form.get('sclass_name')
+
+    if not all([dept, sdept, class_code, sclass, sclass_name]):
+        flash("Error: All fields are required")
+        return redirect(url_for('rds_mng.admin_management_rds', _anchor='hierarchy'))
+
+    try:
+        h.dept = dept
+        h.sdept = sdept
+        h.class_code = class_code
+        h.sclass = sclass
+        h.sclass_name = sclass_name
+        
+        db.session.commit()
+        flash("Hierarchy updated successfully", "success")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Database Error: {str(e)}")
+
+    return redirect(url_for('rds_mng.admin_management_rds', _anchor='hierarchy'))
+
+
+@rds_mng_bp.route('/admin/management/rds/delete-hierarchy/<int:id>', methods=['POST'])
+@loggedin_required()
+def delete_hierarchy_rds(id):
+    if session.get('sdr_usertype') != 'Head Office':
+        flash("Unauthorized Access")
+        return redirect(url_for('index'))
+
+    h = HierarchyRDS.query.get_or_404(id)
+    try:
+        db.session.delete(h)
+        db.session.commit()
+        flash("Hierarchy deleted successfully", "success")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Database Error: {str(e)}")
+    
+    return redirect(url_for('rds_mng.admin_management_rds', _anchor='hierarchy'))
