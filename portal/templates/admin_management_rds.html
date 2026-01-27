@@ -1,7 +1,88 @@
 {% extends "base.html" %}
 
 {% block content %}
-<!-- Styles moved to main.css -->
+<!-- Styles specific to Add modals to match add_vendor.html -->
+<style>
+    /* --- GLASSMOPHISM HEADER FOR MODALS --- */
+    .glass-header-small {
+        height: 100px;
+        background: #4361ee;
+        border-radius: 20px 20px 0 0;
+        /* Top rounded only */
+        position: relative;
+        overflow: hidden;
+        display: flex;
+        align-items: center;
+        padding: 0 30px;
+        color: white;
+        margin-bottom: 20px;
+        box-shadow: 0 4px 15px rgba(67, 97, 238, 0.2);
+    }
+
+    .glass-header-small::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(10px);
+        -webkit-backdrop-filter: blur(10px);
+        z-index: 1;
+    }
+
+    .header-text-small {
+        z-index: 2;
+    }
+
+    .header-text-small h3 {
+        font-weight: 800;
+        letter-spacing: -0.5px;
+        margin-bottom: 0;
+        font-size: 1.5rem;
+    }
+
+    /* --- BENTO FORM CONTROLS --- */
+    .form-control-bento {
+        border-radius: 50px !important;
+        padding: 12px 25px !important;
+        border: 1px solid #e9ecef !important;
+        background-color: #f8f9fa !important;
+        color: #2d3436 !important;
+        transition: all 0.3s ease;
+        height: 50px;
+    }
+
+    .form-control-bento:focus {
+        background-color: #fff !important;
+        border-color: #4361ee !important;
+        box-shadow: 0 0 0 0.2rem rgba(67, 97, 238, 0.15) !important;
+    }
+
+    .btn-save {
+        background-image: linear-gradient(to right, #667eea, #764ba2, #6B8DD6, #8E37D7);
+        background-size: 300% 100%;
+        color: #fff !important;
+        border: none;
+        border-radius: 50px;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+        transition: all 0.4s ease-in-out;
+        box-shadow: 0 4px 15px 0 rgba(116, 79, 168, 0.45);
+        padding: 12px 30px;
+    }
+
+    .btn-save:hover {
+        background-position: 100% 0;
+        transform: translateY(-2px);
+    }
+
+    .modal-content-bento {
+        border-radius: 25px;
+        border: none;
+        overflow: hidden;
+        /* For header radius */
+    }
+</style>
 
 <div class="container mgmt-container">
     <div class="row mb-4">
@@ -56,6 +137,9 @@
                         <td class="align-middle">{{ v.vendor_code }}</td>
                         <td class="align-middle">{{ v.mfg_part_no }}</td>
                         <td class="text-right">
+                            <button class="btn-icon-hover edit border-0 mr-2"
+                                onclick="openEditVendorModal('{{ v.id }}', '{{ v.company_name }}', '{{ v.vendor_code }}', '{{ v.mfg_part_no }}')"
+                                title="Edit"><i class="fas fa-edit"></i></button>
                             <button class="btn-icon-hover delete border-0"
                                 onclick="confirmDelete('vendor', '{{ v.id }}')" title="Delete"><i
                                     class="fas fa-trash"></i></button>
@@ -181,6 +265,98 @@
                     <button type="button" class="btn btn-light rounded-pill px-4 mr-2"
                         data-dismiss="modal">Cancel</button>
                     <button type="submit" class="btn btn-danger rounded-pill px-4">Confirm Delete</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ADD VENDOR RDS MODAL -->
+<div class="modal fade" id="addVendorRdsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content modal-content-bento shadow-lg">
+
+            <div class="glass-header-small">
+                <div class="header-text-small">
+                    <h3><i class="fas fa-plus-circle mr-3"></i>Add RDS Vendor</h3>
+                </div>
+            </div>
+
+            <div class="px-5 pb-5">
+                <form action="{{ url_for('rds_mng.add_vendor_rds') }}" method="POST" autocomplete="off">
+                    <div class="row">
+                        <div class="col-md-6 mb-4">
+                            <label class="small font-weight-bold text-muted uppercase ml-2">Vendor Code</label>
+                            <input type="text" name="vendor_code" class="form-control form-control-bento"
+                                placeholder="e.g. 014353" required>
+                        </div>
+                        <div class="col-md-6 mb-4">
+                            <label class="small font-weight-bold text-muted uppercase ml-2">Internal (Mfg) Part
+                                No.</label>
+                            <input type="text" name="mfg_part_no" class="form-control form-control-bento"
+                                placeholder="e.g. MFG-999" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group mb-5">
+                        <label class="small font-weight-bold text-muted uppercase ml-2">Company Name</label>
+                        <input type="text" name="company_name" class="form-control form-control-bento"
+                            placeholder="Full Company Name" required>
+                    </div>
+
+                    <div class="d-flex justify-content-end">
+                        <button type="button" class="btn btn-light rounded-pill px-4 mr-3"
+                            data-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-save">
+                            <i class="fas fa-check-circle mr-2"></i> Save Vendor
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- EDIT VENDOR RDS MODAL -->
+<div class="modal fade" id="editVendorRdsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content modal-content-bento shadow-lg">
+
+            <div class="glass-header-small">
+                <div class="header-text-small">
+                    <h3><i class="fas fa-edit mr-3"></i>Edit RDS Vendor</h3>
+                </div>
+            </div>
+
+            <div class="px-5 pb-5">
+                <form id="editVendorRdsForm" method="POST" autocomplete="off">
+                    <div class="row">
+                        <div class="col-md-6 mb-4">
+                            <label class="small font-weight-bold text-muted uppercase ml-2">Vendor Code</label>
+                            <input type="text" name="vendor_code" id="edit_vendor_code"
+                                class="form-control form-control-bento" required>
+                        </div>
+                        <div class="col-md-6 mb-4">
+                            <label class="small font-weight-bold text-muted uppercase ml-2">Internal (Mfg) Part
+                                No.</label>
+                            <input type="text" name="mfg_part_no" id="edit_mfg_part_no"
+                                class="form-control form-control-bento" required>
+                        </div>
+                    </div>
+
+                    <div class="form-group mb-5">
+                        <label class="small font-weight-bold text-muted uppercase ml-2">Company Name</label>
+                        <input type="text" name="company_name" id="edit_company_name"
+                            class="form-control form-control-bento" required>
+                    </div>
+
+                    <div class="d-flex justify-content-end">
+                        <button type="button" class="btn btn-light rounded-pill px-4 mr-3"
+                            data-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-save">
+                            <i class="fas fa-save mr-2"></i> Save Changes
+                        </button>
+                    </div>
                 </form>
             </div>
         </div>
@@ -360,6 +536,19 @@
     window.confirmDelete = function (type, id) {
         document.getElementById('deleteForm').action = `/admin/management/rds/delete-${type}/${id}`;
         $('#deleteConfirmModal').modal('show');
+    }
+
+    window.openEditVendorModal = function (id, name, code, mfg) {
+        // Populate fields
+        document.getElementById('edit_company_name').value = name;
+        document.getElementById('edit_vendor_code').value = code;
+        document.getElementById('edit_mfg_part_no').value = mfg;
+
+        // Set Action
+        document.getElementById('editVendorRdsForm').action = `/admin/management/rds/edit_vendor/${id}`;
+
+        // Show Modal
+        $('#editVendorRdsModal').modal('show');
     }
 </script>
 {% endblock %}

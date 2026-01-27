@@ -154,7 +154,6 @@ def process_template():
         
         if mysql_conn:
             try:
-                # DYNAMIC ALGO: Get vendor_code from your mapping table
                 v_cursor = mysql_conn.cursor()
                 v_qry = "SELECT vendor_code FROM vendor_chain_mappings WHERE chain_name = %s AND company_selection = %s"
                 v_cursor.execute(v_qry, (chain_selection, company_selection))
@@ -162,7 +161,6 @@ def process_template():
                 if v_res:
                     vendor_code = str(v_res[0])
 
-                # Fetch brand hierarchy
                 unique_brands = merged_df['Brand'].unique().tolist()
                 if unique_brands:
                     placeholders_sql = ', '.join(['%s'] * len(unique_brands))
@@ -180,7 +178,7 @@ def process_template():
             finally:
                 mysql_conn.close()
 
-        # --- 3. DYNAMIC COLUMN LOGIC ---
+        # --- 3. COLUMN LOGIC ---
         if chain_selection == "RUSTANS":
             merged_df['RCC SKU'] = ""; merged_df['IMAGE'] = ""
             merged_df['VENDOR ITEM CODE'] = merged_df['Item No_']
@@ -196,7 +194,7 @@ def process_template():
             merged_df['PRODUCT SHORT DESCRIPTION (CHAR. LIMIT = 10)'] = merged_df['Description'].fillna('').str[:10]
             merged_df['PRODUCT LONG DESCRIPTION (CHAR. LIMIT = 50)'] = combined_desc_str.str[:50]
             
-            merged_df['VENDOR CODE'] = vendor_code # Now dynamic from MySQL
+            merged_df['VENDOR CODE'] = vendor_code
             merged_df['BRAND CODE'] = ""
             merged_df['RETAIL PRICE'] = merged_df['SRP'].fillna(0).apply(lambda x: '{:.2f}'.format(x)) 
             merged_df['COLOR'] = merged_df['Dial Color'].fillna('')
@@ -222,8 +220,10 @@ def process_template():
                 'PRODUCT & CARE DETAILS', 'MATERIAL', 'LINK TO HI-RES IMAGE', 'Gender'
             ]
             img_col_name, sheet_name_val = 'IMAGE', "Rustans Template"
+            header_row_idx = 14 # Headers on row 15
+            data_start_row = 15 # Data starts row 16
         else:
-            # Standard SM Logic
+            # SM Logic
             merged_df['DESCRIPTION'] = (
                 merged_df['Brand'].fillna('') + " " + merged_df['Description'].fillna('') + " " + 
                 merged_df['Dial Color'].fillna('') + " " + merged_df['Case _Frame Size'].fillna('') + " " + 
@@ -255,8 +255,10 @@ def process_template():
                 'PRODUCT WIDTH IN CM', 'PRODUCT HEIGHT IN CM', 'PRODUCT WEIGHT IN KG'
             ]
             img_col_name, sheet_name_val = 'IMAGES', "Template"
+            header_row_idx = 0
+            data_start_row = 1
 
-        # --- 4. PACKAGING AND ZIP GENERATION ---
+        # --- 4. EXCEL GENERATION ---
         progress_data["total"] = len(merged_df)
         time_stamp = datetime.now().strftime('%m%d%H%M')
         zip_output = io.BytesIO()
@@ -269,61 +271,67 @@ def process_template():
                     filename = f"RUSTANS_{sales_code}_{time_stamp}.xlsx" if chain_selection == "RUSTANS" else f"SC{vendor_code}_{meta['dept_sub']}_{meta['class_sub']}_{time_stamp}.xlsx"
                     
                     excel_output = io.BytesIO()
-                    COL_WIDTH_PX, ROW_HEIGHT_PT = 240, 180
-                    ROW_HEIGHT_PX = int(ROW_HEIGHT_PT / 0.75) 
-
                     with pd.ExcelWriter(excel_output, engine='xlsxwriter') as writer:
-                        bucket_df[final_cols].to_excel(writer, sheet_name=sheet_name_val, index=False, startrow=1)
+                        # CRITICAL: header=False stops Pandas from writing its own columns
+                        bucket_df[final_cols].to_excel(writer, sheet_name=sheet_name_val, index=False, startrow=data_start_row, header=False)
                         workbook, worksheet = writer.book, writer.sheets[sheet_name_val]
-                        header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
                         
+                        if chain_selection == "RUSTANS":
+                            header_bold = workbook.add_format({'bold': True, 'font_size': 11})
+                            title_fmt = workbook.add_format({'bold': True, 'font_size': 14})
+                            worksheet.write('A1', 'Rustan Commercial Corporation', title_fmt)
+                            worksheet.write('A2', 'Concessionaire Management Division', header_bold)
+                            worksheet.write('A3', 'New Product Information Sheet (NPIS)', header_bold)
+                            worksheet.write('A5', 'Date:', header_bold); worksheet.write('B5', datetime.now().strftime('%m/%d/%Y'))
+                            worksheet.write('A6', 'Division:', header_bold); worksheet.write('B6', '()')
+                            worksheet.write('A7', 'Company:', header_bold); worksheet.write('B7', company_selection)
+                            worksheet.write('A8', 'Brand:', header_bold); worksheet.write('B8', brand_name)
+                            worksheet.write('A10', 'Target Delivery to Stores:', header_bold)
+                            worksheet.write('B10', 'Delivery to E-Commerce Warehouse')
+
+                        # Write manual headers once
+                        header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
                         for col_num, value in enumerate(final_cols):
-                            worksheet.write(1, col_num, value, header_fmt)
+                            worksheet.write(header_row_idx, col_num, value, header_fmt)
                         
                         img_col_idx = final_cols.index(img_col_name)
                         worksheet.set_column(img_col_idx, img_col_idx, 35)
 
+                        # Row Heights and Images
+                        ROW_HEIGHT_PT = 180
                         for i, item_no in enumerate(bucket_df['Item No_']):
                             processed_count += 1
                             progress_data.update({"current": processed_count, "status": f"Processing {brand_name}: {item_no}"})
-                            worksheet.set_row(i + 2, ROW_HEIGHT_PT) 
+                            worksheet.set_row(i + data_start_row, ROW_HEIGHT_PT) 
                             
                             img_path = find_image_recursive(NETWORK_IMAGE_PATH, item_no)
                             if img_path:
                                 try:
                                     with Image.open(img_path) as img:
-                                        img_resized = img.resize((COL_WIDTH_PX, ROW_HEIGHT_PX), Image.Resampling.LANCZOS)
+                                        img_resized = img.resize((240, int(ROW_HEIGHT_PT / 0.75)), Image.Resampling.LANCZOS)
                                         img_byte_arr = io.BytesIO()
                                         img_resized.save(img_byte_arr, format='PNG')
                                         img_byte_arr.seek(0)
-
-                                    worksheet.insert_image(i + 2, img_col_idx, f"{item_no}.png", {
-                                        'image_data': img_byte_arr,
-                                        'x_offset': 0, 'y_offset': 0, 'object_position': 1
+                                    worksheet.insert_image(i + data_start_row, img_col_idx, f"{item_no}.png", {
+                                        'image_data': img_byte_arr, 'object_position': 1
                                     })
                                     total_found_images += 1
-                                except Exception as e:
-                                    logger.error(f"Resize failed for {item_no}: {e}")
-                                    worksheet.write(i + 2, img_col_idx, "CORRUPT IMAGE")
+                                except:
+                                    worksheet.write(i + data_start_row, img_col_idx, "CORRUPT IMAGE")
                             else:
-                                worksheet.write(i + 2, img_col_idx, "IMAGE NOT FOUND")
+                                worksheet.write(i + data_start_row, img_col_idx, "IMAGE NOT FOUND")
 
                     excel_output.seek(0)
                     zip_file.writestr(filename, excel_output.read())
                 except Exception as e:
                     logger.error(f"Brand bucket failed: {e}")
-                    continue
 
         zip_output.seek(0)
-        zip_time = datetime.now().strftime('%m%d%H%M')
-        zip_filename = f"RST_{vendor_code}_{zip_time}.zip" if chain_selection == "RUSTANS" else f"SC_{vendor_code}_{zip_time}.zip"
-            
+        zip_filename = f"RST_{vendor_code}_{time_stamp}.zip" if chain_selection == "RUSTANS" else f"SC_{vendor_code}_{time_stamp}.zip"
         response = make_response(send_file(zip_output, mimetype='application/zip', as_attachment=True, download_name=zip_filename))
         response.headers.update({
-            'X-Total-Items': str(progress_data["total"]),
-            'X-Images-Found': str(total_found_images),
-            'X-Filename': zip_filename,
-            'Access-Control-Expose-Headers': 'X-Total-Items, X-Images-Found, X-Filename'
+            'X-Total-Items': str(progress_data["total"]), 'X-Images-Found': str(total_found_images),
+            'X-Filename': zip_filename, 'Access-Control-Expose-Headers': 'X-Total-Items, X-Images-Found, X-Filename'
         })
         return response
 
