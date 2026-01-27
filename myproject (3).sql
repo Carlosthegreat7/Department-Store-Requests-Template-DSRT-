@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jan 16, 2026 at 06:13 AM
+-- Generation Time: Jan 27, 2026 at 02:13 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -20,6 +20,37 @@ SET time_zone = "+00:00";
 --
 -- Database: `myproject`
 --
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `age_codes_rds`
+--
+
+CREATE TABLE `age_codes_rds` (
+  `id` int(11) NOT NULL,
+  `age_code` varchar(10) NOT NULL,
+  `description` varchar(100) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `age_codes_rds`
+--
+
+INSERT INTO `age_codes_rds` (`id`, `age_code`, `description`) VALUES
+(1, '22', 'December 2022'),
+(2, '23', 'January 2023'),
+(3, '24', 'February 2023'),
+(4, '25', 'March 2023'),
+(5, '26', 'April 2023'),
+(6, '27', 'May 2023'),
+(7, '28', 'June 2023'),
+(8, '29', 'July 2023'),
+(9, '30', 'August 2023'),
+(10, '31', 'September 2023'),
+(11, '32', 'October 2023'),
+(12, '33', 'November 2023'),
+(13, '34', 'December 2023');
 
 -- --------------------------------------------------------
 
@@ -43,15 +74,16 @@ INSERT INTO `brands` (`product_group`, `brand_name`, `dept_code`, `sub_dept_code
 ('ADIDA', 'ADIDAS', '054', '092', '279'),
 ('ANNEK', 'ANNE KLEIN', '054', '092', '262'),
 ('AXIS', 'AXIS', '054', '092', '125'),
+('CARL', 'LRAC', '690', '420', '067'),
 ('DKNY', 'DKNY', '054', '092', '325'),
-('ESPRIT', 'ESPRIT', '054', '092', '126'),
+('ESPRT', 'ESPRIT', '054', '092', '126'),
 ('FERRA', 'FERRAGAMO', '054', '092', '234'),
 ('GIORD', 'GIORDANO', '054', '092', '122'),
 ('GUESS', 'GUESS', '054', '092', '297'),
 ('GUESSJ', 'GUESS JEWELRY', '054', '091', '322'),
 ('INGER', 'INGERSOLL', '054', '092', '130'),
+('LRAC', 'SOLRACS', '213', '049', '872'),
 ('NIXON', 'NIXON', '054', '092', '127'),
-('POGI1', 'CARL', '215', '067', '026'),
 ('POLIS', 'POLICE', '054', '092', '124'),
 ('SWISS', 'SWISS MILITARY', '054', '092', '257'),
 ('TIMEX', 'TIMEX', '054', '092', '121'),
@@ -61,34 +93,64 @@ INSERT INTO `brands` (`product_group`, `brand_name`, `dept_code`, `sub_dept_code
 -- --------------------------------------------------------
 
 --
--- Table structure for table `products`
+-- Table structure for table `hierarchy_rds`
 --
 
-CREATE TABLE `products` (
+CREATE TABLE `hierarchy_rds` (
   `id` int(11) NOT NULL,
-  `description` text NOT NULL,
-  `color` varchar(50) DEFAULT NULL,
-  `sizes` varchar(100) DEFAULT NULL,
-  `style_stockcode` varchar(100) NOT NULL,
-  `source_marked` varchar(100) DEFAULT NULL,
-  `srp` decimal(10,2) NOT NULL,
-  `unit_of_measure` varchar(50) NOT NULL,
-  `exp_del_month` varchar(20) NOT NULL,
-  `remarks` text DEFAULT NULL,
-  `pricepoint_sku` varchar(100) DEFAULT NULL,
-  `images` varchar(255) NOT NULL,
-  `online_items` varchar(50) NOT NULL,
-  `package_length_cm` decimal(10,2) NOT NULL,
-  `package_width_cm` decimal(10,2) NOT NULL,
-  `package_height_cm` decimal(10,2) NOT NULL,
-  `package_weight_kg` decimal(10,2) NOT NULL,
-  `product_length_cm` decimal(10,2) NOT NULL,
-  `product_width_cm` decimal(10,2) NOT NULL,
-  `product_height_cm` decimal(10,2) NOT NULL,
-  `product_weight_kg` decimal(10,2) NOT NULL,
-  `created_at` timestamp NOT NULL DEFAULT current_timestamp(),
-  `product_group` varchar(20) DEFAULT NULL
+  `dept` varchar(10) NOT NULL,
+  `sdept` varchar(10) NOT NULL,
+  `class` varchar(10) NOT NULL,
+  `sclass` varchar(10) NOT NULL,
+  `sclass_name` varchar(100) NOT NULL
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `hierarchy_rds`
+--
+
+INSERT INTO `hierarchy_rds` (`id`, `dept`, `sdept`, `class`, `sclass`, `sclass_name`) VALUES
+(1, '710', '400', '409', '-', 'Watches'),
+(2, '710', '400', '409', '401', 'Watch Straps'),
+(3, '710', '400', '409', '402', 'Watch Batteries'),
+(4, '710', '400', '409', '403', 'Watches Women\'s'),
+(5, '710', '400', '409', '404', 'Watches Men\'s'),
+(6, '710', '400', '409', '405', 'Watches Unisex');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `price_points_rds`
+--
+
+CREATE TABLE `price_points_rds` (
+  `id` int(11) NOT NULL,
+  `price_point_code` varchar(10) NOT NULL,
+  `price_point_desc` varchar(100) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `price_points_rds`
+--
+
+INSERT INTO `price_points_rds` (`id`, `price_point_code`, `price_point_desc`) VALUES
+(1, 'NA', 'Not Applicable'),
+(2, '01', '1 to 50'),
+(3, '02', '51 to 100'),
+(4, '03', '101 to 150'),
+(5, '04', '151 to 200'),
+(6, '05', '201 to 300'),
+(7, '06', '301 to 400'),
+(8, '07', '401 to 500'),
+(9, '08', '501 to 1000'),
+(10, '09', '1001 to 2000'),
+(11, '10', '2001 to 3000'),
+(12, '11', '3001 to 4000'),
+(13, '12', '4001 to 5000'),
+(14, '13', '5001 to 10000'),
+(15, '14', '10001 to 15000'),
+(16, '15', '15001 to 20000'),
+(17, '16', '20001 and above');
 
 -- --------------------------------------------------------
 
@@ -109,7 +171,7 @@ CREATE TABLE `sub_classes` (
 INSERT INTO `sub_classes` (`product_group`, `subclass_code`, `subclass_name`) VALUES
 ('ADIDA', '013', 'LEATHER'),
 ('ADIDA', '014', 'STAINLESS'),
-('ADIDA', '015', 'PLASTICK'),
+('ADIDA', '015', 'PLASTIC'),
 ('ADIDA', '016', 'RUBBER'),
 ('ADIDA', '017', 'SETS'),
 ('ADIDA', '100', 'MD PROMO'),
@@ -125,6 +187,7 @@ INSERT INTO `sub_classes` (`product_group`, `subclass_code`, `subclass_name`) VA
 ('AXIS', '015', 'PLASTICK'),
 ('AXIS', '016', 'RUBBER'),
 ('AXIS', '100', 'MD PROMO'),
+('CARL', '431', 'TEST NUMBER DI KO ALAM'),
 ('DKNY', '013', 'LEATHER'),
 ('DKNY', '014', 'STAINLESS'),
 ('DKNY', '016', 'RUBBER'),
@@ -164,6 +227,7 @@ INSERT INTO `sub_classes` (`product_group`, `subclass_code`, `subclass_name`) VA
 ('INGER', '017', 'SETS'),
 ('INGER', '018', 'STRAP'),
 ('INGER', '100', 'MD PROMO'),
+('LRAC', '063', 'TESTTESTTESTTESTTESTTEST'),
 ('NIXON', '013', 'LEATHER'),
 ('NIXON', '014', 'STAINLESS'),
 ('NIXON', '015', 'PLASTICK'),
@@ -174,7 +238,6 @@ INSERT INTO `sub_classes` (`product_group`, `subclass_code`, `subclass_name`) VA
 ('POLIS', '015', 'PLASTICK'),
 ('POLIS', '016', 'RUBBER'),
 ('POLIS', '100', 'MD PROMO'),
-('SOLRAC', '143', 'HEHEHEHE'),
 ('SWISS', '013', 'LEATHER'),
 ('SWISS', '014', 'STAINLESS'),
 ('SWISS', '015', 'PLASTICK'),
@@ -220,12 +283,69 @@ CREATE TABLE `vendors` (
 
 INSERT INTO `vendors` (`vendor_code`, `vendor_name`) VALUES
 ('014353', 'ABOUT TIME CORP.'),
-('120604', 'CARL CORP.'),
-('144011', 'NEWTRENDS INTERNATIONAL CORP.');
+('111111', 'CARLOS CORPORAT'),
+('120604', 'CARLO CORP.'),
+('144011', 'NEWTRENDS INTERNATIONAL CORP.'),
+('676767', 'EXAMPLE INC.'),
+('694267', 'INC. AH MAGNAYE');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `vendors_rds`
+--
+
+CREATE TABLE `vendors_rds` (
+  `id` int(11) NOT NULL,
+  `company_name` varchar(255) NOT NULL,
+  `vendor_code` varchar(20) NOT NULL,
+  `mfg_part_no` varchar(20) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `vendors_rds`
+--
+
+INSERT INTO `vendors_rds` (`id`, `company_name`, `vendor_code`, `mfg_part_no`) VALUES
+(1, 'Newtrends International Corp.', '703921', '7090517'),
+(2, 'About Time Corp.', '700194', '7091392');
+
+-- --------------------------------------------------------
+
+--
+-- Table structure for table `vendor_chain_mappings`
+--
+
+CREATE TABLE `vendor_chain_mappings` (
+  `id` int(11) NOT NULL,
+  `chain_name` varchar(50) NOT NULL,
+  `company_selection` varchar(10) NOT NULL,
+  `vendor_code` varchar(20) NOT NULL
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+--
+-- Dumping data for table `vendor_chain_mappings`
+--
+
+INSERT INTO `vendor_chain_mappings` (`id`, `chain_name`, `company_selection`, `vendor_code`) VALUES
+(1, 'SM', 'NIC', '144011'),
+(2, 'SM', 'ATC', '014353'),
+(3, 'RUSTANS', 'NIC', '703921'),
+(4, 'RUSTANS', 'ATC', '700194'),
+(5, 'SM', 'CARLOS_COR', '120604'),
+(6, 'SM', 'CARLO_CORP', '111111'),
+(7, 'SM', 'EXAMPLE', '676767'),
+(8, 'SM', 'INC._AH_MA', '694267');
 
 --
 -- Indexes for dumped tables
 --
+
+--
+-- Indexes for table `age_codes_rds`
+--
+ALTER TABLE `age_codes_rds`
+  ADD PRIMARY KEY (`id`);
 
 --
 -- Indexes for table `brands`
@@ -234,11 +354,16 @@ ALTER TABLE `brands`
   ADD PRIMARY KEY (`product_group`);
 
 --
--- Indexes for table `products`
+-- Indexes for table `hierarchy_rds`
 --
-ALTER TABLE `products`
-  ADD PRIMARY KEY (`id`),
-  ADD KEY `fk_brand` (`product_group`);
+ALTER TABLE `hierarchy_rds`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `price_points_rds`
+--
+ALTER TABLE `price_points_rds`
+  ADD PRIMARY KEY (`id`);
 
 --
 -- Indexes for table `sub_classes`
@@ -253,24 +378,60 @@ ALTER TABLE `vendors`
   ADD PRIMARY KEY (`vendor_code`);
 
 --
+-- Indexes for table `vendors_rds`
+--
+ALTER TABLE `vendors_rds`
+  ADD PRIMARY KEY (`id`);
+
+--
+-- Indexes for table `vendor_chain_mappings`
+--
+ALTER TABLE `vendor_chain_mappings`
+  ADD PRIMARY KEY (`id`);
+
+--
 -- AUTO_INCREMENT for dumped tables
 --
 
 --
--- AUTO_INCREMENT for table `products`
+-- AUTO_INCREMENT for table `age_codes_rds`
 --
-ALTER TABLE `products`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT;
+ALTER TABLE `age_codes_rds`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
+
+--
+-- AUTO_INCREMENT for table `hierarchy_rds`
+--
+ALTER TABLE `hierarchy_rds`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+
+--
+-- AUTO_INCREMENT for table `price_points_rds`
+--
+ALTER TABLE `price_points_rds`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=18;
+
+--
+-- AUTO_INCREMENT for table `vendors_rds`
+--
+ALTER TABLE `vendors_rds`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+
+--
+-- AUTO_INCREMENT for table `vendor_chain_mappings`
+--
+ALTER TABLE `vendor_chain_mappings`
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
 
 --
 -- Constraints for dumped tables
 --
 
 --
--- Constraints for table `products`
+-- Constraints for table `sub_classes`
 --
-ALTER TABLE `products`
-  ADD CONSTRAINT `fk_brand` FOREIGN KEY (`product_group`) REFERENCES `brands` (`product_group`);
+ALTER TABLE `sub_classes`
+  ADD CONSTRAINT `fk_subclass_hierarchy` FOREIGN KEY (`product_group`) REFERENCES `brands` (`product_group`) ON DELETE CASCADE ON UPDATE CASCADE;
 COMMIT;
 
 /*!40101 SET CHARACTER_SET_CLIENT=@OLD_CHARACTER_SET_CLIENT */;
