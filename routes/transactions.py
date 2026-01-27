@@ -40,18 +40,52 @@ def get_mysql_conn():
     except Exception:
         return None
 
-def find_image_recursive(base_path, item_no):
-    extensions = ['.jpg', '.JPG', '.jpeg', '.png']
-    item_no_lower = str(item_no).strip().lower()
+def build_image_cache(base_path):
+    """
+    Scans the directory tree once and indexes files by their starting character 
+    for O(1) bucket access and fast in-memory search.
+    """
+    cache = {}
+    extensions = {'.jpg', '.JPG', '.jpeg', '.png'} # Set for O(1) lookup
     try:
-        for root, dirs, files in os.walk(base_path):
-            for filename in files:
-                name_part = os.path.splitext(filename)[0].lower()
-                ext_part = os.path.splitext(filename)[1].lower()
-                if name_part.startswith(item_no_lower) and ext_part in extensions:
-                    return os.path.join(root, filename)
+        if os.path.exists(base_path):
+            for root, _, files in os.walk(base_path):
+                for filename in files:
+                    ext = os.path.splitext(filename)[1].lower()
+                    if ext in extensions:
+                        name_lower = os.path.splitext(filename)[0].lower()
+                        full_path = os.path.join(root, filename)
+                        
+                        # Index by first char for bucketing
+                        first_char = name_lower[0] if name_lower else ''
+                        if first_char not in cache:
+                            cache[first_char] = []
+                        cache[first_char].append((name_lower, full_path))
     except Exception as e:
-        logger.error(f"Directory access error: {e}")
+        logger.error(f"Cache build error: {e}")
+    return cache
+
+def find_image_in_cache(cache, item_no):
+    """
+    Finds an image using the pre-built cache. 
+    Maintains the original 'startswith' logic but runs in-memory.
+    """
+    item_no_lower = str(item_no).strip().lower()
+    if not item_no_lower: return None
+    
+    first_char = item_no_lower[0]
+    bucket = cache.get(first_char, [])
+    
+    # Priority 1: Exact Match (Improvement over original loose logic)
+    for name, path in bucket:
+        if name == item_no_lower:
+            return path
+            
+    # Priority 2: StartsWith (Original logic)
+    for name, path in bucket:
+        if name.startswith(item_no_lower):
+            return path
+            
     return None
 
 @transactions_bp.route('/progress')
@@ -59,7 +93,8 @@ def progress():
     def generate():
         while True:
             yield f"data: {json.dumps(progress_data)}\n\n"
-            if progress_data["current"] >= progress_data["total"] and progress_data["total"] > 0:
+            if progress_data["current"] >= progress_data["total"] and progress_data["total"] > 0 and progress_data["status"] != "Initializing...":
+                 # Added status check to prevent early exit during indexing
                 break
     return Response(generate(), mimetype='text/event-stream')
 
@@ -145,8 +180,9 @@ def process_template():
         items_df = pd.read_sql(item_qry, conn, params=item_list)
         merged_df = pd.merge(items_df, prices_df, on="Item No_")
 
-        if len(merged_df) > 5000:
-            return jsonify({"error": "Request too large. Please limit to 5,000 items per batch."}), 400
+        # LIMIT REMOVED for scaling
+        # if len(merged_df) > 5000:
+        #     return jsonify({"error": "Request too large. Please limit to 5,000 items per batch."}), 400
 
         # --- 2. DYNAMIC VENDOR & BRAND LOOKUP (MYSQL) ---
         mysql_conn = get_mysql_conn()
@@ -258,6 +294,11 @@ def process_template():
             header_row_idx = 0
             data_start_row = 1
 
+        # --- PRE-SCAN IMAGES FOR SPEED OPTIMIZATION ---
+        progress_data.update({"current": 0, "total": 1, "status": "Indexing Images (One-time scan)..."})
+        image_cache = build_image_cache(NETWORK_IMAGE_PATH)
+        logger.info(f"Image Index Created with {sum(len(v) for v in image_cache.values())} files")
+
         # --- 4. EXCEL GENERATION ---
         progress_data["total"] = len(merged_df)
         time_stamp = datetime.now().strftime('%m%d%H%M')
@@ -304,7 +345,8 @@ def process_template():
                             progress_data.update({"current": processed_count, "status": f"Processing {brand_name}: {item_no}"})
                             worksheet.set_row(i + data_start_row, ROW_HEIGHT_PT) 
                             
-                            img_path = find_image_recursive(NETWORK_IMAGE_PATH, item_no)
+                            # Use Cached Lookup
+                            img_path = find_image_in_cache(image_cache, item_no)
                             if img_path:
                                 try:
                                     with Image.open(img_path) as img:
