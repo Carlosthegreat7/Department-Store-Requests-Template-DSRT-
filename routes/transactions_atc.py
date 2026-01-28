@@ -9,195 +9,74 @@ import logging
 import mysql.connector
 from datetime import datetime, timedelta
 from PIL import Image
-from flask import Blueprint, render_template, request, jsonify, session, flash, redirect, url_for, send_file, make_response, Response
-
-# 1. IMPORT THE NEW ATC SCRIPT
-try:
-    from .transactions_atc import process_atcrep_template
-except ImportError:
-    # Fallback if the file isn't in the routes folder
-    from transactions_atc import process_atcrep_template
+from flask import send_file, make_response, jsonify
 
 # Setup Logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Import SQLconnect from the portal package
-try:
-    from portal.SQLconnection import SQLconnect
-except ImportError:
-    try:
-        from SQLconnection import SQLconnect
-    except ImportError:
-        SQLconnect = None
-
-transactions_bp = Blueprint('transactions', __name__)
-
-progress_data = {"current": 0, "total": 0, "status": "Initializing..."}
-NETWORK_IMAGE_PATH = r'\\mgsvr09\niccatalog'
-
-# --- SHARED UTILITY FUNCTIONS ---
-
-def get_mysql_conn():
-    try:
-        return mysql.connector.connect(
-            host="localhost",
-            user="root",
-            password="",
-            database="myproject"
-        )
-    except Exception:
-        return None
-
-def build_image_cache(base_path):
-    cache = {}
-    extensions = {'.jpg', '.JPG', '.jpeg', '.png'}
-    try:
-        if os.path.exists(base_path):
-            for root, _, files in os.walk(base_path):
-                for filename in files:
-                    ext = os.path.splitext(filename)[1].lower()
-                    if ext in extensions:
-                        name_lower = os.path.splitext(filename)[0].lower()
-                        full_path = os.path.join(root, filename)
-                        first_char = name_lower[0] if name_lower else ''
-                        if first_char not in cache:
-                            cache[first_char] = []
-                        cache[first_char].append((name_lower, full_path))
-    except Exception as e:
-        logger.error(f"Cache build error: {e}")
-    return cache
-
-def find_image_in_cache(cache, item_no):
-    item_no_lower = str(item_no).strip().lower()
-    if not item_no_lower: return None
-    first_char = item_no_lower[0]
-    bucket = cache.get(first_char, [])
-    for name, path in bucket:
-        if name == item_no_lower:
-            return path
-    for name, path in bucket:
-        if name.startswith(item_no_lower):
-            return path
-    return None
-
-# --- ROUTES ---
-
-@transactions_bp.route('/progress')
-def progress():
-    def generate():
-        while True:
-            yield f"data: {json.dumps(progress_data)}\n\n"
-            if progress_data["current"] >= progress_data["total"] and progress_data["total"] > 0 and progress_data["status"] != "Initializing...":
-                break
-    return Response(generate(), mimetype='text/event-stream')
-
-@transactions_bp.route('/verify-codes', methods=['POST'])
-def verify_codes():
-    pc_memo = request.form.get('pc_memo', '').strip().upper()
-    sales_code = request.form.get('sales_code', '').strip().upper()
-    company_selection = request.form.get('company', '').strip().upper() # New line
+def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_code, SQLconnect, get_mysql_conn, build_image_cache, find_image_in_cache, NETWORK_IMAGE_PATH, progress_data):
+    # 1. Database and Prefix Setup
+    db_name = 'ATCREP'
+    # ATC/TPC usually follow the schema without the extra underscore before the $
+    # table_prefix = 'About Time Corporation_' if company_selection == 'ATC' else 'Transcend Prime Inc_'
+    table_prefix = 'About Time Corporation' if company_selection == 'ATC' else 'Transcend Prime Inc'
     
-    # Logic to choose the correct DB and Table Prefix
-    is_atcrep = company_selection in ['ATC', 'TPC']
-    db_target = 'ATCREP' if is_atcrep else 'NICREP'
-    
-    # Critical: Navision table names often require underscores
-    if company_selection == 'ATC':
-        table_prefix = 'About Time Corporation' # Adjust based on your SSMS findings
-    elif company_selection == 'TPC':
-        table_prefix = 'Transcend Prime Inc'
-    else:
-        table_prefix = 'Newtrends International Corp_'
-
-    conn = None 
-    try:
-        # Connect to the target database (NICREP or ATCREP)
-        conn, cursor, prefix = SQLconnect(db_target, "DSRT")
-        if conn is None:
-            return jsonify({"success": False, "error": f"Connection to {db_target} Failed"}), 500
-            
-        check_qry = (f'SELECT COUNT(*) as cnt FROM dbo."{table_prefix}$Sales Price" WITH (NOLOCK) '
-                     f'WHERE "Sales Code"=? AND "PC Memo No"=?' )
-        cursor.execute(check_qry, (sales_code, pc_memo))
-        result = cursor.fetchone()
-        
-        return jsonify({"success": True, "count": result[0]}) if result and result[0] > 0 else jsonify({"success": False, "error": f"No records found in {db_target}"})
-    except Exception as e:
-        return jsonify({"success": False, "error": str(e)})
-    finally:
-        if conn: conn.close()
-
-@transactions_bp.route('/get-companies/<chain>')
-def get_companies(chain):
-    mysql_conn = get_mysql_conn()
-    if not mysql_conn: return jsonify([])
-    try:
-        cursor = mysql_conn.cursor(dictionary=True)
-        query = "SELECT company_selection, vendor_code FROM vendor_chain_mappings WHERE chain_name = %s"
-        cursor.execute(query, (chain.upper(),))
-        return jsonify(cursor.fetchall())
-    finally:
-        mysql_conn.close()
-
-# --- MAIN CONTROLLER ROUTE ---
-
-@transactions_bp.route('/process-template', methods=['POST'])
-def process_template():
-    global progress_data
-    
-    # 1. Get Selections
-    chain_selection = request.form.get('chain', '').strip().upper()
-    company_selection = request.form.get('company', '').strip().upper()
-    pc_memo = request.form.get('pc_memo', '').strip().upper()
-    sales_code = request.form.get('sales_code', '').strip().upper()
-
-    # 2. REDIRECTION LOGIC: If company is ATC or TPC, use the new script
-    if company_selection in ['ATC', 'TPC']:
-        logger.info(f"Redirecting to ATC/TPC logic for company: {company_selection}")
-        return process_atcrep_template(
-            chain_selection, 
-            company_selection, 
-            pc_memo, 
-            sales_code, 
-            SQLconnect, 
-            get_mysql_conn, 
-            build_image_cache, 
-            find_image_in_cache, 
-            NETWORK_IMAGE_PATH, 
-            progress_data
-        )
-
-    # 3. ORIGINAL NIC SCRIPT LOGIC (Newtrends International Corp)
-    progress_data.update({"current": 0, "total": 0, "status": "Accessing NICREP..."})
     conn = None
     try:
-        conn, cursor, prefix = SQLconnect('NICREP', "DSRT")
+        # --- 2. NAVISION DATA RETRIEVAL ---
+        conn, cursor, _ = SQLconnect(db_name, "DSRT")
         if conn is None:
-            return jsonify({"error": "Database Connection Failed"}), 500
+            return jsonify({"error": f"Database Connection to {db_name} Failed"}), 500
 
-        # Query using the original NIC table name with underscore
-        price_qry = ('SELECT "Item No_", "Unit Price" AS SRP '
-                     'FROM dbo."Newtrends International Corp_$Sales Price" WITH (NOLOCK) '
-                     'WHERE "Sales Code"=? AND "PC Memo No"=?' )
+        # Fetch Prices
+        price_qry = (f'SELECT "Item No_", "Unit Price" AS SRP '
+                     f'FROM dbo."{table_prefix}$Sales Price" WITH (NOLOCK) '
+                     f'WHERE "Sales Code"=? AND "PC Memo No"=?' )
         prices_df = pd.read_sql(price_qry, conn, params=[sales_code, pc_memo])
 
         if prices_df.empty:
-            return jsonify({"error": "No records found in Navision for the provided codes."}), 404
+            return jsonify({"error": f"No records found in {db_name} for the provided codes."}), 404
 
         item_list = prices_df['Item No_'].tolist()
         placeholders = ', '.join(['?'] * len(item_list))
-        
-        item_qry = (f'SELECT "No_" AS "Item No_", "Description", "Product Group Code" AS "Brand", '
-                    f'"Vendor Item No_" AS "Style_Stockcode", "Net Weight", "Gross Weight", '
-                    f'"Pricepoint" AS "Pricepoint_SKU", "Base Unit of Measure" AS "Unit_of_Measure", '
-                    f'"Dial Color", "Case _Frame Size", "Gender" '
-                    f'FROM dbo."Newtrends International Corp_$Item" WITH (NOLOCK) '
-                    f'WHERE "No_" IN ({placeholders})')
-        items_df = pd.read_sql(item_qry, conn, params=item_list)
+
+        # 3. Fetch Base Item Data
+        base_qry = (f'SELECT "No_" AS "Item No_", "Description", "Product Group Code" AS "Brand", '
+                    f'"Vendor Item No_" AS "Style_Stockcode", "Base Unit of Measure" AS "Unit_of_Measure" '
+                    f'FROM dbo."{table_prefix}$Item" WITH (NOLOCK) WHERE "No_" IN ({placeholders})')
+        items_df = pd.read_sql(base_qry, conn, params=item_list)
+
+        # 4. Fetch and Pivot Attributes (Gender, Color, Size, etc.)
+        # This part is unique to ATC/TPC as they don't store these in the $Item table directly
+        attr_qry = f'''
+            SELECT a."No_", b."Name" as "Attribute", c."Value" 
+            FROM dbo."{table_prefix}$Item Attribute Value Mapping" a WITH (NOLOCK)
+            LEFT JOIN dbo."{table_prefix}$Item Attribute" b ON a."Item Attribute ID" = b."ID"
+            LEFT JOIN dbo."{table_prefix}$Item Attribute Value" c ON a."Item Attribute ID" = c."Attribute ID" 
+                 AND a."Item Attribute Value ID" = c."ID"
+            WHERE a."Table ID" = 27 AND a."No_" IN ({placeholders})
+        '''
+        attr_df = pd.read_sql(attr_qry, conn, params=item_list)
+
+        if not attr_df.empty:
+            pivoted = attr_df.pivot(index='No_', columns='Attribute', values='Value').reset_index()
+            # Rename pivoted columns to align with NIC script logic for Rustans/SM
+            rename_map = {
+                'Pricepoint': 'Pricepoint_SKU',
+                'Dial Color': 'Dial Color',
+                'Case _Frame Size': 'Case _Frame Size',
+                'Gender': 'Gender'
+            }
+            pivoted = pivoted.rename(columns=rename_map)
+            items_df = pd.merge(items_df, pivoted, how='left', left_on='Item No_', right_on='No_')
+
+        # Ensure all columns exist so formatting logic doesn't crash
+        for col in ['Net Weight', 'Gross Weight', 'Pricepoint_SKU', 'Dial Color', 'Case _Frame Size', 'Gender']:
+            if col not in items_df.columns: items_df[col] = ""
+
         merged_df = pd.merge(items_df, prices_df, on="Item No_")
 
-        # --- DYNAMIC VENDOR & BRAND LOOKUP (MYSQL) ---
+        # --- 5. DYNAMIC VENDOR & BRAND LOOKUP (MYSQL) ---
         mysql_conn = get_mysql_conn()
         vendor_code, brand_meta_map = "000000", {}
         if mysql_conn:
@@ -216,9 +95,8 @@ def process_template():
             finally:
                 mysql_conn.close()
 
-        # --- CHAIN FORMATTING LOGIC ---
+        # --- 6. FORMATTING LOGIC (SM vs RUSTANS) ---
         if chain_selection == "RUSTANS":
-            # [Original Rustans formatting code block here]
             merged_df['RCC SKU'] = ""; merged_df['IMAGE'] = ""
             merged_df['VENDOR ITEM CODE'] = merged_df['Item No_']
             combined_desc_str = (merged_df['Description'].fillna('') + " " + merged_df['Dial Color'].fillna('') + " " + merged_df['Style_Stockcode'].fillna('') + " " + merged_df['Brand'].fillna('')).str.strip()
@@ -232,7 +110,6 @@ def process_template():
             final_cols = ['RCC SKU', 'IMAGE', 'VENDOR ITEM CODE', 'PRODUCT MEDIUM DESCRIPTION (CHAR. LIMIT = 30)', 'PRODUCT SHORT DESCRIPTION (CHAR. LIMIT = 10)', 'PRODUCT LONG DESCRIPTION (CHAR. LIMIT = 50)', 'VENDOR CODE', 'BRAND CODE', 'RETAIL PRICE', 'DEPARTMENT', 'SUBDEPARTMENT', 'CLASS', 'SUB CLASS', 'MERCHANDISER', 'BUYER', 'SEASON CODE', 'THEME', 'COLLECTION', 'COLOR', 'SIZE RUN', 'SIZE', 'SET / PC', 'MAKATI', 'SHANG', 'ATC', 'GW', 'CEBU', 'SOLENAD', 'E-COMM (FOR PO)', 'TOTAL', 'TOTAL RETAIL VALUE', 'SIZE SPECIFICATIONS', 'PRODUCT & CARE DETAILS', 'MATERIAL', 'LINK TO HI-RES IMAGE', 'Gender']
             img_col_name, sheet_name_val, header_row_idx, data_start_row = 'IMAGE', "Rustans Template", 14, 15
         else:
-            # [Original SM formatting code block here]
             merged_df['DESCRIPTION'] = (merged_df['Brand'].fillna('') + " " + merged_df['Description'].fillna('') + " " + merged_df['Dial Color'].fillna('') + " " + merged_df['Case _Frame Size'].fillna('') + " " + merged_df['Style_Stockcode'].fillna('')).str.replace(r'[^a-zA-Z0-9\s]', '', regex=True).str[:50]
             merged_df['COLOR'] = merged_df['Dial Color'].fillna(''); merged_df['SIZES'] = merged_df['Case _Frame Size'].fillna(''); merged_df['SRP_FMT'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
             now = datetime.now(); month, year = (now.month % 12) + 1, now.year + (1 if now.month == 12 else 0); day = min(now.day, calendar.monthrange(year, month)[1])
@@ -244,7 +121,7 @@ def process_template():
             final_cols = ['DESCRIPTION', 'COLOR', 'SIZES', 'Style_Stockcode', 'SOURCE_MARKED', 'SRP_FMT', 'Unit_of_Measure', 'EXP_DEL_MONTH', 'REMARKS', 'Pricepoint_SKU', 'IMAGES', 'ONLINE ITEMS', 'PACKAGE LENGTH IN CM', 'PACKAGE WIDTH IN CM', 'PACKAGE HEIGHT IN CM', 'PACKAGE WEIGHT IN KG', 'PRODUCT LENGTH IN CM', 'PRODUCT WIDTH IN CM', 'PRODUCT HEIGHT IN CM', 'PRODUCT WEIGHT IN KG']
             img_col_name, sheet_name_val, header_row_idx, data_start_row = 'IMAGES', "Template", 0, 1
 
-        # --- EXCEL GENERATION ---
+        # --- 7. EXCEL AND IMAGE PROCESSING ---
         progress_data.update({"current": 0, "total": 1, "status": "Indexing Images..."})
         image_cache = build_image_cache(NETWORK_IMAGE_PATH)
         progress_data["total"] = len(merged_df)
@@ -294,12 +171,16 @@ def process_template():
         return response
 
     except Exception as e:
-        logger.error(f"Global Failure: {traceback.format_exc()}")
-        return jsonify({"error": str(e)}), 500
+        # This captures the specific pyodbc error (e.g., "Invalid column name 'Pricepoint'")
+        import traceback
+        error_details = str(e)
+        stack_trace = traceback.format_exc()
+        logger.error(f"ATC Extraction Error: {error_details}\n{stack_trace}")
+        
+        # This sends the actual error back to your web browser alert
+        return jsonify({
+            "error": f"Database Error: {error_details}",
+            "status": "failed"
+        }), 500
     finally:
         if conn: conn.close()
-
-@transactions_bp.route('/transaction-generator')
-def transaction_generator():
-    if not session.get('sdr_loggedin'): return render_template('home.html')
-    return render_template('transaction_form.html')

@@ -389,6 +389,7 @@
         });
 
         // --- 2. FAST VERIFICATION LOGIC (300ms) ---
+        // --- 2. FAST VERIFICATION LOGIC (300ms) ---
         let vTimeout;
         $('#salesCodeInput, #pcMemoInput').on('input', function () {
             clearTimeout(vTimeout);
@@ -398,8 +399,9 @@
             $submitBtn.prop('disabled', true);
             const sc = $('#salesCodeInput').val().trim();
             const pm = $('#pcMemoInput').val().trim();
+            const co = $('#companySelect').val(); // ADDED: Capture current company selection
 
-            if (!sc || !pm) {
+            if (!sc || !pm || !co) { // ADDED: Only verify if company is also selected
                 $badge.hide();
                 return;
             }
@@ -411,7 +413,8 @@
                     const res = await fetch("{{ url_for('transactions.verify_codes') }}", {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                        body: `sales_code=${encodeURIComponent(sc)}&pc_memo=${encodeURIComponent(pm)}`
+                        // UPDATED: Added company=${encodeURIComponent(co)} to the body
+                        body: `sales_code=${encodeURIComponent(sc)}&pc_memo=${encodeURIComponent(pm)}&company=${encodeURIComponent(co)}`
                     });
                     const data = await res.json();
 
@@ -419,7 +422,7 @@
                         $badge.html(`<i class="fas fa-check-circle mr-2"></i>Verified: ${data.count} items found`).removeClass('verifying-text invalid-text').addClass('valid-text');
                         $submitBtn.prop('disabled', false);
                     } else {
-                        $badge.html('<i class="fas fa-times-circle mr-2"></i>No records found').removeClass('verifying-text valid-text').addClass('invalid-text');
+                        $badge.html(`<i class="fas fa-times-circle mr-2"></i>${data.error || 'No records found'}`).removeClass('verifying-text valid-text').addClass('invalid-text');
                         $submitBtn.prop('disabled', true);
                     }
                 } catch (e) {
