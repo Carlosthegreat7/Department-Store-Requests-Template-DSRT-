@@ -170,17 +170,18 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         response.headers.update({'X-Total-Items': str(progress_data["total"]), 'X-Images-Found': str(total_found_images), 'X-Filename': zip_filename, 'Access-Control-Expose-Headers': 'X-Total-Items, X-Images-Found, X-Filename'})
         return response
 
+    except pyodbc.Error as db_err:
+        # Specifically catches SQL errors (like "Invalid Object Name")
+        sql_state = db_err.args[0]
+        logger.error(f"SQL Error [{sql_state}]: {str(db_err)}")
+        return jsonify({"error": f"Database Query Failed: {str(db_err)}"}), 500
+
     except Exception as e:
-        # This captures the specific pyodbc error (e.g., "Invalid column name 'Pricepoint'")
-        import traceback
-        error_details = str(e)
+        # Catches Python logic errors (like Merge or Pivot errors)
         stack_trace = traceback.format_exc()
-        logger.error(f"ATC Extraction Error: {error_details}\n{stack_trace}")
-        
-        # This sends the actual error back to your web browser alert
-        return jsonify({
-            "error": f"Database Error: {error_details}",
-            "status": "failed"
-        }), 500
+        logger.error(f"Global ATC Failure: {stack_trace}")
+        return jsonify({"error": "An unexpected error occurred during extraction. Check logs."}), 500
+
     finally:
-        if conn: conn.close()
+        if conn:
+            conn.close() # Always close to prevent 'Too many connections' errors
