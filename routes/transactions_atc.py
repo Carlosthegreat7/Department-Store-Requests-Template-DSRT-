@@ -71,7 +71,18 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         for col in ['Net Weight', 'Gross Weight', 'Pricepoint_SKU', 'Dial Color', 'Case _Frame Size', 'Gender']:
             if col not in items_df.columns: items_df[col] = ""
 
+        # 1. Merge the data
         merged_df = pd.merge(items_df, prices_df, on="Item No_")
+
+        # 2. Force 'SRP' to be a number (so 999 is always higher than 0.01)
+        merged_df['SRP'] = pd.to_numeric(merged_df['SRP'], errors='coerce').fillna(0)
+
+        # 3. Sort so that the HIGHEST price is at the top for each Style
+        # We use 'Style_Stockcode' because that is the column you see in your Excel
+        merged_df = merged_df.sort_values(by=['Style_Stockcode', 'SRP'], ascending=[True, False])
+
+        # 4. Remove the duplicates, keeping only the first (highest price) row
+        merged_df = merged_df.drop_duplicates(subset=['Style_Stockcode'], keep='first')
 
         # --- 5. DYNAMIC VENDOR & BRAND LOOKUP (MYSQL) ---
         mysql_conn = get_mysql_conn()
@@ -168,17 +179,17 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         return response
 
     except pyodbc.Error as db_err:
-        # Specifically catches SQL errors
+        # catches sql errrs
         sql_state = db_err.args[0]
         logger.error(f"SQL Error [{sql_state}]: {str(db_err)}")
         return jsonify({"error": f"Database Query Failed: {str(db_err)}"}), 500
 
     except Exception as e:
-        # Catches Python logic errors
+        # catch python errors
         stack_trace = traceback.format_exc()
         logger.error(f"Global ATC Failure: {stack_trace}")
         return jsonify({"error": "An unexpected error occurred during extraction. Check logs."}), 500
 
     finally:
         if conn:
-            conn.close() # Always close to prevent errors
+            conn.close() 
