@@ -19,7 +19,7 @@ def search_groups():
     # Searches for matches in the Brand table's product_group column
     brands = Brand.query.filter(Brand.product_group.like(f"%{query}%")).limit(10).all()
     
-    # Return as JSON for the frontend to consume
+    # Return as json for the frontend 
     return jsonify([{"code": b.product_group, "name": b.brand_name} for b in brands])
 
 @subclass_bp.route('/admin/add_subclass', methods=['GET', 'POST'])
@@ -46,7 +46,7 @@ def add_subclass():
             
         except IntegrityError:
             db.session.rollback()
-            # This triggers if the combo already exists OR the Product Group isn't in the Brand table
+            # This triggers if the combo already exists or the Product Group isnt in the brnad table
             flash(f"Error: The Subclass code '{code}' already exists for Group '{pg}' OR the Product Group is not registered.", "danger")
         except Exception as e:
             db.session.rollback()

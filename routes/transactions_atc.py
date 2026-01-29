@@ -74,11 +74,10 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         # 1. Merge the data
         merged_df = pd.merge(items_df, prices_df, on="Item No_")
 
-        # 2. Force 'SRP' to be a number (so 999 is always higher than 0.01)
+        # 2. Force 'SRP' to be a number
         merged_df['SRP'] = pd.to_numeric(merged_df['SRP'], errors='coerce').fillna(0)
 
         # 3. Sort so that the HIGHEST price is at the top for each Style
-        # We use 'Style_Stockcode' because that is the column you see in your Excel
         merged_df = merged_df.sort_values(by=['Style_Stockcode', 'SRP'], ascending=[True, False])
 
         # 4. Remove the duplicates, keeping only the first (highest price) row
