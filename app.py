@@ -48,7 +48,7 @@ def index():
         conn = ldap.initialize(app.config['LDAP_PROVIDER_URL'])
         
         try:
-            # Connect to existing portal user database
+            # Connect to user database
             MIS_SysDev_connect = pyodbc.connect(app.config['MIS_SysDev'] + "app=" + rule.rule)
             MIS_SysDev_cursor = MIS_SysDev_connect.cursor()
 

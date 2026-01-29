@@ -1,6 +1,6 @@
 import pyodbc
 
-# Test connection to ATCREP
+# Test script to check user connection to ATCREP
 test_string = (
     f'DRIVER={{ODBC Driver 17 for SQL Server}};'
     f'SERVER=MGSVR14.mgroup.local;'

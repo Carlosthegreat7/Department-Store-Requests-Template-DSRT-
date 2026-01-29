@@ -98,13 +98,13 @@ def verify_codes():
     sales_code = request.form.get('sales_code', '').strip().upper()
     company_selection = request.form.get('company', '').strip().upper() # New line
     
-    # Logic to choose the correct DB and Table Prefix
+    # Logic to choose the correct DB
     is_atcrep = company_selection in ['ATC', 'TPC']
     db_target = 'ATCREP' if is_atcrep else 'NICREP'
     
-    # Critical: Navision table names often require underscores
+    # note: navision table names often require underscores
     if company_selection == 'ATC':
-        table_prefix = 'About Time Corporation' # Adjust based on your SSMS findings
+        table_prefix = 'About Time Corporation' 
     elif company_selection == 'TPC':
         table_prefix = 'Transcend Prime Inc'
     else:
@@ -152,7 +152,7 @@ def process_template():
     pc_memo = request.form.get('pc_memo', '').strip().upper()
     sales_code = request.form.get('sales_code', '').strip().upper()
 
-    # 2. REDIRECTION LOGIC: If company is ATC or TPC, use the new script
+    # 2. REDIRECTION LOGIC: If company is ATC or TPC, use new script
     if company_selection in ['ATC', 'TPC']:
         logger.info(f"Redirecting to ATC/TPC logic for company: {company_selection}")
         return process_atcrep_template(
@@ -168,7 +168,7 @@ def process_template():
             progress_data
         )
 
-    # 3. ORIGINAL NIC SCRIPT LOGIC (Newtrends International Corp)
+    # 3. NIC SCRIPT LOGIC
     progress_data.update({"current": 0, "total": 0, "status": "Accessing NICREP..."})
     conn = None
     try:
@@ -176,7 +176,7 @@ def process_template():
         if conn is None:
             return jsonify({"error": "Database Connection Failed"}), 500
 
-        # Query using the original NIC table name with underscore
+        # Query using the original NIC table
         price_qry = ('SELECT "Item No_", "Unit Price" AS SRP '
                      'FROM dbo."Newtrends International Corp_$Sales Price" WITH (NOLOCK) '
                      'WHERE "Sales Code"=? AND "PC Memo No"=?' )

@@ -4,14 +4,14 @@ from models import Brand
 from portal import loggedin_required
 from sqlalchemy.exc import IntegrityError
 
-# Create the Blueprint for Hierarchy (Brand) logic
+#Blueprint for Hierarchy (Brand)
 hierarchy_bp = Blueprint('hierarchy', __name__)
 
 @hierarchy_bp.route('/admin/add_hierarchy', methods=['GET', 'POST'])
 @loggedin_required()
 def add_hierarchy():
     if request.method == 'POST':
-        # 1. Capture and Pre-validate lengths
+        # Capture and Pre-validate lengths
         pg_code = request.form.get('product_group', '').strip().upper()
         if len(pg_code) > 20:
             flash("Product Group code is too long (Max 20 chars).", "warning")
@@ -48,7 +48,7 @@ def edit_hierarchy(code):
     
     if request.method == 'POST':
         try:
-            # Update values using names matching edit_hierarchy.html
+            # Update values using names in edit_hierarchy.html
             brand.brand_name = request.form.get('brand_name', '').strip().upper()
             brand.product_group = request.form.get('product_group', '').strip().upper()
             brand.dept_code = request.form.get('dept_code', '').strip().zfill(3)
@@ -64,24 +64,18 @@ def edit_hierarchy(code):
             db.session.rollback()
             flash(f"Error: {e}", "danger")
             
-    # Passing variable as 'hierarchy' to match the redesigned edit_hierarchy.html
+    # Passing variable as 'hierarchy' to match edit_hierarchy.html
     return render_template('edit_hierarchy.html', hierarchy=brand)
 
 @hierarchy_bp.route('/admin/delete_hierarchy/<code>', methods=['POST'])
 @loggedin_required()
 def delete_hierarchy(code):
     """Route to remove a Brand entry from the database with dependency checks."""
-    # Find by brand_name as per your current logic
+    # Find by brand_name
     brand = Brand.query.filter_by(brand_name=code).first()
     
     if brand:
         try:
-            # OPTIONAL: Manual check for linked sub-classes
-            # If you haven't set 'CASCADE' in your SQL, this prevents a crash
-            # if brand.sub_classes:
-            #     flash(f"Cannot delete '{code}': It has linked sub-classes. Delete them first.", "warning")
-            #     return redirect(url_for('admin_management', _anchor='hierarchy'))
-
             db.session.delete(brand)
             db.session.commit()
             flash(f"Successfully removed '{code}' from Hierarchy records.", "success")

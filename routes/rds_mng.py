@@ -4,7 +4,7 @@ from models import VendorRDS, HierarchyRDS, PricePointRDS, AgeCodeRDS
 from extensions import db
 import mysql.connector
 
-# Define the blueprint
+# Define blueprint
 rds_mng_bp = Blueprint('rds_mng', __name__)
 
 def get_mysql_conn():
@@ -156,7 +156,7 @@ def delete_vendor_rds(id):
     vendor_code = vendor.vendor_code
     
     try:
-        # === MYSQL SYNC DELETE ===
+        # sync delete
         try:
             conn = get_mysql_conn()
             if conn:

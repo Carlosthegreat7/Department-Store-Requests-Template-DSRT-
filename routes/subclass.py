@@ -2,10 +2,10 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash
 from extensions import db
 from models import SubClass, Brand
 from portal import loggedin_required
-from sqlalchemy.exc import IntegrityError # Added for robust error catching
+from sqlalchemy.exc import IntegrityError 
 from flask import jsonify
 
-# Create the Blueprint for Subclass logic
+# Blueprint for Subclass logic
 subclass_bp = Blueprint('subclass', __name__)
 
 @subclass_bp.route('/api/search_groups')

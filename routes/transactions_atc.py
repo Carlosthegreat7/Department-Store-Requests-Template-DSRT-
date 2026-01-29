@@ -17,8 +17,6 @@ logger = logging.getLogger(__name__)
 def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_code, SQLconnect, get_mysql_conn, build_image_cache, find_image_in_cache, NETWORK_IMAGE_PATH, progress_data):
     # 1. Database and Prefix Setup
     db_name = 'ATCREP'
-    # ATC/TPC usually follow the schema without the extra underscore before the $
-    # table_prefix = 'About Time Corporation_' if company_selection == 'ATC' else 'Transcend Prime Inc_'
     table_prefix = 'About Time Corporation' if company_selection == 'ATC' else 'Transcend Prime Inc'
     
     conn = None
@@ -47,7 +45,6 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         items_df = pd.read_sql(base_qry, conn, params=item_list)
 
         # 4. Fetch and Pivot Attributes (Gender, Color, Size, etc.)
-        # This part is unique to ATC/TPC as they don't store these in the $Item table directly
         attr_qry = f'''
             SELECT a."No_", b."Name" as "Attribute", c."Value" 
             FROM dbo."{table_prefix}$Item Attribute Value Mapping" a WITH (NOLOCK)
@@ -70,7 +67,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
             pivoted = pivoted.rename(columns=rename_map)
             items_df = pd.merge(items_df, pivoted, how='left', left_on='Item No_', right_on='No_')
 
-        # Ensure all columns exist so formatting logic doesn't crash
+        # Ensure all columns exist so formatting logic doesnt crash
         for col in ['Net Weight', 'Gross Weight', 'Pricepoint_SKU', 'Dial Color', 'Case _Frame Size', 'Gender']:
             if col not in items_df.columns: items_df[col] = ""
 
@@ -171,17 +168,17 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         return response
 
     except pyodbc.Error as db_err:
-        # Specifically catches SQL errors (like "Invalid Object Name")
+        # Specifically catches SQL errors
         sql_state = db_err.args[0]
         logger.error(f"SQL Error [{sql_state}]: {str(db_err)}")
         return jsonify({"error": f"Database Query Failed: {str(db_err)}"}), 500
 
     except Exception as e:
-        # Catches Python logic errors (like Merge or Pivot errors)
+        # Catches Python logic errors
         stack_trace = traceback.format_exc()
         logger.error(f"Global ATC Failure: {stack_trace}")
         return jsonify({"error": "An unexpected error occurred during extraction. Check logs."}), 500
 
     finally:
         if conn:
-            conn.close() # Always close to prevent 'Too many connections' errors
+            conn.close() # Always close to prevent errors

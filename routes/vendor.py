@@ -4,7 +4,7 @@ from models import Vendor
 from portal import loggedin_required
 import mysql.connector
 
-# Create the Blueprint for Vendor logic
+#Blueprint for Vendor logic
 vendor_bp = Blueprint('vendor', __name__)
 
 def get_mysql_conn():
@@ -26,17 +26,16 @@ def add_vendor():
     if request.method == 'POST':
         code = request.form.get('code', '').strip().zfill(6)
         name = request.form.get('name', '').strip().upper()
-        # You can eventually add a 'chain' field to your add_vendor.html form
         chain = request.form.get('chain', 'SM').strip().upper() 
         
         try:
-            # 1. Add to the main Vendor table (SQLAlchemy)
+            # Add to the main Vendor table (SQLAlchemy)
             new_vendor = Vendor(vendor_code=code, vendor_name=name)
             db.session.add(new_vendor)
             db.session.commit()
 
-            # 2. Add to the Bridge Mapping table (Raw SQL)
-            # This ensures it shows up in your dynamic dropdowns
+            # Add to the Bridge Mapping table (Raw SQL)
+            # This ensures entry shows up in dynamic dropdowns
             conn = get_mysql_conn()
             if conn:
                 cursor = conn.cursor()
@@ -46,7 +45,6 @@ def add_vendor():
                     "VALUES (%s, %s, %s) "
                     "ON DUPLICATE KEY UPDATE vendor_code=%s"
                 )
-                # We use a slug of the name (e.g., 'CARLO_CORP') for company_selection
                 company_slug = name.replace(" ", "_")[:15]
                 cursor.execute(map_qry, (chain, company_slug, code, code))
                 conn.commit()
@@ -72,7 +70,7 @@ def edit_vendor(code):
         new_name = request.form.get('name').strip().upper()
         
         try:
-            # 1. Update Mapping Table First (if the code changed)
+            # 1. Update Mapping Table First (if code is changed)
             conn = get_mysql_conn()
             if conn:
                 cursor = conn.cursor()
