@@ -240,6 +240,7 @@
                             <option value="" disabled selected>Select Chain</option>
                             <option value="SM">SM Department Store</option>
                             <option value="RUSTANS">Rustans</option>
+                            <option value="RDS">RDS</option>
                         </select>
                     </div>
 
@@ -337,7 +338,7 @@
                 spread: 55,
                 origin: { x: 0 },
                 colors: colors,
-                zIndex: 4000 // Higher than overlay
+                zIndex: 4000
             });
             confetti({
                 particleCount: 3,
@@ -345,7 +346,7 @@
                 spread: 55,
                 origin: { x: 1 },
                 colors: colors,
-                zIndex: 4000 // Higher than overlay
+                zIndex: 4000
             });
 
             if (Date.now() < end) {
@@ -355,6 +356,8 @@
     }
 
     $(document).ready(function () {
+        console.log("Template Generator Script Active");
+
         // --- 1. DYNAMIC DROPDOWN ALGORITHM ---
         $('#chainSelect').on('change', async function () {
             const chain = $(this).val();
@@ -362,6 +365,7 @@
             const $submitBtn = $('#submitBtn');
             const $badge = $('#sharedValidation');
 
+            // Reset UI states
             $companySelect.empty().append('<option value="" disabled selected>Loading...</option>').prop('disabled', true);
             $submitBtn.prop('disabled', true);
             $badge.hide();
@@ -372,25 +376,35 @@
                 const response = await fetch(`/get-companies/${chain}`);
                 const companies = await response.json();
 
-                $companySelect.empty().append('<option value="" disabled selected>Select Company</option>');
+                $companySelect.empty().append('<option value="" disabled selected>Select Company Entity</option>');
 
-                if (companies.length > 0) {
+                if (companies && companies.length > 0) {
                     companies.forEach(c => {
-                        $companySelect.append(`<option value="${c.company_selection}">${c.company_selection} (${c.vendor_code})</option>`);
+                        // Strict check for null/None vendor codes
+                        const hasCode = c.vendor_code !== null && c.vendor_code !== undefined && String(c.vendor_code).trim() !== "" && String(c.vendor_code).toLowerCase() !== "none";
+
+                        let displayLabel = c.company_selection;
+                        if (hasCode) {
+                            displayLabel += ` (${c.vendor_code})`;
+                        } else {
+                            displayLabel += ` (No Codes)`;
+                        }
+
+                        $companySelect.append(`<option value="${c.company_selection}">${displayLabel}</option>`);
                     });
                     $companySelect.prop('disabled', false);
                 } else {
-                    $companySelect.append('<option value="" disabled>No vendors mapped in DB</option>');
+                    $companySelect.append('<option value="" disabled>No entities available</option>');
                 }
             } catch (error) {
                 console.error("Fetch error:", error);
-                $companySelect.empty().append('<option value="" disabled>Error loading vendors</option>');
+                $companySelect.empty().append('<option value="" disabled>Error loading entities</option>');
             }
         });
 
         // --- 2. FAST VERIFICATION LOGIC (300ms) ---
         let vTimeout;
-        $('#salesCodeInput, #pcMemoInput').on('input', function () {
+        $('#salesCodeInput, #pcMemoInput, #companySelect').on('input change', function () {
             clearTimeout(vTimeout);
             const $submitBtn = $('#submitBtn');
             const $badge = $('#sharedValidation');
@@ -398,9 +412,9 @@
             $submitBtn.prop('disabled', true);
             const sc = $('#salesCodeInput').val().trim();
             const pm = $('#pcMemoInput').val().trim();
-            const co = $('#companySelect').val(); // capture current company selection
+            const co = $('#companySelect').val();
 
-            if (!sc || !pm || !co) { // only verify if company is also selected
+            if (!sc || !pm || !co) {
                 $badge.hide();
                 return;
             }
@@ -509,11 +523,12 @@
                         if (timeLeft <= 0) location.reload();
                     }, 1000);
                 } else {
-                    throw new Error("Failed to process.");
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || "Failed to process.");
                 }
             } catch (err) {
                 if (err.name !== 'AbortError') {
-                    alert("A server error occurred.");
+                    alert("Error: " + err.message);
                     $('#processing-overlay').hide();
                 }
                 eventSource.close();

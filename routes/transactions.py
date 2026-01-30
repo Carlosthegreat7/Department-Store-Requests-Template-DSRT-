@@ -131,14 +131,25 @@ def verify_codes():
 @transactions_bp.route('/get-companies/<chain>')
 def get_companies(chain):
     mysql_conn = get_mysql_conn()
-    if not mysql_conn: return jsonify([])
-    try:
-        cursor = mysql_conn.cursor(dictionary=True)
-        query = "SELECT company_selection, vendor_code FROM vendor_chain_mappings WHERE chain_name = %s"
-        cursor.execute(query, (chain.upper(),))
-        return jsonify(cursor.fetchall())
-    finally:
-        mysql_conn.close()
+    results = []
+    if mysql_conn:
+        try:
+            cursor = mysql_conn.cursor(dictionary=True)
+            query = "SELECT company_selection, vendor_code FROM vendor_chain_mappings WHERE chain_name = %s"
+            cursor.execute(query, (chain.upper(),))
+            results = cursor.fetchall()
+        finally:
+            mysql_conn.close()
+
+    # If no mappings exist for this chain, return the default placeholders
+    if not results:
+        return jsonify([
+            {"company_selection": "NIC", "vendor_code": None, "is_default": True},
+            {"company_selection": "ATC", "vendor_code": None, "is_default": True},
+            {"company_selection": "TPC", "vendor_code": None, "is_default": True}
+        ])
+    
+    return jsonify(results)
 
 # --- MAIN CONTROLLER ROUTE ---
 
