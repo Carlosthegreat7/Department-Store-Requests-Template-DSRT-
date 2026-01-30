@@ -53,7 +53,6 @@ def add_vendor_rds():
         flash("Error: All fields are required")
         return redirect(url_for('rds_mng.admin_management_rds'))
 
-    # Check for duplicate vendor code
     existing = VendorRDS.query.filter_by(vendor_code=vendor_code).first()
     if existing:
         flash(f"Error: Vendor Code {vendor_code} already exists")
@@ -68,22 +67,21 @@ def add_vendor_rds():
         db.session.add(new_vendor)
         db.session.commit()
 
-        # === MYSQL SYNC FOR TRANSACTION FORM ===
+        # === MYSQL SYNC FOR TRANSACTION FORM (PATCHED FOR RDS) ===
         try:
             conn = get_mysql_conn()
             if conn:
                 cursor = conn.cursor()
-                # Ensure it appears in the transaction dropdown for RUSTANS
                 sync_qry = (
                     "INSERT INTO vendor_chain_mappings (chain_name, company_selection, vendor_code) "
                     "VALUES (%s, %s, %s) "
                     "ON DUPLICATE KEY UPDATE vendor_code=%s"
                 )
-                cursor.execute(sync_qry, ('RUSTANS', company_name, vendor_code, vendor_code))
+                # Chain identifier is now RDS
+                cursor.execute(sync_qry, ('RDS', company_name, vendor_code, vendor_code))
                 conn.commit()
                 conn.close()
         except Exception as e:
-            # Non-critical, just log or silent fail, transaction form works via VendorRDS fallback now anyway
             print(f"MySQL Sync Warning: {e}")
 
         flash("RDS Vendor successfully added", "success")
@@ -118,25 +116,32 @@ def edit_vendor_rds(id):
             return redirect(url_for('rds_mng.admin_management_rds'))
 
     try:
+        # Store old values for the SQL Update mapping
         old_vendor_code = vendor.vendor_code
+        
+        # Update SQLAlchemy model
         vendor.company_name = company_name
         vendor.vendor_code = vendor_code
         vendor.mfg_part_no = mfg_part_no
         
         db.session.commit()
 
-        # === MYSQL SYNC FOR TRANSACTION FORM ===
-        if old_vendor_code != vendor_code:
-            try:
-                conn = get_mysql_conn()
-                if conn:
-                    cursor = conn.cursor()
-                    update_qry = "UPDATE vendor_chain_mappings SET vendor_code=%s WHERE vendor_code=%s AND chain_name='RUSTANS'"
-                    cursor.execute(update_qry, (vendor_code, old_vendor_code))
-                    conn.commit()
-                    conn.close()
-            except Exception as e:
-                print(f"MySQL Sync Warning: {e}")
+        # === MYSQL SYNC FOR TRANSACTION FORM (PATCHED FOR RDS) ===
+        try:
+            conn = get_mysql_conn()
+            if conn:
+                cursor = conn.cursor()
+                # Update both code and name in the bridge table where chain is RDS
+                update_qry = (
+                    "UPDATE vendor_chain_mappings "
+                    "SET vendor_code=%s, company_selection=%s "
+                    "WHERE vendor_code=%s AND chain_name='RDS'"
+                )
+                cursor.execute(update_qry, (vendor_code, company_name, old_vendor_code))
+                conn.commit()
+                conn.close()
+        except Exception as e:
+            print(f"MySQL Sync Warning: {e}")
 
         flash("RDS Vendor successfully updated", "success")
     except Exception as e:
