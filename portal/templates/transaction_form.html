@@ -389,7 +389,6 @@
         });
 
         // --- 2. FAST VERIFICATION LOGIC (300ms) ---
-        // --- 2. FAST VERIFICATION LOGIC (300ms) ---
         let vTimeout;
         $('#salesCodeInput, #pcMemoInput').on('input', function () {
             clearTimeout(vTimeout);
@@ -399,9 +398,9 @@
             $submitBtn.prop('disabled', true);
             const sc = $('#salesCodeInput').val().trim();
             const pm = $('#pcMemoInput').val().trim();
-            const co = $('#companySelect').val(); // ADDED: Capture current company selection
+            const co = $('#companySelect').val(); // capture current company selection
 
-            if (!sc || !pm || !co) { // ADDED: Only verify if company is also selected
+            if (!sc || !pm || !co) { // only verify if company is also selected
                 $badge.hide();
                 return;
             }
@@ -413,7 +412,6 @@
                     const res = await fetch("{{ url_for('transactions.verify_codes') }}", {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-                        // UPDATED: Added company=${encodeURIComponent(co)} to the body
                         body: `sales_code=${encodeURIComponent(sc)}&pc_memo=${encodeURIComponent(pm)}&company=${encodeURIComponent(co)}`
                     });
                     const data = await res.json();
