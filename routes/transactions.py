@@ -396,3 +396,6 @@ def process_template():
 def transaction_generator():
     if not session.get('sdr_loggedin'): return render_template('home.html')
     return render_template('transaction_form.html')
+
+
+    # PENDING FILENAME LOGIC, EXCEL FILE FORMATTING, MAKE IT READABLE WHEN OPENED
