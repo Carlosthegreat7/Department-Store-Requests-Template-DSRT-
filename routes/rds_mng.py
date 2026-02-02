@@ -356,3 +356,96 @@ def delete_price_point_rds(id):
         flash(f"Database Error: {str(e)}")
     
     return redirect(url_for('rds_mng.admin_management_rds', _anchor='price'))
+
+# --- AGE CODE MANAGEMENT ---
+
+@rds_mng_bp.route('/admin/management/rds/add_age_code', methods=['POST'])
+@loggedin_required()
+def add_age_code_rds():
+    if session.get('sdr_usertype') != 'Head Office':
+        flash("Unauthorized Access")
+        return redirect(url_for('index'))
+
+    age_code = request.form.get('age_code')
+    month = request.form.get('date_month')
+    year = request.form.get('date_year')
+
+    if not age_code or not month or not year:
+        flash("Error: All fields are required")
+        return redirect(url_for('rds_mng.admin_management_rds', _anchor='age'))
+
+    # Concatenate Description
+    description = f"{month} {year}"
+
+    existing = AgeCodeRDS.query.filter_by(age_code=age_code).first()
+    if existing:
+        flash(f"Error: Age Code {age_code} already exists")
+        return redirect(url_for('rds_mng.admin_management_rds', _anchor='age'))
+
+    try:
+        new_age = AgeCodeRDS(
+            age_code=age_code,
+            description=description
+        )
+        db.session.add(new_age)
+        db.session.commit()
+        flash("Age Code added successfully", "success")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Database Error: {str(e)}")
+
+    return redirect(url_for('rds_mng.admin_management_rds', _anchor='age'))
+
+@rds_mng_bp.route('/admin/management/rds/edit_age_code/<int:id>', methods=['POST'])
+@loggedin_required()
+def edit_age_code_rds(id):
+    if session.get('sdr_usertype') != 'Head Office':
+        flash("Unauthorized Access")
+        return redirect(url_for('index'))
+
+    ac = AgeCodeRDS.query.get_or_404(id)
+    
+    age_code = request.form.get('age_code')
+    month = request.form.get('date_month')
+    year = request.form.get('date_year')
+
+    if not age_code or not month or not year:
+        flash("Error: All fields are required")
+        return redirect(url_for('rds_mng.admin_management_rds', _anchor='age'))
+
+    description = f"{month} {year}"
+
+    if ac.age_code != age_code:
+        existing = AgeCodeRDS.query.filter_by(age_code=age_code).first()
+        if existing:
+            flash(f"Error: Age Code {age_code} already exists")
+            return redirect(url_for('rds_mng.admin_management_rds', _anchor='age'))
+
+    try:
+        ac.age_code = age_code
+        ac.description = description
+        db.session.commit()
+        flash("Age Code updated successfully", "success")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Database Error: {str(e)}")
+
+    return redirect(url_for('rds_mng.admin_management_rds', _anchor='age'))
+
+@rds_mng_bp.route('/admin/management/rds/delete-age/<int:id>', methods=['POST'])
+@loggedin_required()
+def delete_age_code_rds(id):
+    if session.get('sdr_usertype') != 'Head Office':
+        flash("Unauthorized Access")
+        return redirect(url_for('index'))
+
+    ac = AgeCodeRDS.query.get_or_404(id)
+    try:
+        db.session.delete(ac)
+        db.session.commit()
+        flash("Age Code deleted successfully", "success")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Database Error: {str(e)}")
+    
+    return redirect(url_for('rds_mng.admin_management_rds', _anchor='age'))
