@@ -217,6 +217,9 @@
                         <td class="align-middle font-weight-bold">{{ p.price_point_code }}</td>
                         <td class="align-middle">{{ p.price_point_desc }}</td>
                         <td class="text-right">
+                            <button class="btn-icon-hover edit border-0 mr-2"
+                                onclick="openEditPricePointModal('{{ p.id }}', '{{ p.price_point_code }}', '{{ p.price_point_desc }}')"
+                                title="Edit"><i class="fas fa-edit"></i></button>
                             <button class="btn-icon-hover delete border-0"
                                 onclick="confirmDelete('price', '{{ p.id }}')" title="Delete"><i
                                     class="fas fa-trash"></i></button>
@@ -475,6 +478,75 @@
 
 </div>
 
+<!-- ADD PRICE POINT MODAL -->
+<div class="modal fade" id="addPricePointModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content modal-content-bento shadow-lg">
+            <div class="glass-header-small">
+                <div class="header-text-small">
+                    <h3><i class="fas fa-plus-circle mr-3"></i>Add Price Point</h3>
+                </div>
+            </div>
+            <div class="px-5 pb-5">
+                <form action="{{ url_for('rds_mng.add_price_point_rds') }}" method="POST" autocomplete="off">
+                    <div class="row">
+                        <div class="col-md-4 mb-4">
+                            <label class="small font-weight-bold text-muted uppercase ml-2">Code</label>
+                            <input type="text" name="price_point_code" class="form-control form-control-bento"
+                                placeholder="e.g. XX" required>
+                        </div>
+                        <div class="col-md-8 mb-4">
+                            <label class="small font-weight-bold text-muted uppercase ml-2">Description</label>
+                            <input type="text" name="price_point_desc" class="form-control form-control-bento"
+                                placeholder="e.g. 1-1000" required>
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-end">
+                        <button type="button" class="btn btn-light rounded-pill px-4 mr-3"
+                            data-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-save"><i class="fas fa-check-circle mr-2"></i>
+                            Save</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- EDIT PRICE POINT MODAL -->
+<div class="modal fade" id="editPricePointRdsModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered modal-lg">
+        <div class="modal-content modal-content-bento shadow-lg">
+            <div class="glass-header-small">
+                <div class="header-text-small">
+                    <h3><i class="fas fa-edit mr-3"></i>Edit Price Point</h3>
+                </div>
+            </div>
+            <div class="px-5 pb-5">
+                <form id="editPricePointRdsForm" method="POST" autocomplete="off">
+                    <div class="row">
+                        <div class="col-md-4 mb-4">
+                            <label class="small font-weight-bold text-muted uppercase ml-2">Code</label>
+                            <input type="text" name="price_point_code" id="edit_price_point_code"
+                                class="form-control form-control-bento" required>
+                        </div>
+                        <div class="col-md-8 mb-4">
+                            <label class="small font-weight-bold text-muted uppercase ml-2">Description</label>
+                            <input type="text" name="price_point_desc" id="edit_price_point_desc"
+                                class="form-control form-control-bento" required>
+                        </div>
+                    </div>
+                    <div class="d-flex justify-content-end">
+                        <button type="button" class="btn btn-light rounded-pill px-4 mr-3"
+                            data-dismiss="modal">Cancel</button>
+                        <button type="submit" class="btn btn-save"><i class="fas fa-save mr-2"></i> Update</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Edit script tags removed: relying on base.html includes -->
 
 <script>
@@ -672,5 +744,14 @@
         document.getElementById('editHierarchyRdsForm').action = `/admin/management/rds/edit_hierarchy/${id}`;
         $('#editHierarchyRdsModal').modal('show');
     }
+
+    window.openEditPricePointModal = function (id, code, desc) {
+        document.getElementById('edit_price_point_code').value = code;
+        document.getElementById('edit_price_point_desc').value = desc;
+        document.getElementById('editPricePointRdsForm').action = `/admin/management/rds/edit_price_point/${id}`;
+        $('#editPricePointRdsModal').modal('show');
+    }
+
+
 </script>
 {% endblock %}

@@ -270,3 +270,89 @@ def delete_hierarchy_rds(id):
         flash(f"Database Error: {str(e)}")
     
     return redirect(url_for('rds_mng.admin_management_rds', _anchor='hierarchy'))
+
+# --- PRICE POINT MANAGEMENT ---
+
+@rds_mng_bp.route('/admin/management/rds/add_price_point', methods=['POST'])
+@loggedin_required()
+def add_price_point_rds():
+    if session.get('sdr_usertype') != 'Head Office':
+        flash("Unauthorized Access")
+        return redirect(url_for('index'))
+
+    price_point_code = request.form.get('price_point_code')
+    price_point_desc = request.form.get('price_point_desc')
+
+    if not price_point_code or not price_point_desc:
+        flash("Error: All fields are required")
+        return redirect(url_for('rds_mng.admin_management_rds', _anchor='price'))
+
+    existing = PricePointRDS.query.filter_by(price_point_code=price_point_code).first()
+    if existing:
+        flash(f"Error: Price Point Code {price_point_code} already exists")
+        return redirect(url_for('rds_mng.admin_management_rds', _anchor='price'))
+
+    try:
+        new_pp = PricePointRDS(
+            price_point_code=price_point_code,
+            price_point_desc=price_point_desc
+        )
+        db.session.add(new_pp)
+        db.session.commit()
+        flash("Price Point added successfully", "success")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Database Error: {str(e)}")
+
+    return redirect(url_for('rds_mng.admin_management_rds', _anchor='price'))
+
+@rds_mng_bp.route('/admin/management/rds/edit_price_point/<int:id>', methods=['POST'])
+@loggedin_required()
+def edit_price_point_rds(id):
+    if session.get('sdr_usertype') != 'Head Office':
+        flash("Unauthorized Access")
+        return redirect(url_for('index'))
+
+    pp = PricePointRDS.query.get_or_404(id)
+    
+    price_point_code = request.form.get('price_point_code')
+    price_point_desc = request.form.get('price_point_desc')
+
+    if not price_point_code or not price_point_desc:
+        flash("Error: All fields are required")
+        return redirect(url_for('rds_mng.admin_management_rds', _anchor='price'))
+
+    if pp.price_point_code != price_point_code:
+        existing = PricePointRDS.query.filter_by(price_point_code=price_point_code).first()
+        if existing:
+            flash(f"Error: Price Point Code {price_point_code} already exists")
+            return redirect(url_for('rds_mng.admin_management_rds', _anchor='price'))
+
+    try:
+        pp.price_point_code = price_point_code
+        pp.price_point_desc = price_point_desc
+        db.session.commit()
+        flash("Price Point updated successfully", "success")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Database Error: {str(e)}")
+
+    return redirect(url_for('rds_mng.admin_management_rds', _anchor='price'))
+
+@rds_mng_bp.route('/admin/management/rds/delete-price/<int:id>', methods=['POST'])
+@loggedin_required()
+def delete_price_point_rds(id):
+    if session.get('sdr_usertype') != 'Head Office':
+        flash("Unauthorized Access")
+        return redirect(url_for('index'))
+
+    pp = PricePointRDS.query.get_or_404(id)
+    try:
+        db.session.delete(pp)
+        db.session.commit()
+        flash("Price Point deleted successfully", "success")
+    except Exception as e:
+        db.session.rollback()
+        flash(f"Database Error: {str(e)}")
+    
+    return redirect(url_for('rds_mng.admin_management_rds', _anchor='price'))
