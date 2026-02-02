@@ -167,16 +167,9 @@ def process_template():
     if company_selection in ['ATC', 'TPC']:
         logger.info(f"Redirecting to ATC/TPC logic for company: {company_selection}")
         return process_atcrep_template(
-            chain_selection, 
-            company_selection, 
-            pc_memo, 
-            sales_code, 
-            SQLconnect, 
-            get_mysql_conn, 
-            build_image_cache, 
-            find_image_in_cache, 
-            NETWORK_IMAGE_PATH, 
-            progress_data
+            chain_selection, company_selection, pc_memo, sales_code, 
+            SQLconnect, get_mysql_conn, build_image_cache, 
+            find_image_in_cache, NETWORK_IMAGE_PATH, progress_data
         )
 
     # 3. NIC SCRIPT LOGIC
@@ -187,7 +180,6 @@ def process_template():
         if conn is None:
             return jsonify({"error": "Database Connection Failed"}), 500
 
-        # Query using the original NIC table
         price_qry = ('SELECT "Item No_", "Unit Price" AS SRP '
                      'FROM dbo."Newtrends International Corp_$Sales Price" WITH (NOLOCK) '
                      'WHERE "Sales Code"=? AND "PC Memo No"=?' )
@@ -199,9 +191,10 @@ def process_template():
         item_list = prices_df['Item No_'].tolist()
         placeholders = ', '.join(['?'] * len(item_list))
         
+        # SQL FETCH: Explicitly pulling Point_Power (RDS Price Point) from NICREP
         item_qry = (f'SELECT "No_" AS "Item No_", "Description", "Product Group Code" AS "Brand", '
                     f'"Vendor Item No_" AS "Style_Stockcode", "Net Weight", "Gross Weight", '
-                    f'"Pricepoint" AS "Pricepoint_SKU", "Base Unit of Measure" AS "Unit_of_Measure", '
+                    f'"Point_Power", "Base Unit of Measure" AS "Unit_of_Measure", '
                     f'"Dial Color", "Case _Frame Size", "Gender" '
                     f'FROM dbo."Newtrends International Corp_$Item" WITH (NOLOCK) '
                     f'WHERE "No_" IN ({placeholders})')
@@ -210,13 +203,21 @@ def process_template():
 
         # --- DYNAMIC VENDOR & BRAND LOOKUP (MYSQL) ---
         mysql_conn = get_mysql_conn()
-        vendor_code, brand_meta_map = "000000", {}
+        vendor_code, dynamic_mfg_no, brand_meta_map = "000000", "", {}
         if mysql_conn:
             try:
                 v_cursor = mysql_conn.cursor()
+                # Step 1: Get vendor_code from mappings
                 v_cursor.execute("SELECT vendor_code FROM vendor_chain_mappings WHERE chain_name = %s AND company_selection = %s", (chain_selection, company_selection))
                 v_res = v_cursor.fetchone()
-                if v_res: vendor_code = str(v_res[0])
+                
+                if v_res: 
+                    vendor_code = str(v_res[0])
+                    # Step 2: Get mfg_part_no from vendors_rds using the vendor_code
+                    v_cursor.execute("SELECT mfg_part_no FROM vendors_rds WHERE vendor_code = %s", (vendor_code,))
+                    mfg_res = v_cursor.fetchone()
+                    if mfg_res:
+                        dynamic_mfg_no = str(mfg_res[0])
 
                 unique_brands = merged_df['Brand'].unique().tolist()
                 if unique_brands:
@@ -227,9 +228,13 @@ def process_template():
             finally:
                 mysql_conn.close()
 
-        # --- CHAIN FORMATTING LOGIC ---
+        # --- 4. FILENAME & DATE FORMATTING ---
+        time_now = datetime.now()
+        date_str = time_now.strftime('%m-%d-%Y')
+        filename_base = f"{chain_selection} {company_selection} {date_str}"
+        
         if chain_selection == "RUSTANS":
-            # [Original Rustans formatting code block here]
+            # [Rustans Mapping]
             merged_df['RCC SKU'] = ""; merged_df['IMAGE'] = ""
             merged_df['VENDOR ITEM CODE'] = merged_df['Item No_']
             combined_desc_str = (merged_df['Description'].fillna('') + " " + merged_df['Dial Color'].fillna('') + " " + merged_df['Style_Stockcode'].fillna('') + " " + merged_df['Brand'].fillna('')).str.strip()
@@ -242,66 +247,105 @@ def process_template():
             for col in ['DEPARTMENT', 'SUBDEPARTMENT', 'CLASS', 'SUB CLASS', 'MERCHANDISER', 'BUYER', 'SEASON CODE', 'THEME', 'COLLECTION', 'SIZE RUN', 'SET / PC', 'MAKATI', 'SHANG', 'ATC', 'GW', 'CEBU', 'SOLENAD', 'E-COMM (FOR PO)', 'TOTAL', 'TOTAL RETAIL VALUE', 'SIZE SPECIFICATIONS', 'PRODUCT & CARE DETAILS', 'MATERIAL', 'LINK TO HI-RES IMAGE']: merged_df[col] = ""
             final_cols = ['RCC SKU', 'IMAGE', 'VENDOR ITEM CODE', 'PRODUCT MEDIUM DESCRIPTION (CHAR. LIMIT = 30)', 'PRODUCT SHORT DESCRIPTION (CHAR. LIMIT = 10)', 'PRODUCT LONG DESCRIPTION (CHAR. LIMIT = 50)', 'VENDOR CODE', 'BRAND CODE', 'RETAIL PRICE', 'DEPARTMENT', 'SUBDEPARTMENT', 'CLASS', 'SUB CLASS', 'MERCHANDISER', 'BUYER', 'SEASON CODE', 'THEME', 'COLLECTION', 'COLOR', 'SIZE RUN', 'SIZE', 'SET / PC', 'MAKATI', 'SHANG', 'ATC', 'GW', 'CEBU', 'SOLENAD', 'E-COMM (FOR PO)', 'TOTAL', 'TOTAL RETAIL VALUE', 'SIZE SPECIFICATIONS', 'PRODUCT & CARE DETAILS', 'MATERIAL', 'LINK TO HI-RES IMAGE', 'Gender']
             img_col_name, sheet_name_val, header_row_idx, data_start_row = 'IMAGE', "Rustans Template", 14, 15
+        
+        elif chain_selection == "RDS":
+            # Page 1
+            merged_df['SKU Number'] = ""; merged_df['SKU Number with check digit'] = ""; merged_df['Sku Number_dup'] = ""
+            merged_df['Item Description'] = merged_df['Description'].fillna('').str[:30]
+            merged_df['Short name'] = merged_df['Description'].fillna('').str[:10]
+            merged_df['Item Status'] = "A"; merged_df['Buyer'] = "B92"; merged_df['W/SCD 5% DISC'] = "N"; merged_df['Inventory Grp'] = ""; merged_df['W/PWD 5% DISC'] = "N"
+            merged_df['SKU Type'] = ""; merged_df['Merchandiser'] = ""; merged_df['POS Tax Code'] = "V"; 
+            
+            # Map dynamic values from MySQL relational lookup
+            merged_df['Primary Vendor'] = vendor_code 
+            merged_df['Manufacturer Part#'] = dynamic_mfg_no
+            
+            merged_df['Ship Pt'] = ""; merged_df['Manufacturer'] = ""; merged_df['Vendor Part#'] = ""
+            merged_df['Dept'] = ""; merged_df['Sub-Dept'] = ""; merged_df['Class-'] = ""; merged_df['Sub-Class'] = ""
+            # Page 2 & 3
+            merged_df['Product Code'] = ""; merged_df['TYPE'] = ""; merged_df['Primary Buy UPC'] = ""; merged_df['Saleable UPC'] = ""
+            merged_df['Competitive Priced'] = ""; merged_df['Display on Web'] = ""; merged_df['Competitive Price'] = ""; merged_df['POS Price Prompt'] = ""
+            merged_df['Original Price'] = merged_df['SRP'].fillna(0).map('{:.2f}'.format)
+            merged_df['Prevent POS Download'] = "N"; merged_df['Next Regular Retail'] = ""; 
+            merged_df['Effective'] = ""; merged_df['Current Vendor Cost'] = ""; merged_df['Buying U/M'] = ""; merged_df['Selling U/M'] = ""
+            merged_df['Standard Pack'] = "1"; merged_df['Minimum (Inner) Pack'] = "1"
+            # Page 4
+            merged_df['Coordinate Group'] = "RDS"; merged_df['Super Brand'] = ""; merged_df['Brand_Col'] = merged_df['Brand']
+            merged_df['Buy Code(C/S)'] = "S"; merged_df['Season'] = "NA"; merged_df['Set Code'] = "0"; merged_df['Mfg. No.'] = ""
+            merged_df['Age Code'] = ""; merged_df['Label'] = ""; merged_df['Origin'] = ""; merged_df['Tag'] = ""; merged_df['Fair Event'] = ""; merged_df['Blank Event'] = ""
+            merged_df['Price Point'] = merged_df['Point_Power'].fillna('')
+            merged_df['Merchandise Flag'] = ""; merged_df['Hold Wholesale Order'] = "N"
+            merged_df['Size'] = merged_df['Case _Frame Size'].fillna(''); merged_df['Substitute SKU'] = ""; merged_df['Core SKU'] = ""; merged_df['Replacement SKU'] = ""
+            # Page 5
+            merged_df['Replenishment Code'] = "0"; merged_df['Sales $'] = ""; merged_df['Distribution Method'] = ""; merged_df['Sales Units'] = ""; merged_df['Rpl Start Date'] = ""
+            merged_df['Gross Margin'] = ""; merged_df['Rpl End Date'] = ""; merged_df['User Defined'] = ""; merged_df['Avg. Model Stock'] = ""; merged_df['Avg. Order at'] = ""
+            merged_df['Maximum Stock'] = ""; merged_df['Display Minimum'] = ""; merged_df['Stock in Mult. of'] = ""; merged_df['Minimum Rpl Qty'] = "1"; merged_df['Item Profile'] = ""
+            merged_df['Hold Order'] = "N"; merged_df['Plan Lead Time'] = ""
+            
+            final_cols = [
+                'SKU Number', 'SKU Number with check digit', 'Sku Number_dup', 'Item Description', 'Short name', 'Item Status', 'Buyer', 'W/SCD 5% DISC', 'Inventory Grp', 'W/PWD 5% DISC',
+                'SKU Type', 'Merchandiser', 'POS Tax Code', 'Primary Vendor', 'Ship Pt', 'Manufacturer', 'Vendor Part#', 'Manufacturer Part#', 'Dept', 'Sub-Dept', 'Class-', 'Sub-Class',
+                'Product Code', 'TYPE', 'Primary Buy UPC', 'Saleable UPC', 'Competitive Priced', 'Display on Web', 'Competitive Price', 'POS Price Prompt', 'Original Price', 
+                'Prevent POS Download', 'Next Regular Retail', 'Effective', 'Current Vendor Cost', 'Buying U/M', 'Selling U/M', 'Standard Pack', 'Minimum (Inner) Pack', 
+                'Coordinate Group', 'Super Brand', 'Brand_Col', 'Buy Code(C/S)', 'Season', 'Set Code', 'Mfg. No.', 'Age Code', 'Label', 'Origin', 'Tag', 'Fair Event', 'Blank Event',
+                'Price Point', 'Merchandise Flag', 'Hold Wholesale Order', 'Size', 'Substitute SKU', 'Core SKU', 'Replacement SKU', 'Replenishment Code', 'Sales $', 
+                'Distribution Method', 'Sales Units', 'Rpl Start Date', 'Gross Margin', 'Rpl End Date', 'User Defined', 'Avg. Model Stock', 'Avg. Order at', 'Maximum Stock', 
+                'Display Minimum', 'Stock in Mult. of', 'Minimum Rpl Qty', 'Item Profile', 'Hold Order', 'Plan Lead Time'
+            ]
+            img_col_name, sheet_name_val, header_row_idx, data_start_row = None, "TEMPLATE", 0, 1
+        
         else:
-            # [Original SM formatting code block here]
+            # [SM/Default Mapping]
             merged_df['DESCRIPTION'] = (merged_df['Brand'].fillna('') + " " + merged_df['Description'].fillna('') + " " + merged_df['Dial Color'].fillna('') + " " + merged_df['Case _Frame Size'].fillna('') + " " + merged_df['Style_Stockcode'].fillna('')).str.replace(r'[^a-zA-Z0-9\s]', '', regex=True).str[:50]
-            merged_df['COLOR'] = merged_df['Dial Color'].fillna(''); merged_df['SIZES'] = merged_df['Case _Frame Size'].fillna(''); merged_df['SRP'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
-            now = datetime.now(); month, year = (now.month % 12) + 1, now.year + (1 if now.month == 12 else 0); day = min(now.day, calendar.monthrange(year, month)[1])
-            merged_df['EXP_DEL_MONTH'] = datetime(year, month, day).strftime('%m/%d/%Y')
+            merged_df['COLOR'] = merged_df['Dial Color'].fillna(''); merged_df['SIZES'] = merged_df['Case _Frame Size'].fillna(''); merged_df['SRP_FMT'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
+            merged_df['EXP_DEL_MONTH'] = (time_now + timedelta(days=30)).strftime('%m/%d/%Y')
             merged_df['SOURCE_MARKED'] = ""; merged_df['REMARKS'] = ""; merged_df['ONLINE ITEMS'] = "NO"
             merged_df['PACKAGE WEIGHT IN KG'] = merged_df['Gross Weight']; merged_df['PRODUCT WEIGHT IN KG'] = merged_df['Net Weight']
             for dim_col in ['PACKAGE LENGTH IN CM', 'PACKAGE WIDTH IN CM', 'PACKAGE HEIGHT IN CM', 'PRODUCT LENGTH IN CM', 'PRODUCT WIDTH IN CM', 'PRODUCT HEIGHT IN CM']: merged_df[dim_col] = "-"
             merged_df['IMAGES'] = ""
-            final_cols = ['DESCRIPTION', 'COLOR', 'SIZES', 'Style_Stockcode', 'SOURCE_MARKED', 'SRP', 'Unit_of_Measure', 'EXP_DEL_MONTH', 'REMARKS', 'Pricepoint_SKU', 'IMAGES', 'ONLINE ITEMS', 'PACKAGE LENGTH IN CM', 'PACKAGE WIDTH IN CM', 'PACKAGE HEIGHT IN CM', 'PACKAGE WEIGHT IN KG', 'PRODUCT LENGTH IN CM', 'PRODUCT WIDTH IN CM', 'PRODUCT HEIGHT IN CM', 'PRODUCT WEIGHT IN KG']
+            final_cols = ['DESCRIPTION', 'COLOR', 'SIZES', 'Style_Stockcode', 'SOURCE_MARKED', 'SRP_FMT', 'Unit_of_Measure', 'EXP_DEL_MONTH', 'REMARKS', 'IMAGES', 'ONLINE ITEMS', 'PACKAGE LENGTH IN CM', 'PACKAGE WIDTH IN CM', 'PACKAGE HEIGHT IN CM', 'PACKAGE WEIGHT IN KG', 'PRODUCT LENGTH IN CM', 'PRODUCT WIDTH IN CM', 'PRODUCT HEIGHT IN CM', 'PRODUCT WEIGHT IN KG']
             img_col_name, sheet_name_val, header_row_idx, data_start_row = 'IMAGES', "Template", 0, 1
 
-        # --- EXCEL GENERATION ---
-        progress_data.update({"current": 0, "total": 1, "status": "Indexing Images..."})
-        image_cache = build_image_cache(NETWORK_IMAGE_PATH)
-        progress_data["total"] = len(merged_df)
-        time_stamp = datetime.now().strftime('%m%d%H%M')
+        # --- 5. EXCEL GENERATION ---
         zip_output = io.BytesIO()
-        total_found_images, processed_count = 0, 0
-
         with zipfile.ZipFile(zip_output, 'w', zipfile.ZIP_DEFLATED) as zip_file:
             for brand_name, bucket_df in merged_df.groupby('Brand'):
                 try:
-                    meta = brand_meta_map.get(brand_name, {'dept_sub': '000000', 'class_sub': '000000'})
-                    filename = f"RUSTANS_{sales_code}_{time_stamp}.xlsx" if chain_selection == "RUSTANS" else f"SC{vendor_code}_{meta['dept_sub']}_{meta['class_sub']}_{time_stamp}.xlsx"
+                    filename = f"{filename_base} - {brand_name}.xlsx"
                     excel_output = io.BytesIO()
                     with pd.ExcelWriter(excel_output, engine='xlsxwriter') as writer:
                         bucket_df[final_cols].to_excel(writer, sheet_name=sheet_name_val, index=False, startrow=data_start_row, header=False)
                         workbook, worksheet = writer.book, writer.sheets[sheet_name_val]
-                        if chain_selection == "RUSTANS":
-                            header_bold = workbook.add_format({'bold': True, 'font_size': 11})
-                            worksheet.write('A1', 'Rustan Commercial Corporation', workbook.add_format({'bold': True, 'font_size': 14}))
-                            worksheet.write('A7', 'Company:', header_bold); worksheet.write('B7', company_selection)
-                            worksheet.write('A8', 'Brand:', header_bold); worksheet.write('B8', brand_name)
+                        
+                        # Apply Styling
                         header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1, 'align': 'center', 'valign': 'vcenter'})
-                        for col_num, value in enumerate(final_cols): worksheet.write(header_row_idx, col_num, value, header_fmt)
-                        img_col_idx = final_cols.index(img_col_name); worksheet.set_column(img_col_idx, img_col_idx, 35)
-                        ROW_HEIGHT_PT = 180
-                        for i, item_no in enumerate(bucket_df['Item No_']):
-                            processed_count += 1
-                            progress_data.update({"current": processed_count, "status": f"Processing {brand_name}: {item_no}"})
-                            worksheet.set_row(i + data_start_row, ROW_HEIGHT_PT) 
-                            img_path = find_image_in_cache(image_cache, item_no)
-                            if img_path:
-                                try:
-                                    with Image.open(img_path) as img:
-                                        img_resized = img.resize((240, int(ROW_HEIGHT_PT / 0.75)), Image.Resampling.LANCZOS)
-                                        img_byte_arr = io.BytesIO(); img_resized.save(img_byte_arr, format='PNG'); img_byte_arr.seek(0)
-                                    worksheet.insert_image(i + data_start_row, img_col_idx, f"{item_no}.png", {'image_data': img_byte_arr, 'object_position': 1})
-                                    total_found_images += 1
-                                except: worksheet.write(i + data_start_row, img_col_idx, "CORRUPT IMAGE")
-                            else: worksheet.write(i + data_start_row, img_col_idx, "IMAGE NOT FOUND")
+                        if chain_selection == "RDS":
+                            header_fmt = workbook.add_format({'bold': True, 'bg_color': '#BDD7EE', 'border': 1, 'align': 'center'})
+
+                        for col_num, value in enumerate(final_cols): 
+                            worksheet.write(header_row_idx, col_num, value, header_fmt)
+
+                        if img_col_name and img_col_name in final_cols:
+                            image_cache = build_image_cache(NETWORK_IMAGE_PATH)
+                            img_col_idx = final_cols.index(img_col_name); worksheet.set_column(img_col_idx, img_col_idx, 35)
+                            ROW_HEIGHT_PT = 180
+                            for i, item_no in enumerate(bucket_df['Item No_']):
+                                worksheet.set_row(i + data_start_row, ROW_HEIGHT_PT) 
+                                img_path = find_image_in_cache(image_cache, item_no)
+                                if img_path:
+                                    try:
+                                        with Image.open(img_path) as img:
+                                            img_resized = img.resize((240, int(ROW_HEIGHT_PT / 0.75)), Image.Resampling.LANCZOS)
+                                            img_byte_arr = io.BytesIO(); img_resized.save(img_byte_arr, format='PNG'); img_byte_arr.seek(0)
+                                        worksheet.insert_image(i + data_start_row, img_col_idx, f"{item_no}.png", {'image_data': img_byte_arr, 'object_position': 1})
+                                    except: worksheet.write(i + data_start_row, img_col_idx, "CORRUPT")
                     excel_output.seek(0); zip_file.writestr(filename, excel_output.read())
                 except Exception as e: logger.error(f"Brand bucket failed: {e}")
 
         zip_output.seek(0)
-        zip_filename = f"RST_{vendor_code}_{time_stamp}.zip" if chain_selection == "RUSTANS" else f"SC_{vendor_code}_{time_stamp}.zip"
-        response = make_response(send_file(zip_output, mimetype='application/zip', as_attachment=True, download_name=zip_filename))
-        response.headers.update({'X-Total-Items': str(progress_data["total"]), 'X-Images-Found': str(total_found_images), 'X-Filename': zip_filename, 'Access-Control-Expose-Headers': 'X-Total-Items, X-Images-Found, X-Filename'})
+        final_zip_name = f"{filename_base}.zip"
+        response = make_response(send_file(zip_output, mimetype='application/zip', as_attachment=True, download_name=final_zip_name))
+        response.headers.update({'X-Filename': final_zip_name, 'Access-Control-Expose-Headers': 'X-Filename'})
         return response
 
     except Exception as e:
