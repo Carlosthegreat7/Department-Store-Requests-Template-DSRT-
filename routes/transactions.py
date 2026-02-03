@@ -218,8 +218,21 @@ def process_template():
 
         # --- 4. DATA MAPPING ---
         time_now = datetime.now()
-        date_str = time_now.strftime('%m-%d-%Y')
-        filename_base = f"{chain_selection} {company_selection} {date_str}"
+        zip_date = time_now.strftime('%m%d%Y') # MMDDYYYY for zips
+
+        # Define Filenames and Zip Names per Chain
+        if chain_selection == "RDS":
+            filename_base = f'RDS {company_selection} {time_now.strftime("%m%d%Y")}'
+            final_zip_name = f"RDS{zip_date}.zip"
+        elif chain_selection == "RUSTANS":
+            filename_base = f'RUSTANS {time_now.strftime("%m%d%Y")} {company_selection}'
+            final_zip_name = f"RUSTANS{zip_date}.zip"
+        else:
+            # SM / Default Logic: SC<VENDORCODE>_DEPT_CLASS_mmddhhmm
+            sm_ts = time_now.strftime('%m%d%H%M')
+            filename_base = f"SC{vendor_code}_DEPT_CLASS_{sm_ts}"
+            final_zip_name = f"SM{zip_date}.zip"
+
         
         if chain_selection == "RDS":
             # PAGE 1
@@ -310,7 +323,48 @@ def process_template():
         with zipfile.ZipFile(zip_output, 'w', zipfile.ZIP_DEFLATED) as zip_file:
             for brand_name, bucket_df in brand_groups:
                 try:
-                    filename = f"{filename_base} - {brand_name}.xlsx"
+                    # [INSERTED] Dynamic Filename Logic (Preserving your flow)
+                    if chain_selection not in ["RDS", "RUSTANS"]:
+                        f_dept, f_class = "0000", "0000" # Defaults
+                        
+                        # Open connection for this specific brand lookup
+                        loop_conn = get_mysql_conn()
+                        if loop_conn:
+                            try:
+                                l_cursor = loop_conn.cursor(dictionary=True)
+                                clean_brand = str(brand_name).strip()
+                                
+                                # Use LIKE % to match "PHILIPP" to "PHILIPP PLEIN"
+                                search_term = clean_brand + '%'
+                                
+                                qry = """
+                                    SELECT b.dept_code, b.sub_dept_code, b.class_code, s.subclass_code
+                                    FROM brands b
+                                    LEFT JOIN sub_classes s ON b.product_group = s.product_group
+                                    WHERE b.brand_name LIKE %s LIMIT 1
+                                """
+                                l_cursor.execute(qry, (search_term,))
+                                res = l_cursor.fetchone()
+                                
+                                if res:
+                                    d = res.get('dept_code') or '00'
+                                    sd = res.get('sub_dept_code') or '00'
+                                    c = res.get('class_code') or '00'
+                                    sc = res.get('subclass_code') or '00'
+                                    f_dept = f"{d}{sd}"
+                                    f_class = f"{c}{sc}"
+                            except Exception as db_e:
+                                logger.error(f"Loop Lookup Error: {db_e}")
+                            finally:
+                                loop_conn.close()
+                        
+                        filename = f"SC{vendor_code}_{f_dept}_{f_class}_{sm_ts}.xlsx"
+                    else:
+                        # Original logic for RDS/Rustans
+                        filename = f"{filename_base} - {brand_name}.xlsx"
+                    
+                    # [END INSERTED LOGIC] -----------------------------------------
+
                     progress_data["status"] = f"Processing Brand: {brand_name}"
                     
                     excel_output = io.BytesIO()
@@ -374,7 +428,15 @@ def process_template():
         progress_data.update({"current": len(merged_df), "status": "Zipping Files..."})
 
         zip_output.seek(0)
-        final_zip_name = f"{filename_base}.zip"
+        
+        # [ADJUSTED] Ensure valid zip name. If SM, use the pre-calculated date format.
+        if chain_selection in ["RDS", "RUSTANS"]:
+             final_zip_name = f"{filename_base}.zip"
+        else:
+             # Ensure we don't name the zip "SC_TEMP.zip"
+             if not final_zip_name or "SC_TEMP" in final_zip_name:
+                 final_zip_name = f"SM{datetime.now().strftime('%m%d%Y')}.zip"
+
         response = make_response(send_file(zip_output, mimetype='application/zip', as_attachment=True, download_name=final_zip_name))
         
         # Add headers for the success modal summary
