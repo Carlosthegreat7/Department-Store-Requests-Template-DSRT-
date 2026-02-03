@@ -402,14 +402,12 @@
             }
         });
 
-        // --- 2. FAST VERIFICATION LOGIC (300ms) ---
+        // --- 2. FAST VERIFICATION LOGIC (Visual Feedback Only) ---
         let vTimeout;
         $('#salesCodeInput, #pcMemoInput, #companySelect').on('input change', function () {
             clearTimeout(vTimeout);
-            const $submitBtn = $('#submitBtn');
             const $badge = $('#sharedValidation');
 
-            $submitBtn.prop('disabled', true);
             const sc = $('#salesCodeInput').val().trim();
             const pm = $('#pcMemoInput').val().trim();
             const co = $('#companySelect').val();
@@ -419,7 +417,9 @@
                 return;
             }
 
-            $badge.html('<i class="fas fa-circle-notch fa-spin mr-2"></i>Verifying...').removeClass('valid-text invalid-text').addClass('verifying-text').fadeIn();
+            // Note: We do NOT disable the button here anymore to prevent the "double click" feel.
+            // We let the Submit Handler do the final hard check.
+            $badge.html('<i class="fas fa-circle-notch fa-spin mr-2"></i>Checking...').removeClass('valid-text invalid-text').addClass('verifying-text').fadeIn();
 
             vTimeout = setTimeout(async () => {
                 try {
@@ -431,15 +431,14 @@
                     const data = await res.json();
 
                     if (data.success && data.count > 0) {
-                        $badge.html(`<i class="fas fa-check-circle mr-2"></i>Verified: ${data.count} items found`).removeClass('verifying-text invalid-text').addClass('valid-text');
-                        $submitBtn.prop('disabled', false);
+                        $badge.html(`<i class="fas fa-check-circle mr-2"></i>Ready: ${data.count} items found`).removeClass('verifying-text invalid-text').addClass('valid-text');
+                        $('#submitBtn').prop('disabled', false);
                     } else {
                         $badge.html(`<i class="fas fa-times-circle mr-2"></i>${data.error || 'No records found'}`).removeClass('verifying-text valid-text').addClass('invalid-text');
-                        $submitBtn.prop('disabled', true);
+                        // We leave button enabled so they can click and see the specific error alert if they missed the badge
                     }
                 } catch (e) {
-                    $badge.html('<i class="fas fa-exclamation-triangle mr-2"></i>Error connecting').addClass('invalid-text');
-                    $submitBtn.prop('disabled', true);
+                    // Silent catch
                 }
             }, 300);
         });
@@ -470,25 +469,57 @@
             $holdProgress.css('width', '0%');
         });
 
-        // --- 4. FORM SUBMISSION ---
+        // --- 4. FORM SUBMISSION (FIXED: ASYNC VERIFICATION) ---
         $('#templateForm').on('submit', async function (e) {
             e.preventDefault();
+
+            const sc = $('#salesCodeInput').val().trim();
+            const pm = $('#pcMemoInput').val().trim();
+            const co = $('#companySelect').val();
+
+            if (!sc || !pm || !co) {
+                alert("Please fill in all fields.");
+                return;
+            }
+
+            // 1. Show processing overlay immediately to lock UI
             $('#processing-overlay').css('display', 'flex');
-            abortController = new AbortController();
-            $('#progressBar').css('width', '0%');
+            $('#statusText').text("Verifying transaction codes...");
+            $('#progressBar').css('width', '100%').addClass('progress-bar-animated progress-bar-striped');
 
-            const eventSource = new EventSource("{{ url_for('transactions.progress') }}");
-            eventSource.onmessage = (e) => {
-                const data = JSON.parse(e.data);
-                $('#statusText').text(data.status);
-                if (data.total > 0) {
-                    let percent = (data.current / data.total * 100);
-                    $('#progressBar').css('width', percent + '%');
-                    $('#itemCount').text(`Item ${data.current} / ${data.total}`);
-                }
-            };
-
+            // 2. FORCE VALIDATION CHECK (Solves the "Double Click" issue)
             try {
+                const verifyRes = await fetch("{{ url_for('transactions.verify_codes') }}", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+                    body: `sales_code=${encodeURIComponent(sc)}&pc_memo=${encodeURIComponent(pm)}&company=${encodeURIComponent(co)}`
+                });
+                const verifyData = await verifyRes.json();
+
+                if (!verifyData.success || verifyData.count === 0) {
+                    // Verification Failed
+                    $('#processing-overlay').hide();
+                    alert("Error: " + (verifyData.error || "No records found for this code combination."));
+                    return; // Stop execution
+                }
+
+                // 3. Verification Passed - Proceed to Generation
+                $('#statusText').text("Initializing Excel Generation...");
+                $('#progressBar').css('width', '0%').removeClass('progress-bar-animated progress-bar-striped'); // Reset for actual progress
+
+                abortController = new AbortController();
+
+                const eventSource = new EventSource("{{ url_for('transactions.progress') }}");
+                eventSource.onmessage = (e) => {
+                    const data = JSON.parse(e.data);
+                    $('#statusText').text(data.status);
+                    if (data.total > 0) {
+                        let percent = (data.current / data.total * 100);
+                        $('#progressBar').css('width', percent + '%');
+                        $('#itemCount').text(`Item ${data.current} / ${data.total}`);
+                    }
+                };
+
                 const response = await fetch(this.action, {
                     method: 'POST',
                     body: new FormData(this),
@@ -526,12 +557,13 @@
                     const errorData = await response.json();
                     throw new Error(errorData.error || "Failed to process.");
                 }
+
             } catch (err) {
                 if (err.name !== 'AbortError') {
                     alert("Error: " + err.message);
                     $('#processing-overlay').hide();
                 }
-                eventSource.close();
+                if (typeof eventSource !== 'undefined') eventSource.close();
             }
         });
     });
