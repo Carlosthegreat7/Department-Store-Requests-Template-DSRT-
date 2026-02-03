@@ -35,11 +35,9 @@ def add_vendor():
             db.session.commit()
 
             # Add to the Bridge Mapping table (Raw SQL)
-            # This ensures entry shows up in dynamic dropdowns
             conn = get_mysql_conn()
             if conn:
                 cursor = conn.cursor()
-                # Use REPLACE INTO or check for existence to avoid duplicates
                 map_qry = (
                     "INSERT INTO vendor_chain_mappings (chain_name, company_selection, vendor_code) "
                     "VALUES (%s, %s, %s) "

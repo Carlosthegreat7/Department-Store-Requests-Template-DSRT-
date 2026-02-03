@@ -326,7 +326,7 @@
     let holdInterval;
     let countdownInterval;
 
-    // --- CONFETTI FUNCTION ---
+    // --- CONFETTI ---
     function runSchoolPride() {
         var end = Date.now() + (3 * 1000);
         var colors = ['#4361ee', '#f72585', '#7209b7'];
@@ -402,7 +402,7 @@
             }
         });
 
-        // --- 2. FAST VERIFICATION LOGIC (Visual Feedback Only) ---
+        // --- 2. FAST VERIFICATION LOGIC ---
         let vTimeout;
         $('#salesCodeInput, #pcMemoInput, #companySelect').on('input change', function () {
             clearTimeout(vTimeout);
@@ -416,9 +416,6 @@
                 $badge.hide();
                 return;
             }
-
-            // Note: We do NOT disable the button here anymore to prevent the "double click" feel.
-            // We let the Submit Handler do the final hard check.
             $badge.html('<i class="fas fa-circle-notch fa-spin mr-2"></i>Checking...').removeClass('valid-text invalid-text').addClass('verifying-text').fadeIn();
 
             vTimeout = setTimeout(async () => {
@@ -469,7 +466,7 @@
             $holdProgress.css('width', '0%');
         });
 
-        // --- 4. FORM SUBMISSION (FIXED: ASYNC VERIFICATION) ---
+        // --- 4. FORM SUBMISSION ---
         $('#templateForm').on('submit', async function (e) {
             e.preventDefault();
 
@@ -487,7 +484,7 @@
             $('#statusText').text("Verifying transaction codes...");
             $('#progressBar').css('width', '100%').addClass('progress-bar-animated progress-bar-striped');
 
-            // 2. FORCE VALIDATION CHECK (Solves the "Double Click" issue)
+            // 2. VALIDATION CHECK
             try {
                 const verifyRes = await fetch("{{ url_for('transactions.verify_codes') }}", {
                     method: 'POST',
