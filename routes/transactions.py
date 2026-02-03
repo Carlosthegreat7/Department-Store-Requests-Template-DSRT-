@@ -314,6 +314,7 @@ def process_template():
             img_col_name, sheet_name_val, header_row_idx, data_start_row = 'IMAGES', "Template", 0, 1
 
         # --- 5. EXCEL GENERATION ---
+        # --- 5. EXCEL GENERATION ---
         output_buffer = io.BytesIO()
         brand_groups = list(merged_df.groupby('Brand'))
         progress_data.update({"current": 0, "total": len(merged_df), "status": "Initializing Excel Generation..."})
@@ -338,25 +339,19 @@ def process_template():
                     # 1. Prepare Filename (Only relevant for Zip mode)
                     filename = ""
                     if not is_multisheet_mode:
-                        if chain_selection not in ["RDS", "RUSTANS"]:
-                            f_dept, f_class = "0000", "0000" # Defaults
-                            
+                        if chain_selection != "RDS": # SM or others
+                            f_dept, f_class = "0000", "0000"
                             loop_conn = get_mysql_conn()
                             if loop_conn:
                                 try:
                                     l_cursor = loop_conn.cursor(dictionary=True)
                                     clean_brand = str(brand_name).strip()
                                     search_term = clean_brand + '%'
-                                    
-                                    qry = """
-                                        SELECT b.dept_code, b.sub_dept_code, b.class_code, s.subclass_code
-                                        FROM brands b
-                                        LEFT JOIN sub_classes s ON b.product_group = s.product_group
-                                        WHERE b.brand_name LIKE %s LIMIT 1
-                                    """
+                                    qry = """SELECT b.dept_code, b.sub_dept_code, b.class_code, s.subclass_code
+                                             FROM brands b LEFT JOIN sub_classes s ON b.product_group = s.product_group
+                                             WHERE b.brand_name LIKE %s LIMIT 1"""
                                     l_cursor.execute(qry, (search_term,))
                                     res = l_cursor.fetchone()
-                                    
                                     if res:
                                         d = res.get('dept_code') or '00'
                                         sd = res.get('sub_dept_code') or '00'
@@ -364,30 +359,31 @@ def process_template():
                                         sc = res.get('subclass_code') or '00'
                                         f_dept = f"{d}{sd}"
                                         f_class = f"{c}{sc}"
-                                except Exception as db_e:
-                                    logger.error(f"Loop Lookup Error: {db_e}")
-                                finally:
-                                    loop_conn.close()
-                            
+                                except Exception as db_e: logger.error(f"Loop Lookup Error: {db_e}")
+                                finally: loop_conn.close()
                             filename = f"SC{vendor_code}_{f_dept}_{f_class}_{sm_ts}.xlsx"
                         else:
-                            # Original logic for RDS (if not multisheet)
                             filename = f"{filename_base} - {brand_name}.xlsx"
                     
                     progress_data["status"] = f"Processing Brand: {brand_name}"
                     
                     # 2. Setup Writer and Sheet Name
                     if is_multisheet_mode:
-                        # Sanitize brand name for Excel Sheet (Max 31 chars, no special chars)
+                        # Sanitize brand name (Max 31 chars)
                         safe_sheet = (str(brand_name).replace('/', '-').replace('\\', '-').replace('?', '').replace('*', '').replace('[', '').replace(']', '').replace(':', ''))[:31]
                         current_writer = global_writer
                         current_sheet_name = safe_sheet
+                        # Rustans data starts lower to make room for the header block
+                        data_start_row = 12 
                     else:
                         excel_output = io.BytesIO()
                         current_writer = pd.ExcelWriter(excel_output, engine='xlsxwriter')
                         current_sheet_name = sheet_name_val
+                        # RDS starts at 2, SM/Generic starts at 1
+                        data_start_row = 2 if chain_selection == "RDS" else 1
 
                     # 3. Write Data to Excel
+                    # Note: We write data first, then overlay headers/formatting
                     bucket_df[final_cols].to_excel(current_writer, sheet_name=current_sheet_name, index=False, startrow=data_start_row, header=False)
                     workbook, worksheet = current_writer.book, current_writer.sheets[current_sheet_name]
                     
@@ -406,32 +402,71 @@ def process_template():
                             if idx < len(rds_sections) - 1:
                                 worksheet.set_column(curr_col, curr_col, 2)
                                 curr_col += 1
-                    else:
-                        # Logic for SM and RUSTANS column sizing and theming
+                                
+                    elif chain_selection == "RUSTANS":
+                        # [RUSTANS SPECIFIC NPIS HEADER LAYOUT]
                         
-                        # Determine Header Color (Blue for SM, Green default for Rustans)
-                        if chain_selection not in ["RDS", "RUSTANS"]:
-                             header_bg = '#BDD7EE' # SM Blue
-                        else:
-                             header_bg = '#D7E4BC' # Rustans Green
-                             
-                        header_fmt = workbook.add_format({'bold': True, 'bg_color': header_bg, 'border': 1, 'align': 'center'})
+                        # Styles
+                        bold_fmt = workbook.add_format({'bold': True})
+                        title_fmt = workbook.add_format({'bold': True, 'font_size': 11})
+                        
+                        # Top Block Info
+                        worksheet.write(0, 0, "RUSTAN COMMERCIAL CORPORATION", title_fmt)
+                        worksheet.write(1, 0, "CONCESSIONAIRE MANAGEMENT DIVISION", bold_fmt)
+                        worksheet.write(2, 0, "NEW PRODUCT INFORMATION SHEET (NPIS)", bold_fmt)
+                        
+                        worksheet.write(4, 0, "DATE:", bold_fmt)
+                        worksheet.write(4, 1, datetime.now().strftime("%Y-%m-%d"))
+                        worksheet.write(4, 5, "TARGET DELIVERY TO STORES:", bold_fmt) # Adjusted col index approx
+                        
+                        worksheet.write(5, 0, "DIVISION:", bold_fmt)
+                        worksheet.write(5, 5, "DELIVERY TO E-COMMERCE WAREHOUSE:", bold_fmt)
+                        
+                        worksheet.write(6, 0, "COMPANY NAME:", bold_fmt)
+                        worksheet.write(6, 1, "NEWTRENDS INTERNATIONAL CORPORATION")
+                        
+                        worksheet.write(7, 0, "BRAND:", bold_fmt)
+                        worksheet.write(7, 1, brand_name)
+                        
+                        # Instruction Row
+                        instr_fmt = workbook.add_format({'bold': True, 'bg_color': '#FFFF00', 'border': 1, 'align': 'center'})
+                        worksheet.merge_range(10, 0, 10, len(final_cols)-1, "ALL HIGHLIGHTED COLUMNS IN CHART ARE TO BE FILLED UP BY CONCESSIONAIRE", instr_fmt)
+                        
+                        # Specific Rustans Column Headers (Overriding generic ones)
+                        # We use the 'final_cols' length but write the Rustans names if they align, 
+                        # otherwise we write final_cols. (Assuming user mapped them roughly 1:1)
+                        # For safety, we use 'final_cols' names but formatted nicely.
+                        
+                        rustans_header_fmt = workbook.add_format({'bold': True, 'bg_color': '#F2F2F2', 'border': 1, 'align': 'center', 'text_wrap': True, 'font_size': 9})
                         
                         for col_num, value in enumerate(final_cols):
-                            worksheet.write(header_row_idx, col_num, value, header_fmt)
+                            worksheet.write(11, col_num, value, rustans_header_fmt)
                             
-                            # Convenience Sizing based on Column Name
+                            # Column Sizing
+                            if value != img_col_name:
+                                if "Description" in value: worksheet.set_column(col_num, col_num, 40)
+                                elif "RCC SKU" in value: worksheet.set_column(col_num, col_num, 15)
+                                elif any(x in value for x in ["Size", "Color", "Price"]): worksheet.set_column(col_num, col_num, 12)
+                                else: worksheet.set_column(col_num, col_num, 18)
+
+                    else:
+                        # [SM BLUE THEME LOGIC]
+                        header_fmt = workbook.add_format({'bold': True, 'bg_color': '#BDD7EE', 'border': 1, 'align': 'center'}) # SM Blue
+                        for col_num, value in enumerate(final_cols):
+                            worksheet.write(0, col_num, value, header_fmt)
+                            
+                            # SM Convenience Sizing
                             if value != img_col_name:
                                 if any(x in value for x in ["Desc", "Name", "Description"]):
-                                    worksheet.set_column(col_num, col_num, 45) # Wide
+                                    worksheet.set_column(col_num, col_num, 45)
                                 elif "Brand" in value:
                                     worksheet.set_column(col_num, col_num, 20)
-                                elif any(x in value for x in ["Size", "Color", "Price", "Cost", "Qty", "Stock", "UPC", "EAN"]):
-                                    worksheet.set_column(col_num, col_num, 13) # Narrow
+                                elif any(x in value for x in ["Size", "Color", "Price", "Cost", "Qty", "Stock", "UPC"]):
+                                    worksheet.set_column(col_num, col_num, 13)
                                 else:
-                                    worksheet.set_column(col_num, col_num, 18) # Standard
+                                    worksheet.set_column(col_num, col_num, 18)
                     
-                    # 5. [IMAGE INSERTION WITH PROGRESS UPDATES]
+                    # 5. [IMAGE INSERTION]
                     if chain_selection != "RDS" and img_col_name in final_cols:
                         image_cache = build_image_cache(NETWORK_IMAGE_PATH)
                         img_col_idx = final_cols.index(img_col_name)
@@ -441,7 +476,9 @@ def process_template():
                             progress_data["current"] += 1
                             progress_data["status"] = f"Inserting Images: {item_no}"
                             
-                            worksheet.set_row(i + data_start_row, 180)
+                            row_idx = i + data_start_row
+                            worksheet.set_row(row_idx, 180)
+                            
                             img_path = find_image_in_cache(image_cache, item_no)
                             if img_path:
                                 try:
@@ -450,9 +487,9 @@ def process_template():
                                         img_byte_arr = io.BytesIO()
                                         img_resized.save(img_byte_arr, format='PNG')
                                         img_byte_arr.seek(0)
-                                        worksheet.insert_image(i + data_start_row, img_col_idx, f"{item_no}.png", {'image_data': img_byte_arr, 'object_position': 1})
+                                        worksheet.insert_image(row_idx, img_col_idx, f"{item_no}.png", {'image_data': img_byte_arr, 'object_position': 1})
                                         images_found_count += 1
-                                except: worksheet.write(i + data_start_row, img_col_idx, "ERR")
+                                except: worksheet.write(row_idx, img_col_idx, "ERR")
                     else:
                         progress_data["current"] += len(bucket_df)
 
@@ -468,11 +505,8 @@ def process_template():
         except Exception as outer_e:
              logger.error(f"Loop Failure: {outer_e}")
         finally:
-             # Final Cleanup
-             if is_multisheet_mode and global_writer:
-                 global_writer.close()
-             elif zip_file:
-                 zip_file.close()
+             if is_multisheet_mode and global_writer: global_writer.close()
+             elif zip_file: zip_file.close()
 
         # Finalize Progress
         progress_data.update({"current": len(merged_df), "status": "Finalizing..."})
@@ -484,17 +518,10 @@ def process_template():
              mimetype_val = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         else:
              mimetype_val = 'application/zip'
-             if chain_selection in ["RDS", "RUSTANS"]:
-                 final_name = f"{filename_base}.zip"
-             else:
-                 if not final_zip_name or "SC_TEMP" in final_zip_name:
-                     final_name = f"SM{datetime.now().strftime('%m%d%Y')}.zip"
-                 else:
-                     final_name = final_zip_name
+             if chain_selection in ["RDS", "RUSTANS"]: final_name = f"{filename_base}.zip"
+             else: final_name = f"SM{datetime.now().strftime('%m%d%Y')}.zip" if not final_zip_name or "SC_TEMP" in final_zip_name else final_zip_name
 
         response = make_response(send_file(output_buffer, mimetype=mimetype_val, as_attachment=True, download_name=final_name))
-        
-        # Add headers for the success modal summary
         response.headers.update({
             'X-Filename': final_name,
             'X-Total-Items': str(len(merged_df)),
@@ -514,5 +541,3 @@ def transaction_generator():
     if not session.get('sdr_loggedin'): return render_template('home.html')
     return render_template('transaction_form.html')
 
-
-    # PENDING FILENAME LOGIC, EXCEL FILE FORMATTING, MAKE IT READABLE WHEN OPENED
