@@ -391,7 +391,7 @@ def process_template():
                     bucket_df[final_cols].to_excel(current_writer, sheet_name=current_sheet_name, index=False, startrow=data_start_row, header=False)
                     workbook, worksheet = current_writer.book, current_writer.sheets[current_sheet_name]
                     
-                    # 4. [RDS FORMATTING LOGIC]
+                    # 4. [FORMATTING LOGIC]
                     if chain_selection == "RDS":
                         curr_col = 0
                         for idx, (group, title, color) in enumerate(rds_sections):
@@ -407,15 +407,35 @@ def process_template():
                                 worksheet.set_column(curr_col, curr_col, 2)
                                 curr_col += 1
                     else:
-                        header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1, 'align': 'center'})
+                        # Logic for SM and RUSTANS column sizing and theming
+                        
+                        # Determine Header Color (Blue for SM, Green default for Rustans)
+                        if chain_selection not in ["RDS", "RUSTANS"]:
+                             header_bg = '#BDD7EE' # SM Blue
+                        else:
+                             header_bg = '#D7E4BC' # Rustans Green
+                             
+                        header_fmt = workbook.add_format({'bold': True, 'bg_color': header_bg, 'border': 1, 'align': 'center'})
+                        
                         for col_num, value in enumerate(final_cols):
                             worksheet.write(header_row_idx, col_num, value, header_fmt)
+                            
+                            # Convenience Sizing based on Column Name
+                            if value != img_col_name:
+                                if any(x in value for x in ["Desc", "Name", "Description"]):
+                                    worksheet.set_column(col_num, col_num, 45) # Wide
+                                elif "Brand" in value:
+                                    worksheet.set_column(col_num, col_num, 20)
+                                elif any(x in value for x in ["Size", "Color", "Price", "Cost", "Qty", "Stock", "UPC", "EAN"]):
+                                    worksheet.set_column(col_num, col_num, 13) # Narrow
+                                else:
+                                    worksheet.set_column(col_num, col_num, 18) # Standard
                     
                     # 5. [IMAGE INSERTION WITH PROGRESS UPDATES]
                     if chain_selection != "RDS" and img_col_name in final_cols:
                         image_cache = build_image_cache(NETWORK_IMAGE_PATH)
                         img_col_idx = final_cols.index(img_col_name)
-                        worksheet.set_column(img_col_idx, img_col_idx, 35)
+                        worksheet.set_column(img_col_idx, img_col_idx, 35) # Force image col width
                         
                         for i, item_no in enumerate(bucket_df['Item No_']):
                             progress_data["current"] += 1
