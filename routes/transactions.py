@@ -11,11 +11,11 @@ from datetime import datetime, timedelta
 from PIL import Image
 from flask import Blueprint, render_template, request, jsonify, session, flash, redirect, url_for, send_file, make_response, Response
 
-# 1. IMPORT THE NEW ATC SCRIPT
+# 1. import new atc script
 try:
     from .transactions_atc import process_atcrep_template
 except ImportError:
-    # Fallback if the file isn't in the routes folder
+    # fallback if the file isn't in the routes folder
     from transactions_atc import process_atcrep_template
 
 # Setup Logging
@@ -96,13 +96,12 @@ def progress():
 def verify_codes():
     pc_memo = request.form.get('pc_memo', '').strip().upper()
     sales_code = request.form.get('sales_code', '').strip().upper()
-    company_selection = request.form.get('company', '').strip().upper() # New line
+    company_selection = request.form.get('company', '').strip().upper()
     
-    # Logic to choose the correct DB
+    # logic to choose the correct DB
     is_atcrep = company_selection in ['ATC', 'TPC']
     db_target = 'ATCREP' if is_atcrep else 'NICREP'
     
-    # note: navision table names often require underscores
     if company_selection == 'ATC':
         table_prefix = 'About Time Corporation' 
     elif company_selection == 'TPC':
@@ -112,7 +111,7 @@ def verify_codes():
 
     conn = None 
     try:
-        # Connect to the target database (NICREP or ATCREP)
+        # connect to the target database (NICREP or ATCREP)
         conn, cursor, prefix = SQLconnect(db_target, "DSRT")
         if conn is None:
             return jsonify({"success": False, "error": f"Connection to {db_target} Failed"}), 500
@@ -218,9 +217,9 @@ def process_template():
 
         # --- 4. DATA MAPPING ---
         time_now = datetime.now()
-        zip_date = time_now.strftime('%m%d%Y') # MMDDYYYY for zips
+        zip_date = time_now.strftime('%m%d%Y')
 
-        # Define Filenames and Zip Names per Chain
+        # Define filenames and zip names per chain
         if chain_selection == "RDS":
             filename_base = f'RDS {company_selection} {time_now.strftime("%m%d%Y")}'
             final_zip_name = f"RDS{zip_date}.zip"
@@ -228,7 +227,7 @@ def process_template():
             filename_base = f'RUSTANS {time_now.strftime("%m%d%Y")} {company_selection}'
             final_zip_name = f"RUSTANS{zip_date}.zip"
         else:
-            # SM / Default Logic: SC<VENDORCODE>_DEPT_CLASS_mmddhhmm
+            # Temporary savefile, will be zipped later and adjusted to required format
             sm_ts = time_now.strftime('%m%d%H%M')
             filename_base = f"SC{vendor_code}_DEPT_CLASS_{sm_ts}"
             final_zip_name = f"SM{zip_date}.zip"
@@ -314,7 +313,6 @@ def process_template():
             img_col_name, sheet_name_val, header_row_idx, data_start_row = 'IMAGES', "Template", 0, 1
 
         # --- 5. EXCEL GENERATION ---
-        # --- 5. EXCEL GENERATION ---
         output_buffer = io.BytesIO()
         brand_groups = list(merged_df.groupby('Brand'))
         progress_data.update({"current": 0, "total": len(merged_df), "status": "Initializing Excel Generation..."})
@@ -336,10 +334,10 @@ def process_template():
         try:
             for brand_name, bucket_df in brand_groups:
                 try:
-                    # 1. Prepare Filename (Only relevant for Zip mode)
+                    # 1. Prepare Filename (Only for Zip mode)
                     filename = ""
                     if not is_multisheet_mode:
-                        if chain_selection != "RDS": # SM or others
+                        if chain_selection != "RDS":
                             f_dept, f_class = "0000", "0000"
                             loop_conn = get_mysql_conn()
                             if loop_conn:
@@ -373,17 +371,14 @@ def process_template():
                         safe_sheet = (str(brand_name).replace('/', '-').replace('\\', '-').replace('?', '').replace('*', '').replace('[', '').replace(']', '').replace(':', ''))[:31]
                         current_writer = global_writer
                         current_sheet_name = safe_sheet
-                        # Rustans data starts lower to make room for the header block
                         data_start_row = 12 
                     else:
                         excel_output = io.BytesIO()
                         current_writer = pd.ExcelWriter(excel_output, engine='xlsxwriter')
                         current_sheet_name = sheet_name_val
-                        # RDS starts at 2, SM/Generic starts at 1
                         data_start_row = 2 if chain_selection == "RDS" else 1
 
                     # 3. Write Data to Excel
-                    # Note: We write data first, then overlay headers/formatting
                     bucket_df[final_cols].to_excel(current_writer, sheet_name=current_sheet_name, index=False, startrow=data_start_row, header=False)
                     workbook, worksheet = current_writer.book, current_writer.sheets[current_sheet_name]
                     
@@ -417,7 +412,7 @@ def process_template():
                         
                         worksheet.write(4, 0, "DATE:", bold_fmt)
                         worksheet.write(4, 1, datetime.now().strftime("%Y-%m-%d"))
-                        worksheet.write(4, 5, "TARGET DELIVERY TO STORES:", bold_fmt) # Adjusted col index approx
+                        worksheet.write(4, 5, "TARGET DELIVERY TO STORES:", bold_fmt)
                         
                         worksheet.write(5, 0, "DIVISION:", bold_fmt)
                         worksheet.write(5, 5, "DELIVERY TO E-COMMERCE WAREHOUSE:", bold_fmt)
@@ -432,11 +427,7 @@ def process_template():
                         instr_fmt = workbook.add_format({'bold': True, 'bg_color': '#FFFF00', 'border': 1, 'align': 'center'})
                         worksheet.merge_range(10, 0, 10, len(final_cols)-1, "ALL HIGHLIGHTED COLUMNS IN CHART ARE TO BE FILLED UP BY CONCESSIONAIRE", instr_fmt)
                         
-                        # Specific Rustans Column Headers (Overriding generic ones)
-                        # We use the 'final_cols' length but write the Rustans names if they align, 
-                        # otherwise we write final_cols. (Assuming user mapped them roughly 1:1)
-                        # For safety, we use 'final_cols' names but formatted nicely.
-                        
+
                         rustans_header_fmt = workbook.add_format({'bold': True, 'bg_color': '#F2F2F2', 'border': 1, 'align': 'center', 'text_wrap': True, 'font_size': 9})
                         
                         for col_num, value in enumerate(final_cols):
@@ -450,12 +441,12 @@ def process_template():
                                 else: worksheet.set_column(col_num, col_num, 18)
 
                     else:
-                        # [SM BLUE THEME LOGIC]
+                        # [SM BLUE THEME]
                         header_fmt = workbook.add_format({'bold': True, 'bg_color': '#BDD7EE', 'border': 1, 'align': 'center'}) # SM Blue
                         for col_num, value in enumerate(final_cols):
                             worksheet.write(0, col_num, value, header_fmt)
                             
-                            # SM Convenience Sizing
+                            # SM Sizing
                             if value != img_col_name:
                                 if any(x in value for x in ["Desc", "Name", "Description"]):
                                     worksheet.set_column(col_num, col_num, 45)
@@ -470,7 +461,7 @@ def process_template():
                     if chain_selection != "RDS" and img_col_name in final_cols:
                         image_cache = build_image_cache(NETWORK_IMAGE_PATH)
                         img_col_idx = final_cols.index(img_col_name)
-                        worksheet.set_column(img_col_idx, img_col_idx, 35) # Force image col width
+                        worksheet.set_column(img_col_idx, img_col_idx, 35) 
                         
                         for i, item_no in enumerate(bucket_df['Item No_']):
                             progress_data["current"] += 1
