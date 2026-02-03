@@ -314,134 +314,169 @@ def process_template():
             img_col_name, sheet_name_val, header_row_idx, data_start_row = 'IMAGES', "Template", 0, 1
 
         # --- 5. EXCEL GENERATION ---
-        zip_output = io.BytesIO()
+        output_buffer = io.BytesIO()
         brand_groups = list(merged_df.groupby('Brand'))
         progress_data.update({"current": 0, "total": len(merged_df), "status": "Initializing Excel Generation..."})
         
         images_found_count = 0 # Counter for the summary
+        
+        # Determine Mode: Rustans = Single XLSX (Multisheet), Others = Zip (Multi-file)
+        is_multisheet_mode = (chain_selection == "RUSTANS")
+        
+        # Initialize Zip or Global Writer based on mode
+        zip_file = None
+        global_writer = None
+        
+        if is_multisheet_mode:
+            global_writer = pd.ExcelWriter(output_buffer, engine='xlsxwriter')
+        else:
+            zip_file = zipfile.ZipFile(output_buffer, 'w', zipfile.ZIP_DEFLATED)
 
-        with zipfile.ZipFile(zip_output, 'w', zipfile.ZIP_DEFLATED) as zip_file:
+        try:
             for brand_name, bucket_df in brand_groups:
                 try:
-                    # [INSERTED] Dynamic Filename Logic (Preserving your flow)
-                    if chain_selection not in ["RDS", "RUSTANS"]:
-                        f_dept, f_class = "0000", "0000" # Defaults
-                        
-                        # Open connection for this specific brand lookup
-                        loop_conn = get_mysql_conn()
-                        if loop_conn:
-                            try:
-                                l_cursor = loop_conn.cursor(dictionary=True)
-                                clean_brand = str(brand_name).strip()
-                                
-                                # Use LIKE % to match "PHILIPP" to "PHILIPP PLEIN"
-                                search_term = clean_brand + '%'
-                                
-                                qry = """
-                                    SELECT b.dept_code, b.sub_dept_code, b.class_code, s.subclass_code
-                                    FROM brands b
-                                    LEFT JOIN sub_classes s ON b.product_group = s.product_group
-                                    WHERE b.brand_name LIKE %s LIMIT 1
-                                """
-                                l_cursor.execute(qry, (search_term,))
-                                res = l_cursor.fetchone()
-                                
-                                if res:
-                                    d = res.get('dept_code') or '00'
-                                    sd = res.get('sub_dept_code') or '00'
-                                    c = res.get('class_code') or '00'
-                                    sc = res.get('subclass_code') or '00'
-                                    f_dept = f"{d}{sd}"
-                                    f_class = f"{c}{sc}"
-                            except Exception as db_e:
-                                logger.error(f"Loop Lookup Error: {db_e}")
-                            finally:
-                                loop_conn.close()
-                        
-                        filename = f"SC{vendor_code}_{f_dept}_{f_class}_{sm_ts}.xlsx"
-                    else:
-                        # Original logic for RDS/Rustans
-                        filename = f"{filename_base} - {brand_name}.xlsx"
+                    # 1. Prepare Filename (Only relevant for Zip mode)
+                    filename = ""
+                    if not is_multisheet_mode:
+                        if chain_selection not in ["RDS", "RUSTANS"]:
+                            f_dept, f_class = "0000", "0000" # Defaults
+                            
+                            loop_conn = get_mysql_conn()
+                            if loop_conn:
+                                try:
+                                    l_cursor = loop_conn.cursor(dictionary=True)
+                                    clean_brand = str(brand_name).strip()
+                                    search_term = clean_brand + '%'
+                                    
+                                    qry = """
+                                        SELECT b.dept_code, b.sub_dept_code, b.class_code, s.subclass_code
+                                        FROM brands b
+                                        LEFT JOIN sub_classes s ON b.product_group = s.product_group
+                                        WHERE b.brand_name LIKE %s LIMIT 1
+                                    """
+                                    l_cursor.execute(qry, (search_term,))
+                                    res = l_cursor.fetchone()
+                                    
+                                    if res:
+                                        d = res.get('dept_code') or '00'
+                                        sd = res.get('sub_dept_code') or '00'
+                                        c = res.get('class_code') or '00'
+                                        sc = res.get('subclass_code') or '00'
+                                        f_dept = f"{d}{sd}"
+                                        f_class = f"{c}{sc}"
+                                except Exception as db_e:
+                                    logger.error(f"Loop Lookup Error: {db_e}")
+                                finally:
+                                    loop_conn.close()
+                            
+                            filename = f"SC{vendor_code}_{f_dept}_{f_class}_{sm_ts}.xlsx"
+                        else:
+                            # Original logic for RDS (if not multisheet)
+                            filename = f"{filename_base} - {brand_name}.xlsx"
                     
-                    # [END INSERTED LOGIC] -----------------------------------------
-
                     progress_data["status"] = f"Processing Brand: {brand_name}"
                     
-                    excel_output = io.BytesIO()
-                    with pd.ExcelWriter(excel_output, engine='xlsxwriter') as writer:
-                        bucket_df[final_cols].to_excel(writer, sheet_name=sheet_name_val, index=False, startrow=data_start_row, header=False)
-                        workbook, worksheet = writer.book, writer.sheets[sheet_name_val]
-                        
-                        # [RDS FORMATTING LOGIC]
-                        if chain_selection == "RDS":
-                            curr_col = 0
-                            for idx, (group, title, color) in enumerate(rds_sections):
-                                page_hdr_fmt = workbook.add_format({'bold': True, 'bg_color': color, 'border': 1, 'align': 'center', 'font_size': 11})
-                                field_hdr_fmt = workbook.add_format({'bold': True, 'bg_color': color, 'border': 1, 'align': 'center', 'font_size': 9})
-                                worksheet.merge_range(0, curr_col, 0, curr_col + len(group) - 1, title, page_hdr_fmt)
-                                for field in group:
-                                    display_name = field if field not in ['Size_P8', 'Brand_Maint'] else ('Size' if field=='Size_P8' else 'Brand')
-                                    worksheet.write(1, curr_col, display_name, field_hdr_fmt)
-                                    worksheet.set_column(curr_col, curr_col, 18 if 'Description' in field else 13)
-                                    curr_col += 1
-                                if idx < len(rds_sections) - 1:
-                                    worksheet.set_column(curr_col, curr_col, 2)
-                                    curr_col += 1
-                        else:
-                            header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1, 'align': 'center'})
-                            for col_num, value in enumerate(final_cols):
-                                worksheet.write(header_row_idx, col_num, value, header_fmt)
-                        
-                        # [IMAGE INSERTION WITH PROGRESS UPDATES]
-                        if chain_selection != "RDS" and img_col_name in final_cols:
-                            image_cache = build_image_cache(NETWORK_IMAGE_PATH)
-                            img_col_idx = final_cols.index(img_col_name)
-                            worksheet.set_column(img_col_idx, img_col_idx, 35)
-                            
-                            for i, item_no in enumerate(bucket_df['Item No_']):
-                                # Update Global Progress for every item
-                                progress_data["current"] += 1
-                                progress_data["status"] = f"Inserting Images: {item_no}"
-                                
-                                worksheet.set_row(i + data_start_row, 180)
-                                img_path = find_image_in_cache(image_cache, item_no)
-                                if img_path:
-                                    try:
-                                        with Image.open(img_path) as img:
-                                            img_resized = img.resize((240, 240), Image.Resampling.LANCZOS)
-                                            img_byte_arr = io.BytesIO()
-                                            img_resized.save(img_byte_arr, format='PNG')
-                                            img_byte_arr.seek(0)
-                                            worksheet.insert_image(i + data_start_row, img_col_idx, f"{item_no}.png", {'image_data': img_byte_arr, 'object_position': 1})
-                                            images_found_count += 1
-                                    except: worksheet.write(i + data_start_row, img_col_idx, "ERR")
-                        else:
-                            # If no images (like RDS), increment progress by bucket size
-                            progress_data["current"] += len(bucket_df)
+                    # 2. Setup Writer and Sheet Name
+                    if is_multisheet_mode:
+                        # Sanitize brand name for Excel Sheet (Max 31 chars, no special chars)
+                        safe_sheet = (str(brand_name).replace('/', '-').replace('\\', '-').replace('?', '').replace('*', '').replace('[', '').replace(']', '').replace(':', ''))[:31]
+                        current_writer = global_writer
+                        current_sheet_name = safe_sheet
+                    else:
+                        excel_output = io.BytesIO()
+                        current_writer = pd.ExcelWriter(excel_output, engine='xlsxwriter')
+                        current_sheet_name = sheet_name_val
 
-                    excel_output.seek(0)
-                    zip_file.writestr(filename, excel_output.read())
+                    # 3. Write Data to Excel
+                    bucket_df[final_cols].to_excel(current_writer, sheet_name=current_sheet_name, index=False, startrow=data_start_row, header=False)
+                    workbook, worksheet = current_writer.book, current_writer.sheets[current_sheet_name]
+                    
+                    # 4. [RDS FORMATTING LOGIC]
+                    if chain_selection == "RDS":
+                        curr_col = 0
+                        for idx, (group, title, color) in enumerate(rds_sections):
+                            page_hdr_fmt = workbook.add_format({'bold': True, 'bg_color': color, 'border': 1, 'align': 'center', 'font_size': 11})
+                            field_hdr_fmt = workbook.add_format({'bold': True, 'bg_color': color, 'border': 1, 'align': 'center', 'font_size': 9})
+                            worksheet.merge_range(0, curr_col, 0, curr_col + len(group) - 1, title, page_hdr_fmt)
+                            for field in group:
+                                display_name = field if field not in ['Size_P8', 'Brand_Maint'] else ('Size' if field=='Size_P8' else 'Brand')
+                                worksheet.write(1, curr_col, display_name, field_hdr_fmt)
+                                worksheet.set_column(curr_col, curr_col, 18 if 'Description' in field else 13)
+                                curr_col += 1
+                            if idx < len(rds_sections) - 1:
+                                worksheet.set_column(curr_col, curr_col, 2)
+                                curr_col += 1
+                    else:
+                        header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D7E4BC', 'border': 1, 'align': 'center'})
+                        for col_num, value in enumerate(final_cols):
+                            worksheet.write(header_row_idx, col_num, value, header_fmt)
+                    
+                    # 5. [IMAGE INSERTION WITH PROGRESS UPDATES]
+                    if chain_selection != "RDS" and img_col_name in final_cols:
+                        image_cache = build_image_cache(NETWORK_IMAGE_PATH)
+                        img_col_idx = final_cols.index(img_col_name)
+                        worksheet.set_column(img_col_idx, img_col_idx, 35)
+                        
+                        for i, item_no in enumerate(bucket_df['Item No_']):
+                            progress_data["current"] += 1
+                            progress_data["status"] = f"Inserting Images: {item_no}"
+                            
+                            worksheet.set_row(i + data_start_row, 180)
+                            img_path = find_image_in_cache(image_cache, item_no)
+                            if img_path:
+                                try:
+                                    with Image.open(img_path) as img:
+                                        img_resized = img.resize((240, 240), Image.Resampling.LANCZOS)
+                                        img_byte_arr = io.BytesIO()
+                                        img_resized.save(img_byte_arr, format='PNG')
+                                        img_byte_arr.seek(0)
+                                        worksheet.insert_image(i + data_start_row, img_col_idx, f"{item_no}.png", {'image_data': img_byte_arr, 'object_position': 1})
+                                        images_found_count += 1
+                                except: worksheet.write(i + data_start_row, img_col_idx, "ERR")
+                    else:
+                        progress_data["current"] += len(bucket_df)
+
+                    # 6. Save (If in Zip Mode)
+                    if not is_multisheet_mode:
+                        current_writer.close()
+                        excel_output.seek(0)
+                        zip_file.writestr(filename, excel_output.read())
+
                 except Exception as e: 
                     logger.error(f"Brand bucket failed: {e}")
 
+        except Exception as outer_e:
+             logger.error(f"Loop Failure: {outer_e}")
+        finally:
+             # Final Cleanup
+             if is_multisheet_mode and global_writer:
+                 global_writer.close()
+             elif zip_file:
+                 zip_file.close()
+
         # Finalize Progress
-        progress_data.update({"current": len(merged_df), "status": "Zipping Files..."})
+        progress_data.update({"current": len(merged_df), "status": "Finalizing..."})
 
-        zip_output.seek(0)
+        output_buffer.seek(0)
         
-        # [ADJUSTED] Ensure valid zip name. If SM, use the pre-calculated date format.
-        if chain_selection in ["RDS", "RUSTANS"]:
-             final_zip_name = f"{filename_base}.zip"
+        if is_multisheet_mode:
+             final_name = f"{filename_base}.xlsx"
+             mimetype_val = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         else:
-             # Ensure we don't name the zip "SC_TEMP.zip"
-             if not final_zip_name or "SC_TEMP" in final_zip_name:
-                 final_zip_name = f"SM{datetime.now().strftime('%m%d%Y')}.zip"
+             mimetype_val = 'application/zip'
+             if chain_selection in ["RDS", "RUSTANS"]:
+                 final_name = f"{filename_base}.zip"
+             else:
+                 if not final_zip_name or "SC_TEMP" in final_zip_name:
+                     final_name = f"SM{datetime.now().strftime('%m%d%Y')}.zip"
+                 else:
+                     final_name = final_zip_name
 
-        response = make_response(send_file(zip_output, mimetype='application/zip', as_attachment=True, download_name=final_zip_name))
+        response = make_response(send_file(output_buffer, mimetype=mimetype_val, as_attachment=True, download_name=final_name))
         
         # Add headers for the success modal summary
         response.headers.update({
-            'X-Filename': final_zip_name,
+            'X-Filename': final_name,
             'X-Total-Items': str(len(merged_df)),
             'X-Images-Found': str(images_found_count),
             'Access-Control-Expose-Headers': 'X-Filename, X-Total-Items, X-Images-Found'
