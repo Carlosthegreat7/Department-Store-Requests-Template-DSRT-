@@ -515,7 +515,10 @@
 
                 abortController = new AbortController();
 
-                const eventSource = new EventSource("{{ url_for('transactions.progress') }}");
+                // const eventSource = new EventSource("{{ url_for('transactions.progress') }}");
+                // Use Sales Code as a simple ID, or generate a random one
+                const uniqueId = $('#salesCodeInput').val().trim();
+                const eventSource = new EventSource("{{ url_for('transactions.progress') }}?id=" + encodeURIComponent(uniqueId));
                 eventSource.onmessage = (e) => {
                     const data = JSON.parse(e.data);
                     $('#statusText').text(data.status);

@@ -43,26 +43,50 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
             return jsonify({"error": f"No records found in {db_name} for the provided codes."}), 404
 
         item_list = prices_df['Item No_'].tolist()
-        placeholders = ', '.join(['?'] * len(item_list))
+        
+        # --- FIX: CHUNK LARGE ITEM LISTS (Applied to ATC/TPC) ---
+        # We must chunk BOTH the Item fetch AND the Attribute fetch
+        chunk_size = 2000
+        items_dfs = []
+        attr_dfs = []
 
-        # 3. Fetch Base Item Data
-        base_qry = (f'SELECT "No_" AS "Item No_", "Description", "Product Group Code" AS "Brand", '
-                    f'"Vendor Item No_" AS "Style_Stockcode", "Base Unit of Measure" AS "Unit_of_Measure", '
-                    f'"Net Weight", "Gross Weight" '
-                    f'FROM dbo."{table_prefix}$Item" WITH (NOLOCK) WHERE "No_" IN ({placeholders})')
-        items_df = pd.read_sql(base_qry, conn, params=item_list)
+        for i in range(0, len(item_list), chunk_size):
+            chunk = item_list[i:i + chunk_size]
+            placeholders = ', '.join(['?'] * len(chunk))
 
-        # 4. Fetch and Pivot Attributes (Gender, Color, Size, etc.)
-        attr_qry = f'''
-            SELECT a."No_", b."Name" as "Attribute", c."Value" 
-            FROM dbo."{table_prefix}$Item Attribute Value Mapping" a WITH (NOLOCK)
-            LEFT JOIN dbo."{table_prefix}$Item Attribute" b ON a."Item Attribute ID" = b."ID"
-            LEFT JOIN dbo."{table_prefix}$Item Attribute Value" c ON a."Item Attribute ID" = c."Attribute ID" 
-                 AND a."Item Attribute Value ID" = c."ID"
-            WHERE a."Table ID" = 27 AND a."No_" IN ({placeholders})
-        '''
-        attr_df = pd.read_sql(attr_qry, conn, params=item_list)
+            # A. Fetch Base Item Data (Chunked)
+            base_qry = (f'SELECT "No_" AS "Item No_", "Description", "Product Group Code" AS "Brand", '
+                        f'"Vendor Item No_" AS "Style_Stockcode", "Base Unit of Measure" AS "Unit_of_Measure", '
+                        f'"Net Weight", "Gross Weight" '
+                        f'FROM dbo."{table_prefix}$Item" WITH (NOLOCK) WHERE "No_" IN ({placeholders})')
+            
+            chunk_items = pd.read_sql(base_qry, conn, params=chunk)
+            items_dfs.append(chunk_items)
 
+            # B. Fetch Attributes (Chunked)
+            attr_qry = f'''
+                SELECT a."No_", b."Name" as "Attribute", c."Value" 
+                FROM dbo."{table_prefix}$Item Attribute Value Mapping" a WITH (NOLOCK)
+                LEFT JOIN dbo."{table_prefix}$Item Attribute" b ON a."Item Attribute ID" = b."ID"
+                LEFT JOIN dbo."{table_prefix}$Item Attribute Value" c ON a."Item Attribute ID" = c."Attribute ID" 
+                     AND a."Item Attribute Value ID" = c."ID"
+                WHERE a."Table ID" = 27 AND a."No_" IN ({placeholders})
+            '''
+            chunk_attrs = pd.read_sql(attr_qry, conn, params=chunk)
+            attr_dfs.append(chunk_attrs)
+
+        # Combine Chunks
+        if items_dfs:
+            items_df = pd.concat(items_dfs, ignore_index=True)
+        else:
+            items_df = pd.DataFrame()
+
+        if attr_dfs:
+            attr_df = pd.concat(attr_dfs, ignore_index=True)
+        else:
+            attr_df = pd.DataFrame()
+
+        # 4. Pivot Attributes Logic
         if not attr_df.empty:
             pivoted = attr_df.pivot(index='No_', columns='Attribute', values='Value').reset_index()
             # Rename pivoted columns to align with NIC script logic for Rustans/SM/RDS
@@ -107,7 +131,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
             finally:
                 mysql_conn.close()
 
-        # --- DATA MAPPING ---
+        # --- DATA MAPPING (INTEGRATED FROM transactions.py) ---
         time_now = datetime.now()
         zip_date = time_now.strftime('%m%d%Y')
         rds_sections = [] # Initialize safely to prevent scope errors if RDS not selected
@@ -210,9 +234,9 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         brand_groups = list(merged_df.groupby('Brand'))
         progress_data.update({"current": 0, "total": len(merged_df), "status": "Initializing Excel Generation..."})
         
-        images_found_count = 0 # Counter for summary
+        images_found_count = 0 # Counter for the summary
         
-        # if rustans template, do separate sheets for each brand, otherwise, di zip files
+        # Determine Mode: Rustans = Single XLSX (Multisheet), Others = Zip (Multi-file)
         is_multisheet_mode = (chain_selection == "RUSTANS")
         
         # Initialize Zip or Global Writer based on mode
@@ -227,7 +251,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         try:
             for brand_name, bucket_df in brand_groups:
                 try:
-                    # 1. Prepare Filename (zip)
+                    # 1. Prepare Filename (Only for Zip mode)
                     filename = ""
                     if not is_multisheet_mode:
                         if chain_selection != "RDS":
@@ -381,7 +405,6 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                                 worksheet.write(row_idx, img_col_idx, "NO IMAGE FOUND")
                     else:
                         progress_data["current"] += len(bucket_df)
-                        # REMOVED the buggy line here that caused the crash for RDS
 
                     # 6. Save (If in Zip Mode)
                     if not is_multisheet_mode:
