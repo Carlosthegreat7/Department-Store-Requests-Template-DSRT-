@@ -234,15 +234,17 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         brand_groups = list(merged_df.groupby('Brand'))
         progress_data.update({"current": 0, "total": len(merged_df), "status": "Initializing Excel Generation..."})
         
-        images_found_count = 0 # Counter for the summary
-        
-        # Determine Mode: Rustans = Single XLSX (Multisheet), Others = Zip (Multi-file)
+        images_found_count = 0 
         is_multisheet_mode = (chain_selection == "RUSTANS")
         
-        # Initialize Zip or Global Writer based on mode
         zip_file = None
         global_writer = None
         
+        # [FIX: PERFORMANCE] Open Connection ONCE here, outside the loop
+        loop_conn = None
+        if not is_multisheet_mode and chain_selection != "RDS":
+             loop_conn = get_mysql_conn()
+
         if is_multisheet_mode:
             global_writer = pd.ExcelWriter(output_buffer, engine='xlsxwriter')
         else:
@@ -256,8 +258,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                     if not is_multisheet_mode:
                         if chain_selection != "RDS":
                             f_dept, f_class = "0000", "0000"
-                            loop_conn = get_mysql_conn()
-                            if loop_conn:
+                            if loop_conn: # Use the pre-opened connection
                                 try:
                                     l_cursor = loop_conn.cursor(dictionary=True)
                                     clean_brand = str(brand_name).strip()
@@ -274,8 +275,10 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                                         sc = res.get('subclass_code') or '00'
                                         f_dept = f"{d}{sd}"
                                         f_class = f"{c}{sc}"
-                                except Exception as db_e: logger.error(f"Loop Lookup Error: {db_e}")
-                                finally: loop_conn.close()
+                                except Exception as db_e: 
+                                    logger.error(f"Loop Lookup Error: {db_e}")
+                                    # Do NOT close loop_conn here
+                                
                             # Ensure sm_ts is available for SM filename
                             sm_ts = time_now.strftime('%m%d%H%M')
                             filename = f"SC{vendor_code}_{f_dept}_{f_class}_{sm_ts}.xlsx"
@@ -420,6 +423,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         finally:
              if is_multisheet_mode and global_writer: global_writer.close()
              elif zip_file: zip_file.close()
+             if loop_conn: loop_conn.close() # [FIX: Close shared connection ONCE here]
 
         # Finalize Progress
         progress_data.update({"current": len(merged_df), "status": "Finalizing..."})
