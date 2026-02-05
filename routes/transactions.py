@@ -188,15 +188,30 @@ def process_template():
             return jsonify({"error": "No records found in Navision for the provided codes."}), 404
 
         item_list = prices_df['Item No_'].tolist()
-        placeholders = ', '.join(['?'] * len(item_list))
         
-        item_qry = (f'SELECT "No_" AS "Item No_", "Description", "Product Group Code" AS "Brand", '
-                    f'"Vendor Item No_" AS "Style_Stockcode", "Net Weight", "Gross Weight", '
-                    f'"Point_Power", "Base Unit of Measure" AS "Unit_of_Measure", '
-                    f'"Dial Color", "Case _Frame Size", "Gender" '
-                    f'FROM dbo."Newtrends International Corp_$Item" WITH (NOLOCK) '
-                    f'WHERE "No_" IN ({placeholders})')
-        items_df = pd.read_sql(item_qry, conn, params=item_list)
+        # --- FIX: CHUNK LARGE ITEM LISTS TO AVOID SQL LIMIT (2100 Params) ---
+        chunk_size = 2000 
+        items_dfs = []
+
+        for i in range(0, len(item_list), chunk_size):
+            chunk = item_list[i:i + chunk_size]
+            placeholders = ', '.join(['?'] * len(chunk))
+            
+            item_qry = (f'SELECT "No_" AS "Item No_", "Description", "Product Group Code" AS "Brand", '
+                        f'"Vendor Item No_" AS "Style_Stockcode", "Net Weight", "Gross Weight", '
+                        f'"Point_Power", "Base Unit of Measure" AS "Unit_of_Measure", '
+                        f'"Dial Color", "Case _Frame Size", "Gender" '
+                        f'FROM dbo."Newtrends International Corp_$Item" WITH (NOLOCK) '
+                        f'WHERE "No_" IN ({placeholders})')
+            
+            chunk_df = pd.read_sql(item_qry, conn, params=chunk)
+            items_dfs.append(chunk_df)
+
+        if items_dfs:
+            items_df = pd.concat(items_dfs, ignore_index=True)
+        else:
+            items_df = pd.DataFrame() # Fallback
+
         merged_df = pd.merge(items_df, prices_df, on="Item No_")
 
         # --- DYNAMIC VENDOR & BRAND LOOKUP (MYSQL) ---
@@ -531,4 +546,3 @@ def process_template():
 def transaction_generator():
     if not session.get('sdr_loggedin'): return render_template('home.html')
     return render_template('transaction_form.html')
-
