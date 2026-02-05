@@ -502,7 +502,16 @@
 
                 // 3. Verification Passed - Proceed to Generation
                 $('#statusText').text("Initializing Excel Generation...");
-                $('#progressBar').css('width', '0%').removeClass('progress-bar-animated progress-bar-striped'); // Reset for actual progress
+
+                // --- FIX START: Prevent Progress Bar "Rewind" Animation ---
+                const $bar = $('#progressBar');
+                $bar.css('transition', 'none');       // 1. Disable animation momentarily
+                $bar.css('width', '0%');              // 2. Snap instantly to 0%
+                $bar.removeClass('progress-bar-animated progress-bar-striped');
+                void $bar[0].offsetWidth;             // 3. Force browser to paint the 0% state
+                $bar.css('transition', 'width 0.4s ease'); // 4. Re-enable animation for the actual progress
+                $('#itemCount').text("Preparing data...");
+                // --- FIX END ---
 
                 abortController = new AbortController();
 

@@ -110,6 +110,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         # --- DATA MAPPING (INTEGRATED FROM transactions.py) ---
         time_now = datetime.now()
         zip_date = time_now.strftime('%m%d%Y')
+        rds_sections = [] # Initialize safely to prevent scope errors if RDS not selected
 
         # Define filenames and zip names per chain
         if chain_selection == "RDS":
@@ -375,9 +376,12 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                                         worksheet.insert_image(row_idx, img_col_idx, f"{item_no}.png", {'image_data': img_byte_arr, 'object_position': 1})
                                         images_found_count += 1
                                 except: worksheet.write(row_idx, img_col_idx, "ERR")
+                            else:
+                                # FIX: Moved this inside the loop where row_idx is defined
+                                worksheet.write(row_idx, img_col_idx, "NO IMAGE FOUND")
                     else:
                         progress_data["current"] += len(bucket_df)
-                        worksheet.write(row_idx, img_col_idx, "NO IMAGE FOUND")
+                        # REMOVED the buggy line here that caused the crash for RDS
 
                     # 6. Save (If in Zip Mode)
                     if not is_multisheet_mode:
