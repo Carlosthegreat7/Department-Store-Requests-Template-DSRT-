@@ -107,7 +107,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
             finally:
                 mysql_conn.close()
 
-        # --- DATA MAPPING (INTEGRATED FROM transactions.py) ---
+        # --- DATA MAPPING ---
         time_now = datetime.now()
         zip_date = time_now.strftime('%m%d%Y')
         rds_sections = [] # Initialize safely to prevent scope errors if RDS not selected
@@ -210,9 +210,9 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         brand_groups = list(merged_df.groupby('Brand'))
         progress_data.update({"current": 0, "total": len(merged_df), "status": "Initializing Excel Generation..."})
         
-        images_found_count = 0 # Counter for the summary
+        images_found_count = 0 # Counter for summary
         
-        # Determine Mode: Rustans = Single XLSX (Multisheet), Others = Zip (Multi-file)
+        # if rustans template, do separate sheets for each brand, otherwise, di zip files
         is_multisheet_mode = (chain_selection == "RUSTANS")
         
         # Initialize Zip or Global Writer based on mode
@@ -227,7 +227,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         try:
             for brand_name, bucket_df in brand_groups:
                 try:
-                    # 1. Prepare Filename (Only for Zip mode)
+                    # 1. Prepare Filename (zip)
                     filename = ""
                     if not is_multisheet_mode:
                         if chain_selection != "RDS":
