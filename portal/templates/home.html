@@ -36,9 +36,13 @@
         style="max-width: 100%; object-fit: contain;">
     </div>
     <div class="hero-text">
-      <h1>Hello, {{ session['sdr_curr_user_username'].split('.')[0].title() }}!</h1>
+      <h1><span id="dynamic-greeting">Hello</span>, {{ session['sdr_curr_user_username'].split('.')[0].title() }}!</h1>
+
       <p class="mb-0 opacity-75">Managed Services Environment | <span
           class="badge badge-light text-primary rounded-pill px-3">{{ session['sdr_usertype'] }}</span></p>
+
+      <div id="live-clock" class="mt-2 small text-uppercase font-weight-bold"
+        style="opacity: 0.7; letter-spacing: 1px;"></div>
     </div>
   </div>
 
@@ -65,11 +69,55 @@
 </div>
 
 <script>
+  // Login Loading Overlay
   const loginForm = document.getElementById('login-form');
   if (loginForm) {
     loginForm.addEventListener('submit', () => {
       document.getElementById('loading-overlay').style.display = 'flex';
     });
+  }
+
+  // Dynamic Greeting & Clock Logic
+  function updateDashboardTime() {
+    const now = new Date();
+    const greetingElement = document.getElementById('dynamic-greeting');
+    const clockElement = document.getElementById('live-clock');
+
+    // 1. Update Greeting (Morning/Afternoon/Evening)
+    if (greetingElement) {
+      const hours = now.getHours();
+      let greetingText = "Hello";
+
+      if (hours >= 5 && hours < 12) {
+        greetingText = "Good Morning";
+      } else if (hours >= 12 && hours < 18) {
+        greetingText = "Good Afternoon";
+      } else {
+        greetingText = "Good Evening";
+      }
+      greetingElement.innerText = greetingText;
+    }
+
+    // 2. Update Clock (Date | Time)
+    if (clockElement) {
+      // Format: Mon, Jan 01 | 12:00:00 PM
+      const options = {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      };
+      // Insert a separator pipe for style
+      clockElement.innerText = now.toLocaleDateString('en-US', options).replace(',', ' |');
+    }
+  }
+
+  // Run on load and then every second
+  if (document.getElementById('dynamic-greeting')) {
+    updateDashboardTime();
+    setInterval(updateDashboardTime, 1000);
   }
 </script>
 {% endblock %}
