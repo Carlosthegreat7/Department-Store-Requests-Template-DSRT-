@@ -115,32 +115,47 @@
             $('.dropdown-toggle').dropdown();
 
             // --- CARLOS THE GREAT EASTER EGG ---
+
+
+            // Typewriter Effect Variables
+            var isAnimating = false;
+
             $('#companySignature').click(function () {
+                if (isAnimating) return; // Prevent spam clicking
+                isAnimating = true;
+
                 var $this = $(this);
                 var originalText = "Newtrends International Corporation";
                 var devText = "Developed By: CarlosTheGreat";
 
-                // Prevent glitching if clicked multiple times rapidly
-                if ($this.text() === devText) return;
+                // Step 1: "Untype" the original text
+                var deleteInterval = setInterval(function () {
+                    var currentText = $this.text();
+                    if (currentText.length > 0) {
+                        $this.text(currentText.slice(0, -1));
+                    } else {
+                        clearInterval(deleteInterval);
 
-                // Fade out current text
-                $this.fadeOut(200, function () {
-                    // Change text and style (make it blue and bold)
-                    $(this).text(devText)
-                        .css('color', '#007bff')
-                        .css('font-weight', 'bold')
-                        .fadeIn(200);
-                });
+                        // Step 2: "Type" the new text
+                        $this.css('color', '#007bff').css('font-weight', 'bold'); // Change style
+                        var i = 0;
+                        var typeInterval = setInterval(function () {
+                            $this.text(devText.substring(0, i + 1));
+                            i++;
+                            if (i === devText.length) {
+                                clearInterval(typeInterval);
 
-                // Revert back after 3 seconds
-                setTimeout(function () {
-                    $this.fadeOut(200, function () {
-                        $(this).text(originalText)
-                            .css('color', '') // Reset color
-                            .css('font-weight', '') // Reset font weight
-                            .fadeIn(200);
-                    });
-                }, 3000);
+                                // Step 3: Wait and revert
+                                setTimeout(function () {
+                                    $this.text(originalText)
+                                        .css('color', '')
+                                        .css('font-weight', '');
+                                    isAnimating = false;
+                                }, 3000);
+                            }
+                        }, 50); // Speed of typing
+                    }
+                }, 30); // Speed of deleting
             });
         });
     </script>
