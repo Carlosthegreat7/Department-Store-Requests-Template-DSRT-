@@ -19,7 +19,6 @@
 
     <link rel="stylesheet" href="{{ url_for('static', filename='main.css') }}">
 
-    <!-- No inline styles here, moved to main.css -->
 </head>
 
 <body>
@@ -90,7 +89,10 @@
 
     <footer class="page-footer font-small py-4 mt-5">
         <div class="footer-copyright text-center text-muted small">
-            © 2026 MIS Department | Newtrends International Corporation
+            © 2026 MIS Department |
+            <span id="companySignature" style="cursor: pointer; user-select: none;">
+                Newtrends International Corporation
+            </span>
         </div>
     </footer>
 
@@ -108,9 +110,38 @@
             window.scrollTo({ top: 0, behavior: 'smooth' });
         };
 
-        // Ensures dropdowns work even after dynamic page transitions
         $(document).ready(function () {
+            // Ensures dropdowns work
             $('.dropdown-toggle').dropdown();
+
+            // --- CARLOS THE GREAT EASTER EGG ---
+            $('#companySignature').click(function () {
+                var $this = $(this);
+                var originalText = "Newtrends International Corporation";
+                var devText = "Developed By: CarlosTheGreat";
+
+                // Prevent glitching if clicked multiple times rapidly
+                if ($this.text() === devText) return;
+
+                // Fade out current text
+                $this.fadeOut(200, function () {
+                    // Change text and style (make it blue and bold)
+                    $(this).text(devText)
+                        .css('color', '#007bff')
+                        .css('font-weight', 'bold')
+                        .fadeIn(200);
+                });
+
+                // Revert back after 3 seconds
+                setTimeout(function () {
+                    $this.fadeOut(200, function () {
+                        $(this).text(originalText)
+                            .css('color', '') // Reset color
+                            .css('font-weight', '') // Reset font weight
+                            .fadeIn(200);
+                    });
+                }, 3000);
+            });
         });
     </script>
 </body>
