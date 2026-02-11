@@ -387,7 +387,6 @@ def process_template():
                     
                     # 2. Setup Writer and Sheet Name
                     if is_multisheet_mode:
-                        # Sanitize brand name (Max 31 chars)
                         safe_sheet = (str(brand_name).replace('/', '-').replace('\\', '-').replace('?', '').replace('*', '').replace('[', '').replace(']', '').replace(':', ''))[:31]
                         current_writer = global_writer
                         current_sheet_name = safe_sheet
@@ -419,13 +418,13 @@ def process_template():
                                 curr_col += 1
                                 
                     elif chain_selection == "RUSTANS":
-                        # [RUSTANS SPECIFIC NPIS HEADER LAYOUT]
+                        # Rustans custom format
                         
                         # Styles
                         bold_fmt = workbook.add_format({'bold': True})
                         title_fmt = workbook.add_format({'bold': True, 'font_size': 11})
                         
-                        # Top Block Info
+                        # Top Block Info Rustans Corporation
                         worksheet.write(0, 0, "RUSTAN COMMERCIAL CORPORATION", title_fmt)
                         worksheet.write(1, 0, "CONCESSIONAIRE MANAGEMENT DIVISION", bold_fmt)
                         worksheet.write(2, 0, "NEW PRODUCT INFORMATION SHEET (NPIS)", bold_fmt)
@@ -484,7 +483,6 @@ def process_template():
                         worksheet.set_column(img_col_idx, img_col_idx, 35) 
                         
                         for i, item_no in enumerate(bucket_df['Item No_']):
-                            # [FIX] Update specific progress dict
                             progress_store[req_id]["current"] += 1
                             progress_store[req_id]["status"] = f"Inserting Images: {item_no}"
                             
@@ -503,7 +501,6 @@ def process_template():
                                         images_found_count += 1
                                 except: worksheet.write(row_idx, img_col_idx, "ERR")
                     else:
-                        # [FIX] Update specific progress dict
                         progress_store[req_id]["current"] += len(bucket_df)
 
                     # 6. Save (If in Zip Mode)
@@ -522,7 +519,6 @@ def process_template():
              elif zip_file: zip_file.close()
 
         # Finalize Progress
-        # [FIX] Update specific progress dict
         progress_store[req_id].update({"current": len(merged_df), "status": "Finalizing..."})
 
         output_buffer.seek(0)
