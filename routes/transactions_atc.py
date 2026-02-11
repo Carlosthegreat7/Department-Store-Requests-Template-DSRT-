@@ -44,8 +44,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
 
         item_list = prices_df['Item No_'].tolist()
         
-        # --- FIX: CHUNK LARGE ITEM LISTS (Applied to ATC/TPC) ---
-        # We must chunk BOTH the Item fetch AND the Attribute fetch
+        # if prcmmo contains more than 5k items, chunk the query
         chunk_size = 2000
         items_dfs = []
         attr_dfs = []
@@ -91,7 +90,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
             pivoted = attr_df.pivot(index='No_', columns='Attribute', values='Value').reset_index()
             # Rename pivoted columns to align with NIC script logic for Rustans/SM/RDS
             rename_map = {
-                'Pricepoint': 'Point_Power', # Mapped to Point_Power for compatibility with RDS logic
+                'Pricepoint': 'Point_Power', 
                 'Dial Color': 'Dial Color',
                 'Case _Frame Size': 'Case _Frame Size',
                 'Gender': 'Gender'
