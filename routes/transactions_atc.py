@@ -103,19 +103,14 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         for col in ['Net Weight', 'Gross Weight', 'Point_Power', 'Dial Color', 'Case _Frame Size', 'Gender']:
             if col not in items_df.columns: items_df[col] = ""
 
-        # 1. Merge the data
         merged_df = pd.merge(items_df, prices_df, on="Item No_")
 
-        # 2. Force 'SRP' to be a number
         merged_df['SRP'] = pd.to_numeric(merged_df['SRP'], errors='coerce').fillna(0)
 
-        # 3. Sort so that the HIGHEST price is at the top for each Style
         merged_df = merged_df.sort_values(by=['Style_Stockcode', 'SRP'], ascending=[True, False])
 
-        # 4. Remove the duplicates, keeping only the first (highest price) row
         merged_df = merged_df.drop_duplicates(subset=['Style_Stockcode'], keep='first')
 
-        # --- DYNAMIC VENDOR & BRAND LOOKUP (MYSQL) ---
         mysql_conn = get_mysql_conn()
         vendor_code, dynamic_mfg_no = "000000", ""
         if mysql_conn:
@@ -131,10 +126,9 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
             finally:
                 mysql_conn.close()
 
-        # --- DATA MAPPING (INTEGRATED FROM transactions.py) ---
         time_now = datetime.now()
         zip_date = time_now.strftime('%m%d%Y')
-        rds_sections = [] # Initialize safely to prevent scope errors if RDS not selected
+        rds_sections = []
 
         # Define filenames and zip names per chain
         if chain_selection == "RDS":
@@ -289,7 +283,6 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                     
                     # 2. Setup Writer and Sheet Name
                     if is_multisheet_mode:
-                        # Sanitize brand name (Max 31 chars)
                         safe_sheet = (str(brand_name).replace('/', '-').replace('\\', '-').replace('?', '').replace('*', '').replace('[', '').replace(']', '').replace(':', ''))[:31]
                         current_writer = global_writer
                         current_sheet_name = safe_sheet
@@ -321,9 +314,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                                 curr_col += 1
                                 
                     elif chain_selection == "RUSTANS":
-                        # [RUSTANS SPECIFIC NPIS HEADER LAYOUT]
-                        
-                        # Styles
+                        # Rustans custom format
                         bold_fmt = workbook.add_format({'bold': True})
                         title_fmt = workbook.add_format({'bold': True, 'font_size': 11})
                         
@@ -404,12 +395,10 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                                         images_found_count += 1
                                 except: worksheet.write(row_idx, img_col_idx, "ERR")
                             else:
-                                # FIX: Moved this inside the loop where row_idx is defined
                                 worksheet.write(row_idx, img_col_idx, "NO IMAGE FOUND")
                     else:
                         progress_data["current"] += len(bucket_df)
 
-                    # 6. Save (If in Zip Mode)
                     if not is_multisheet_mode:
                         current_writer.close()
                         excel_output.seek(0)
@@ -423,7 +412,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         finally:
              if is_multisheet_mode and global_writer: global_writer.close()
              elif zip_file: zip_file.close()
-             if loop_conn: loop_conn.close() # [FIX: Close shared connection ONCE here]
+             if loop_conn: loop_conn.close()
 
         # Finalize Progress
         progress_data.update({"current": len(merged_df), "status": "Finalizing..."})
