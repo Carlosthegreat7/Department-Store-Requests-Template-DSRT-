@@ -5,7 +5,6 @@ from portal import loggedin_required
 from sqlalchemy.exc import IntegrityError 
 from flask import jsonify
 
-# Blueprint for Subclass logic
 subclass_bp = Blueprint('subclass', __name__)
 
 @subclass_bp.route('/api/search_groups')
@@ -16,10 +15,8 @@ def search_groups():
     if not query:
         return jsonify([])
     
-    # Searches for matches in the Brand table's product_group column
     brands = Brand.query.filter(Brand.product_group.like(f"%{query}%")).limit(10).all()
     
-    # Return as json for the frontend 
     return jsonify([{"code": b.product_group, "name": b.brand_name} for b in brands])
 
 @subclass_bp.route('/admin/add_subclass', methods=['GET', 'POST'])

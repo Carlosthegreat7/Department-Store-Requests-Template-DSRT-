@@ -4,7 +4,7 @@ from models import Vendor
 from portal import loggedin_required
 import mysql.connector
 
-#Blueprint for Vendor logic
+
 vendor_bp = Blueprint('vendor', __name__)
 
 def get_mysql_conn():

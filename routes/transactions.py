@@ -87,12 +87,10 @@ def find_image_in_cache(cache, item_no):
 
 @transactions_bp.route('/progress')
 def progress():
-    # [FIX] Get the unique ID (Sales Code) from the frontend request
     req_id = request.args.get('id', 'default')
     
     def generate():
         while True:
-            # [FIX] Fetch the specific progress for this ID
             data = progress_store.get(req_id, {"current": 0, "total": 0, "status": "Waiting..."})
             
             yield f"data: {json.dumps(data)}\n\n"
@@ -180,7 +178,6 @@ def process_template():
     # 2. REDIRECTION LOGIC
     if company_selection in ['ATC', 'TPC']:
         logger.info(f"Redirecting to ATC/TPC logic for company: {company_selection}")
-        # [FIX] Pass the specific progress dictionary for this user
         return process_atcrep_template(
             chain_selection, company_selection, pc_memo, sales_code, 
             SQLconnect, get_mysql_conn, build_image_cache, 
@@ -188,7 +185,6 @@ def process_template():
         )
 
     # 3. NIC SCRIPT LOGIC
-    # [FIX] Update specific progress dict
     progress_store[req_id].update({"current": 0, "total": 0, "status": "Accessing NICREP..."})
     conn = None
     try:
@@ -207,8 +203,6 @@ def process_template():
         item_list = prices_df['Item No_'].tolist()
         placeholders = ', '.join(['?'] * len(item_list))
         
-        # [NOTE] You should also apply the chunking fix here (from previous steps) 
-        # but for this specific answer I am focusing on the concurrency fix.
         item_qry = (f'SELECT "No_" AS "Item No_", "Description", "Product Group Code" AS "Brand", '
                     f'"Vendor Item No_" AS "Style_Stockcode", "Net Weight", "Gross Weight", '
                     f'"Point_Power", "Base Unit of Measure" AS "Unit_of_Measure", '
@@ -246,7 +240,7 @@ def process_template():
             filename_base = f'RUSTANS {time_now.strftime("%m%d%Y")} {company_selection}'
             final_zip_name = f"RUSTANS{zip_date}.zip"
         else:
-            # Temporary savefile, will be zipped later and adjusted to required format
+            # Temporary savefile, will be zipped later and adjusted to required store chain format
             sm_ts = time_now.strftime('%m%d%H%M')
             filename_base = f"SC{vendor_code}_DEPT_CLASS_{sm_ts}"
             final_zip_name = f"SM{zip_date}.zip"
@@ -442,7 +436,6 @@ def process_template():
                         worksheet.write(7, 0, "BRAND:", bold_fmt)
                         worksheet.write(7, 1, brand_name)
                         
-                        # Instruction Row
                         instr_fmt = workbook.add_format({'bold': True, 'bg_color': '#FFFF00', 'border': 1, 'align': 'center'})
                         worksheet.merge_range(10, 0, 10, len(final_cols)-1, "ALL HIGHLIGHTED COLUMNS IN CHART ARE TO BE FILLED UP BY CONCESSIONAIRE", instr_fmt)
                         

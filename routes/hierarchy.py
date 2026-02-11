@@ -48,7 +48,6 @@ def edit_hierarchy(code):
     
     if request.method == 'POST':
         try:
-            # Update values using names in edit_hierarchy.html
             brand.brand_name = request.form.get('brand_name', '').strip().upper()
             brand.product_group = request.form.get('product_group', '').strip().upper()
             brand.dept_code = request.form.get('dept_code', '').strip().zfill(3)
@@ -57,14 +56,12 @@ def edit_hierarchy(code):
             
             db.session.commit()
             flash(f"Hierarchy for {brand.brand_name} updated successfully!", "success")
-            # FIXED: Added _anchor to persist the Hierarchy tab state
             return redirect(url_for('admin_management', _anchor='hierarchy'))
             
         except Exception as e:
             db.session.rollback()
             flash(f"Error: {e}", "danger")
             
-    # Passing variable as 'hierarchy' to match edit_hierarchy.html
     return render_template('edit_hierarchy.html', hierarchy=brand)
 
 @hierarchy_bp.route('/admin/delete_hierarchy/<code>', methods=['POST'])
@@ -82,7 +79,6 @@ def delete_hierarchy(code):
             
         except IntegrityError:
             db.session.rollback()
-            # This triggers if the SQL Foreign Key constraint prevents the delete
             flash(f"Deletion Failed: '{code}' is currently linked to existing sub-classes or items.", "danger")
             
         except Exception as e:

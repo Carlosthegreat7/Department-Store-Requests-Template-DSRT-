@@ -4,7 +4,6 @@ from models import VendorRDS, HierarchyRDS, PricePointRDS, AgeCodeRDS
 from extensions import db
 import mysql.connector
 
-# Define blueprint
 rds_mng_bp = Blueprint('rds_mng', __name__)
 
 def get_mysql_conn():
@@ -21,12 +20,11 @@ def get_mysql_conn():
 @rds_mng_bp.route('/admin/management/rds', methods=['GET'])
 @loggedin_required()
 def admin_management_rds():
-    # Security Check
     if session.get('sdr_usertype') != 'Head Office':
         flash("Unauthorized Access")
         return redirect(url_for('index'))
     
-    # Fetch all RDS data from the database
+    # get rds data
     vendors_rds = VendorRDS.query.order_by(VendorRDS.id.desc()).all()
     hierarchies_rds = HierarchyRDS.query.all()
     price_points_rds = PricePointRDS.query.all()
@@ -67,7 +65,7 @@ def add_vendor_rds():
         db.session.add(new_vendor)
         db.session.commit()
 
-        # === MYSQL SYNC FOR TRANSACTION FORM (PATCHED FOR RDS) ===
+        # === MYSQL SYNC FOR TRANSACTION FORM ===
         try:
             conn = get_mysql_conn()
             if conn:
@@ -77,7 +75,6 @@ def add_vendor_rds():
                     "VALUES (%s, %s, %s) "
                     "ON DUPLICATE KEY UPDATE vendor_code=%s"
                 )
-                # Chain identifier is now RDS
                 cursor.execute(sync_qry, ('RDS', company_name, vendor_code, vendor_code))
                 conn.commit()
                 conn.close()
@@ -126,12 +123,11 @@ def edit_vendor_rds(id):
         
         db.session.commit()
 
-        # === MYSQL SYNC FOR TRANSACTION FORM (PATCHED FOR RDS) ===
+        # === MYSQL SYNC FOR TRANSACTION FORM ===
         try:
             conn = get_mysql_conn()
             if conn:
                 cursor = conn.cursor()
-                # Update both code and name in the bridge table where chain is RDS
                 update_qry = (
                     "UPDATE vendor_chain_mappings "
                     "SET vendor_code=%s, company_selection=%s "

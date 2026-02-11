@@ -27,7 +27,6 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
             return jsonify({"error": f"Database Connection to {db_name} Failed"}), 500
 
         # Fetch Prices
-        # deduplication query
         price_qry = (
             f'SELECT "Item No_", "SRP" FROM ('
             f'  SELECT "Item No_", "Unit Price" AS "SRP", '
