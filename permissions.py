@@ -7,7 +7,7 @@ test_string = (
     f'DATABASE=ATCREP;'
     f'Trusted_Connection=yes;'
 )
-
+#TESTTESTTEST
 try:
     conn = pyodbc.connect(test_string)
     print("Success! You have permission to read ATCREP.")
