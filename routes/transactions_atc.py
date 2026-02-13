@@ -135,6 +135,9 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         elif chain_selection == "RUSTANS":
             filename_base = f'RUSTANS {time_now.strftime("%m%d%Y")} {company_selection}'
             final_zip_name = f"RUSTANS{zip_date}.zip"
+        elif chain_selection == "GCAP":
+            filename_base = f'GCAP {company_selection} {time_now.strftime("%m%d%Y")}' 
+            final_zip_name = f"GCAP{zip_date}.zip"
         else:
             # Temporary savefile, will be zipped later and adjusted to required format
             sm_ts = time_now.strftime('%m%d%H%M')
