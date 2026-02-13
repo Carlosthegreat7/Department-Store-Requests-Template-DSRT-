@@ -207,7 +207,7 @@ def process_template():
         item_qry = (f'SELECT "No_" AS "Item No_", "Description", "Product Group Code" AS "Brand", '
                     f'"Vendor Item No_" AS "Style_Stockcode", "Net Weight", "Gross Weight", '
                     f'"Point_Power", "Base Unit of Measure" AS "Unit_of_Measure", '
-                    f'"Dial Color", "Case _Frame Size", "Gender", "Category_Style" '
+                    f'"Dial Color", "Case _Frame Size", "Gender", "Item Category Code" '
                     f'FROM dbo."Newtrends International Corp_$Item" WITH (NOLOCK) '
                     f'WHERE "No_" IN ({placeholders})')
         items_df = pd.read_sql(item_qry, conn, params=item_list)
@@ -318,7 +318,7 @@ def process_template():
             merged_df['brand'] = merged_df['Brand'].fillna('')
             merged_df['item code'] = merged_df['Item No_']
             merged_df['promo category'] = "" 
-            merged_df['item category'] = merged_df['Category_Style'].fillna('')
+            merged_df['item category'] = merged_df['Item Category Code'].fillna('')
             merged_df['description'] = merged_df['Description'].fillna('')
             merged_df['price'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
             
