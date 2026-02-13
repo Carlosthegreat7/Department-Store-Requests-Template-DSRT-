@@ -203,10 +203,11 @@ def process_template():
         item_list = prices_df['Item No_'].tolist()
         placeholders = ', '.join(['?'] * len(item_list))
         
+# Updated Query in transactions.py
         item_qry = (f'SELECT "No_" AS "Item No_", "Description", "Product Group Code" AS "Brand", '
                     f'"Vendor Item No_" AS "Style_Stockcode", "Net Weight", "Gross Weight", '
                     f'"Point_Power", "Base Unit of Measure" AS "Unit_of_Measure", '
-                    f'"Dial Color", "Case _Frame Size", "Gender" '
+                    f'"Dial Color", "Case _Frame Size", "Gender", "Category_Style" '
                     f'FROM dbo."Newtrends International Corp_$Item" WITH (NOLOCK) '
                     f'WHERE "No_" IN ({placeholders})')
         items_df = pd.read_sql(item_qry, conn, params=item_list)
@@ -313,6 +314,19 @@ def process_template():
             final_cols = ['RCC SKU', 'IMAGE', 'VENDOR ITEM CODE', 'PRODUCT MEDIUM DESCRIPTION (CHAR. LIMIT = 30)', 'PRODUCT SHORT DESCRIPTION (CHAR. LIMIT = 10)', 'PRODUCT LONG DESCRIPTION (CHAR. LIMIT = 50)', 'VENDOR CODE', 'BRAND CODE', 'RETAIL PRICE', 'DEPARTMENT', 'SUBDEPARTMENT', 'CLASS', 'SUB CLASS', 'MERCHANDISER', 'BUYER', 'SEASON CODE', 'THEME', 'COLLECTION', 'Dial Color', 'SIZE RUN', 'Case _Frame Size', 'SET / PC', 'MAKATI', 'SHANG', 'ATC', 'GW', 'CEBU', 'SOLENAD', 'E-COMM (FOR PO)', 'TOTAL', 'TOTAL RETAIL VALUE', 'SIZE SPECIFICATIONS', 'PRODUCT & CARE DETAILS', 'MATERIAL', 'LINK TO HI-RES IMAGE', 'Gender']
             img_col_name, sheet_name_val, header_row_idx, data_start_row = 'IMAGE', "Rustans Template", 14, 15
         
+        elif chain_selection == "GCAP":
+            # Map columns as requested
+            merged_df['brand'] = merged_df['Brand'].fillna('')
+            merged_df['item code'] = merged_df['Item No_']
+            merged_df['promo category'] = "" # Placeholder as per requirement
+            merged_df['item category'] = merged_df['Gender'].fillna('')
+            merged_df['description'] = merged_df['Description'].fillna('')
+            merged_df['price'] = merged_df['SRP'].fillna(0).map('{:.2f}'.format)
+            
+            # Define the final layout
+            final_cols = ['brand', 'item code', 'promo category', 'item category', 'description', 'price']
+            img_col_name, sheet_name_val, header_row_idx, data_start_row = None, "GCAP Template", 0, 1
+
         else:
             # SM / Default Logic
             merged_df['DESCRIPTION'] = (merged_df['Brand'].fillna('') + " " + merged_df['Description'].fillna('') + " " + merged_df['Dial Color'].fillna('') + " " + merged_df['Case _Frame Size'].fillna('') + " " + merged_df['Style_Stockcode'].fillna('')).str.replace(r'[^a-zA-Z0-9\s]', '', regex=True).str[:50]
@@ -451,7 +465,22 @@ def process_template():
                                 elif "RCC SKU" in value: worksheet.set_column(col_num, col_num, 15)
                                 elif any(x in value for x in ["Size", "Color", "Price"]): worksheet.set_column(col_num, col_num, 12)
                                 else: worksheet.set_column(col_num, col_num, 18)
+                    
 
+                    elif chain_selection == "GCAP":
+                        # Professional Clean Theme for GCAP
+                        header_fmt = workbook.add_format({
+                            'bold': True, 
+                            'bg_color': '#2E75B6', # Dark Blue
+                            'font_color': 'white', 
+                            'border': 1, 
+                            'align': 'center'
+                        })
+                        for col_num, value in enumerate(final_cols):
+                            worksheet.write(0, col_num, value, header_fmt)
+                            # Auto-adjust column widths: Description is wide, others are standard
+                            width = 45 if value == 'description' else 15
+                            worksheet.set_column(col_num, col_num, width)
                     else:
                         # [SM BLUE THEME]
                         header_fmt = workbook.add_format({'bold': True, 'bg_color': '#BDD7EE', 'border': 1, 'align': 'center'}) # SM Blue
