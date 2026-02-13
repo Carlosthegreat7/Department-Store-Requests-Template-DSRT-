@@ -315,18 +315,15 @@ def process_template():
             img_col_name, sheet_name_val, header_row_idx, data_start_row = 'IMAGE', "Rustans Template", 14, 15
         
         elif chain_selection == "GCAP":
-            # Map columns as requested
             merged_df['brand'] = merged_df['Brand'].fillna('')
             merged_df['item code'] = merged_df['Item No_']
-            merged_df['promo category'] = "" # Placeholder as per requirement
-            merged_df['item category'] = merged_df['Gender'].fillna('')
+            merged_df['promo category'] = "" 
+            merged_df['item category'] = merged_df['Category_Style'].fillna('')
             merged_df['description'] = merged_df['Description'].fillna('')
-            merged_df['price'] = merged_df['SRP'].fillna(0).map('{:.2f}'.format)
+            merged_df['price'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
             
-            # Define the final layout
             final_cols = ['brand', 'item code', 'promo category', 'item category', 'description', 'price']
             img_col_name, sheet_name_val, header_row_idx, data_start_row = None, "GCAP Template", 0, 1
-
         else:
             # SM / Default Logic
             merged_df['DESCRIPTION'] = (merged_df['Brand'].fillna('') + " " + merged_df['Description'].fillna('') + " " + merged_df['Dial Color'].fillna('') + " " + merged_df['Case _Frame Size'].fillna('') + " " + merged_df['Style_Stockcode'].fillna('')).str.replace(r'[^a-zA-Z0-9\s]', '', regex=True).str[:50]
