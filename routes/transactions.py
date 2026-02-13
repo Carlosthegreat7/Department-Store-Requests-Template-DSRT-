@@ -3,13 +3,14 @@ import pandas as pd
 import io
 import json
 import zipfile
-import calendar
 import traceback
 import logging
 import mysql.connector
+import time
+import shutil
 from datetime import datetime, timedelta
 from PIL import Image
-from flask import Blueprint, render_template, request, jsonify, session, flash, redirect, url_for, send_file, make_response, Response
+from flask import Blueprint, render_template, request, jsonify, session, send_file, make_response, Response
 
 # 1. import new atc script
 try:
@@ -33,10 +34,35 @@ except ImportError:
 
 transactions_bp = Blueprint('transactions', __name__)
 
-# [FIX] Use a dictionary to store progress for multiple users simultaneously
-# Key = Sales Code, Value = Progress Dict
-progress_store = {} 
 NETWORK_IMAGE_PATH = r'\\mgsvr09\niccatalog'
+
+# --- PROGRESS TRACKING HELPER (FILE BASED) ---
+# We use files instead of variables so this works even if the server uses multiple worker processes.
+
+PROGRESS_DIR = os.path.join(os.getcwd(), 'temp_progress')
+if not os.path.exists(PROGRESS_DIR):
+    os.makedirs(PROGRESS_DIR)
+
+def save_progress(req_id, current, total, status):
+    """Writes progress to a JSON file accessible by all workers."""
+    try:
+        file_path = os.path.join(PROGRESS_DIR, f"{req_id}.json")
+        data = {"current": current, "total": total, "status": status}
+        with open(file_path, "w") as f:
+            json.dump(data, f)
+    except Exception as e:
+        logger.error(f"Failed to write progress: {e}")
+
+def get_progress_data(req_id):
+    """Reads progress from the JSON file."""
+    try:
+        file_path = os.path.join(PROGRESS_DIR, f"{req_id}.json")
+        if os.path.exists(file_path):
+            with open(file_path, "r") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return {"current": 0, "total": 0, "status": "Waiting..."}
 
 # --- SHARED UTILITY FUNCTIONS ---
 
@@ -91,13 +117,18 @@ def progress():
     
     def generate():
         while True:
-            data = progress_store.get(req_id, {"current": 0, "total": 0, "status": "Waiting..."})
+            # READ from file
+            data = get_progress_data(req_id)
             
             yield f"data: {json.dumps(data)}\n\n"
             
             # Stop stream if finished
             if data["status"] == "Finalizing..." or (data["total"] > 0 and data["current"] >= data["total"]):
+                # Optional: Clean up file logic could go here, or rely on OS cleanup
                 break
+            
+            # Poll every 0.5 seconds to avoid server blocking
+            time.sleep(0.5)
                 
     return Response(generate(), mimetype='text/event-stream')
 
@@ -163,29 +194,32 @@ def get_companies(chain):
 
 @transactions_bp.route('/process-template', methods=['POST'])
 def process_template():
-    global progress_store
-    
     # 1. Get Selections
     chain_selection = request.form.get('chain', '').strip().upper()
     company_selection = request.form.get('company', '').strip().upper()
     pc_memo = request.form.get('pc_memo', '').strip().upper()
     sales_code = request.form.get('sales_code', '').strip().upper()
 
-    # [FIX] Use Sales Code as the Unique ID for this user session
+    # Use Sales Code as the Unique ID for this user session
     req_id = sales_code
-    progress_store[req_id] = {"current": 0, "total": 0, "status": "Initializing..."}
+    
+    # Initialize Progress File
+    save_progress(req_id, 0, 0, "Initializing...")
 
     # 2. REDIRECTION LOGIC
     if company_selection in ['ATC', 'TPC']:
         logger.info(f"Redirecting to ATC/TPC logic for company: {company_selection}")
+        # Note: Ideally you pass save_progress to the ATC script, but for compatibility
+        # we act as if it's external.
+        dummy_progress = {} 
         return process_atcrep_template(
             chain_selection, company_selection, pc_memo, sales_code, 
             SQLconnect, get_mysql_conn, build_image_cache, 
-            find_image_in_cache, NETWORK_IMAGE_PATH, progress_store[req_id]
+            find_image_in_cache, NETWORK_IMAGE_PATH, dummy_progress
         )
 
     # 3. NIC SCRIPT LOGIC
-    progress_store[req_id].update({"current": 0, "total": 0, "status": "Accessing NICREP..."})
+    save_progress(req_id, 0, 0, "Accessing NICREP...")
     conn = None
     try:
         conn, cursor, prefix = SQLconnect('NICREP', "DSRT")
@@ -201,16 +235,42 @@ def process_template():
             return jsonify({"error": "No records found in Navision for the provided codes."}), 404
 
         item_list = prices_df['Item No_'].tolist()
-        placeholders = ', '.join(['?'] * len(item_list))
+        total_items_count = len(item_list)
         
-# Updated Query in transactions.py
-        item_qry = (f'SELECT "No_" AS "Item No_", "Description", "Product Group Code" AS "Brand", '
-                    f'"Vendor Item No_" AS "Style_Stockcode", "Net Weight", "Gross Weight", '
-                    f'"Point_Power", "Base Unit of Measure" AS "Unit_of_Measure", '
-                    f'"Dial Color", "Case _Frame Size", "Gender", "Item Category Code" '
-                    f'FROM dbo."Newtrends International Corp_$Item" WITH (NOLOCK) '
-                    f'WHERE "No_" IN ({placeholders})')
-        items_df = pd.read_sql(item_qry, conn, params=item_list)
+        save_progress(req_id, 0, total_items_count, f"Found {total_items_count} items. Starting Retrieval...")
+
+        # --- CHUNKING LOGIC ---
+        chunk_size = 2000
+        items_dfs = []
+
+        # Iterate through item list in chunks to prevent query overflow
+        for i in range(0, len(item_list), chunk_size):
+            chunk = item_list[i:i + chunk_size]
+            placeholders = ', '.join(['?'] * len(chunk))
+            
+            # Update Progress File
+            save_progress(req_id, i, total_items_count, f"Retrieving item details... ({i}/{total_items_count})")
+
+            # Updated Query in transactions.py
+            item_qry = (f'SELECT "No_" AS "Item No_", "Description", "Product Group Code" AS "Brand", '
+                        f'"Vendor Item No_" AS "Style_Stockcode", "Net Weight", "Gross Weight", '
+                        f'"Point_Power", "Base Unit of Measure" AS "Unit_of_Measure", '
+                        f'"Dial Color", "Case _Frame Size", "Gender", "Item Category Code" '
+                        f'FROM dbo."Newtrends International Corp_$Item" WITH (NOLOCK) '
+                        f'WHERE "No_" IN ({placeholders})')
+            
+            chunk_df = pd.read_sql(item_qry, conn, params=chunk)
+            items_dfs.append(chunk_df)
+            
+            # Tiny sleep to let other threads breathe
+            time.sleep(0.01)
+
+        # Combine all chunks
+        if items_dfs:
+            items_df = pd.concat(items_dfs, ignore_index=True)
+        else:
+            items_df = pd.DataFrame()
+
         merged_df = pd.merge(items_df, prices_df, on="Item No_")
 
         # --- DYNAMIC VENDOR & BRAND LOOKUP (MYSQL) ---
@@ -368,8 +428,8 @@ def process_template():
         # --- 5. EXCEL GENERATION ---
         output_buffer = io.BytesIO()
         brand_groups = list(merged_df.groupby('Brand'))
-        # [FIX] Update specific progress dict
-        progress_store[req_id].update({"current": 0, "total": len(merged_df), "status": "Initializing Excel Generation..."})
+        
+        save_progress(req_id, 0, len(merged_df), "Initializing Excel Generation...")
         
         images_found_count = 0 
         is_multisheet_mode = (chain_selection == "RUSTANS")
@@ -377,6 +437,9 @@ def process_template():
         zip_file = None
         global_writer = None
         
+        # [FIX] Track used filenames
+        used_filenames = set()
+
         if is_multisheet_mode:
             global_writer = pd.ExcelWriter(output_buffer, engine='xlsxwriter')
         else:
@@ -415,9 +478,18 @@ def process_template():
                             filename = f"SC{vendor_code}_{f_dept}_{f_class}_{sm_ts}.xlsx"
                         else:
                             filename = f"{filename_base} - {brand_name}.xlsx"
+
+                        # [FIX] Check for Duplicate Filenames
+                        if filename in used_filenames:
+                            base, ext = os.path.splitext(filename)
+                            counter = 1
+                            while f"{base}_{counter}{ext}" in used_filenames:
+                                counter += 1
+                            filename = f"{base}_{counter}{ext}"
+                        used_filenames.add(filename)
                     
-                    # [FIX] Update specific progress dict
-                    progress_store[req_id]["status"] = f"Processing Brand: {brand_name}"
+                    # Update specific progress dict
+                    save_progress(req_id, 0, len(merged_df), f"Processing Brand: {brand_name}")
                     
                     # 2. Setup Writer and Sheet Name
                     if is_multisheet_mode:
@@ -530,8 +602,9 @@ def process_template():
                         worksheet.set_column(img_col_idx, img_col_idx, 35) 
                         
                         for i, item_no in enumerate(bucket_df['Item No_']):
-                            progress_store[req_id]["current"] += 1
-                            progress_store[req_id]["status"] = f"Inserting Images: {item_no}"
+                            # Update global progress count
+                            # Note: To be perfectly accurate we should track a global index, but simplistic update is fine for UI
+                            save_progress(req_id, i, len(bucket_df), f"Inserting Images: {item_no}")
                             
                             row_idx = i + data_start_row
                             worksheet.set_row(row_idx, 180)
@@ -547,9 +620,7 @@ def process_template():
                                         worksheet.insert_image(row_idx, img_col_idx, f"{item_no}.png", {'image_data': img_byte_arr, 'object_position': 1})
                                         images_found_count += 1
                                 except: worksheet.write(row_idx, img_col_idx, "ERR")
-                    else:
-                        progress_store[req_id]["current"] += len(bucket_df)
-
+                    
                     # 6. Save (If in Zip Mode)
                     if not is_multisheet_mode:
                         current_writer.close()
@@ -566,7 +637,7 @@ def process_template():
              elif zip_file: zip_file.close()
 
         # Finalize Progress
-        progress_store[req_id].update({"current": len(merged_df), "status": "Finalizing..."})
+        save_progress(req_id, len(merged_df), len(merged_df), "Finalizing...")
 
         output_buffer.seek(0)
         

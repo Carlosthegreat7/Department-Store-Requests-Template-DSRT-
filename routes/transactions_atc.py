@@ -55,7 +55,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
             # A. Fetch Base Item Data (Chunked)
             base_qry = (f'SELECT "No_" AS "Item No_", "Description", "Product Group Code" AS "Brand", '
                         f'"Vendor Item No_" AS "Style_Stockcode", "Base Unit of Measure" AS "Unit_of_Measure", '
-                        f'"Net Weight", "Gross Weight" '
+                        f'"Net Weight", "Gross Weight", "Item Category Code" '
                         f'FROM dbo."{table_prefix}$Item" WITH (NOLOCK) WHERE "No_" IN ({placeholders})')
             
             chunk_items = pd.read_sql(base_qry, conn, params=chunk)
