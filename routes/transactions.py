@@ -462,10 +462,8 @@ def process_template():
                                 elif "RCC SKU" in value: worksheet.set_column(col_num, col_num, 15)
                                 elif any(x in value for x in ["Size", "Color", "Price"]): worksheet.set_column(col_num, col_num, 12)
                                 else: worksheet.set_column(col_num, col_num, 18)
-                    
-
+                            
                     elif chain_selection == "GCAP":
-                        # Professional Clean Theme for GCAP
                         header_fmt = workbook.add_format({
                             'bold': True, 
                             'bg_color': '#2E75B6', # Dark Blue
@@ -475,7 +473,7 @@ def process_template():
                         })
                         for col_num, value in enumerate(final_cols):
                             worksheet.write(0, col_num, value, header_fmt)
-                            # Auto-adjust column widths: Description is wide, others are standard
+                            # Column sizing: description is wider
                             width = 45 if value == 'description' else 15
                             worksheet.set_column(col_num, col_num, width)
                     else:
