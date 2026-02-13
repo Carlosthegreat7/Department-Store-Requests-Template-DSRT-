@@ -209,6 +209,38 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
             final_cols = ['RCC SKU', 'IMAGE', 'VENDOR ITEM CODE', 'PRODUCT MEDIUM DESCRIPTION (CHAR. LIMIT = 30)', 'PRODUCT SHORT DESCRIPTION (CHAR. LIMIT = 10)', 'PRODUCT LONG DESCRIPTION (CHAR. LIMIT = 50)', 'VENDOR CODE', 'BRAND CODE', 'RETAIL PRICE', 'DEPARTMENT', 'SUBDEPARTMENT', 'CLASS', 'SUB CLASS', 'MERCHANDISER', 'BUYER', 'SEASON CODE', 'THEME', 'COLLECTION', 'Dial Color', 'SIZE RUN', 'Case _Frame Size', 'SET / PC', 'MAKATI', 'SHANG', 'ATC', 'GW', 'CEBU', 'SOLENAD', 'E-COMM (FOR PO)', 'TOTAL', 'TOTAL RETAIL VALUE', 'SIZE SPECIFICATIONS', 'PRODUCT & CARE DETAILS', 'MATERIAL', 'LINK TO HI-RES IMAGE', 'Gender']
             img_col_name, sheet_name_val, header_row_idx, data_start_row = 'IMAGE', "Rustans Template", 14, 15
         
+        elif chain_selection == "GCAP":
+            # 1. Basic Columns
+            merged_df['brand'] = merged_df['Brand'].fillna('')
+            merged_df['item code'] = merged_df['Item No_']
+            
+            # 2. Promo Category Logic (@ or # means PROMO)
+            merged_df['promo category'] = merged_df['Description'].fillna('').apply(
+                lambda x: "PROMO ITEM" if "@" in str(x) or "#" in str(x) else "REGULAR ITEM"
+            )
+
+            # 3. Item Category Abbreviation Logic
+            cat_abbrevs = {
+                "NON": "NON-MERCHANDISE", "OTH": "OTHERS", "PRM": "PROMO",
+                "PRT": "PARTS", "ACC": "ACCESSORIES", "WTC": "WATCHES",
+                "SKN": "SKIN CARE", "FRG": "FRAGRANCE"
+            }
+            
+            def abbreviate_category(val):
+                if not val: return ""
+                clean_val = str(val).strip().upper() 
+                return cat_abbrevs.get(clean_val, val) 
+
+            merged_df['item category'] = merged_df['Item Category Code'].apply(abbreviate_category)
+
+            # 4. Description & Price Formatting
+            merged_df['description'] = merged_df['Description'].fillna('')
+            merged_df['price'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
+            
+            # 5. Define Final Layout
+            final_cols = ['brand', 'item code', 'promo category', 'item category', 'description', 'price']
+            img_col_name, sheet_name_val, header_row_idx, data_start_row = None, "GCAP Template", 0, 1
+
         else:
             # SM / Default Logic
             merged_df['DESCRIPTION'] = (merged_df['Brand'].fillna('') + " " + merged_df['Description'].fillna('') + " " + merged_df['Dial Color'].fillna('') + " " + merged_df['Case _Frame Size'].fillna('') + " " + merged_df['Style_Stockcode'].fillna('')).str.replace(r'[^a-zA-Z0-9\s]', '', regex=True).str[:50]
@@ -350,6 +382,21 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                                 elif "RCC SKU" in value: worksheet.set_column(col_num, col_num, 15)
                                 elif any(x in value for x in ["Size", "Color", "Price"]): worksheet.set_column(col_num, col_num, 12)
                                 else: worksheet.set_column(col_num, col_num, 18)
+
+                    elif chain_selection == "GCAP":
+                        # Professional Blue Theme for GCAP
+                        header_fmt = workbook.add_format({
+                            'bold': True, 
+                            'bg_color': '#2E75B6', 
+                            'font_color': 'white', 
+                            'border': 1, 
+                            'align': 'center'
+                        })
+                        for col_num, value in enumerate(final_cols):
+                            worksheet.write(0, col_num, value, header_fmt)
+                            # Widths: Description=45, Others=15
+                            width = 45 if value == 'description' else 15
+                            worksheet.set_column(col_num, col_num, width)
 
                     else:
                         # [SM BLUE THEME]
