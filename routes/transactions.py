@@ -315,23 +315,44 @@ def process_template():
             img_col_name, sheet_name_val, header_row_idx, data_start_row = 'IMAGE', "Rustans Template", 14, 15
         
         elif chain_selection == "GCAP":
-            # Map columns for GCAP
+            # 1. Basic Columns
             merged_df['brand'] = merged_df['Brand'].fillna('')
             merged_df['item code'] = merged_df['Item No_']
-            # Logic for promo category: Check for '@' or '#' in the description
+            
+            # 2. Promo Category Logic (@ or # means PROMO)
             merged_df['promo category'] = merged_df['Description'].fillna('').apply(
-                lambda x: "PROMO ITEM" if "@" in x or "#" in x else "REGULAR ITEM"
+                lambda x: "PROMO ITEM" if "@" in str(x) or "#" in str(x) else "REGULAR ITEM"
             )
-            merged_df['item category'] = merged_df['Item Category Code'].fillna('')
+
+            # 3. Item Category Abbreviation Logic
+            # Dictionary mapping FULL NAME -> ACRONYM
+            cat_abbrevs = {
+                "NON": "NON-MERCHANDISE",
+                "OTH": "OTHERS",
+                "PRM": "PROMO",
+                "PRT": "PARTS",
+                "ACC": "ACCESSORIES",
+                "WTC": "WATCHES",
+                "SKN": "SKIN CARE",
+                "FRG": "FRAGRANCE"
+            }
+            
+            def abbreviate_category(val):
+                if not val: return ""
+                clean_val = str(val).strip().upper() # Clean the data (remove spaces, make uppercase)
+                return cat_abbrevs.get(clean_val, val) # Return Acronym if found, else original
+
+            # Apply the abbreviation function
+            merged_df['item category'] = merged_df['Item Category Code'].apply(abbreviate_category)
+
+            # 4. Description & Price Formatting
             merged_df['description'] = merged_df['Description'].fillna('')
             merged_df['price'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
             
+            # 5. Define Final Layout
             final_cols = ['brand', 'item code', 'promo category', 'item category', 'description', 'price']
-            img_col_name, sheet_name_val, header_row_idx, data_start_row = None, "GCAP Template", 0, 1
+            img_col_name, sheet_name_val, header_row_idx, data_start_row = None, "GCAP Template", 0, 1 
 
-            
-
-            
         else:
             # SM / Default Logic
             merged_df['DESCRIPTION'] = (merged_df['Brand'].fillna('') + " " + merged_df['Description'].fillna('') + " " + merged_df['Dial Color'].fillna('') + " " + merged_df['Case _Frame Size'].fillna('') + " " + merged_df['Style_Stockcode'].fillna('')).str.replace(r'[^a-zA-Z0-9\s]', '', regex=True).str[:50]
@@ -472,7 +493,7 @@ def process_template():
                                 else: worksheet.set_column(col_num, col_num, 18)
 
                     elif chain_selection == "GCAP":
-                        # Define Header Format
+                        # Professional Blue Theme for GCAP
                         header_fmt = workbook.add_format({
                             'bold': True, 
                             'bg_color': '#2E75B6', 
@@ -480,16 +501,11 @@ def process_template():
                             'border': 1, 
                             'align': 'center'
                         })
-                        
                         for col_num, value in enumerate(final_cols):
                             worksheet.write(0, col_num, value, header_fmt)
+                            # Widths: Description=45, Others=15
                             width = 45 if value == 'description' else 15
                             worksheet.set_column(col_num, col_num, width)
-
-                        for row_num, row_data in enumerate(bucket_df[final_cols].values):
-                            for col_num, cell_value in enumerate(row_data):
-                                worksheet.write(row_num + 1, col_num, cell_value)
-                            
                     else:
                         # [SM BLUE THEME]
                         header_fmt = workbook.add_format({'bold': True, 'bg_color': '#BDD7EE', 'border': 1, 'align': 'center'}) # SM Blue
