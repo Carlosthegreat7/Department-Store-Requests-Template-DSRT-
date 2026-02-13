@@ -315,15 +315,23 @@ def process_template():
             img_col_name, sheet_name_val, header_row_idx, data_start_row = 'IMAGE', "Rustans Template", 14, 15
         
         elif chain_selection == "GCAP":
+            # Map columns for GCAP
             merged_df['brand'] = merged_df['Brand'].fillna('')
             merged_df['item code'] = merged_df['Item No_']
-            merged_df['promo category'] = "" 
+            # Logic for promo category: Check for '@' or '#' in the description
+            merged_df['promo category'] = merged_df['Description'].fillna('').apply(
+                lambda x: "PROMO ITEM" if "@" in x or "#" in x else "REGULAR ITEM"
+            )
             merged_df['item category'] = merged_df['Item Category Code'].fillna('')
             merged_df['description'] = merged_df['Description'].fillna('')
             merged_df['price'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
             
             final_cols = ['brand', 'item code', 'promo category', 'item category', 'description', 'price']
             img_col_name, sheet_name_val, header_row_idx, data_start_row = None, "GCAP Template", 0, 1
+
+            
+
+            
         else:
             # SM / Default Logic
             merged_df['DESCRIPTION'] = (merged_df['Brand'].fillna('') + " " + merged_df['Description'].fillna('') + " " + merged_df['Dial Color'].fillna('') + " " + merged_df['Case _Frame Size'].fillna('') + " " + merged_df['Style_Stockcode'].fillna('')).str.replace(r'[^a-zA-Z0-9\s]', '', regex=True).str[:50]
@@ -462,20 +470,26 @@ def process_template():
                                 elif "RCC SKU" in value: worksheet.set_column(col_num, col_num, 15)
                                 elif any(x in value for x in ["Size", "Color", "Price"]): worksheet.set_column(col_num, col_num, 12)
                                 else: worksheet.set_column(col_num, col_num, 18)
-                            
+
                     elif chain_selection == "GCAP":
+                        # Define Header Format
                         header_fmt = workbook.add_format({
                             'bold': True, 
-                            'bg_color': '#2E75B6', # Dark Blue
+                            'bg_color': '#2E75B6', 
                             'font_color': 'white', 
                             'border': 1, 
                             'align': 'center'
                         })
+                        
                         for col_num, value in enumerate(final_cols):
                             worksheet.write(0, col_num, value, header_fmt)
-                            # Column sizing: description is wider
                             width = 45 if value == 'description' else 15
                             worksheet.set_column(col_num, col_num, width)
+
+                        for row_num, row_data in enumerate(bucket_df[final_cols].values):
+                            for col_num, cell_value in enumerate(row_data):
+                                worksheet.write(row_num + 1, col_num, cell_value)
+                            
                     else:
                         # [SM BLUE THEME]
                         header_fmt = workbook.add_format({'bold': True, 'bg_color': '#BDD7EE', 'border': 1, 'align': 'center'}) # SM Blue
