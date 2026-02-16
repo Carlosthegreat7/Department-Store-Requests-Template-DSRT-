@@ -34,7 +34,7 @@ except ImportError:
 
 transactions_bp = Blueprint('transactions', __name__)
 
-NETWORK_IMAGE_PATH = r'\\mgsvr09\niccatalog'
+NETWORK_IMAGE_PATH = r'\\mgsvr03\catalog'
 
 # --- PROGRESS TRACKING HELPER (FILE BASED) ---
 # We use files instead of variables so this works even if the server uses multiple worker processes.
@@ -226,10 +226,17 @@ def process_template():
         if conn is None:
             return jsonify({"error": "Database Connection Failed"}), 500
 
-        price_qry = ('SELECT "Item No_", "Unit Price" AS SRP '
-                     'FROM dbo."Newtrends International Corp_$Sales Price" WITH (NOLOCK) '
-                     'WHERE "Sales Code"=? AND "PC Memo No"=?' )
-        prices_df = pd.read_sql(price_qry, conn, params=[sales_code, pc_memo])
+        # --- DYNAMIC DISCOUNT LEVEL FETCH (Sales Price Table) ---
+        try:
+            price_qry = ('SELECT "Item No_", "Unit Price" AS SRP, "Discount Level" AS "Price_Discount" '
+                         'FROM dbo."Newtrends International Corp_$Sales Price" WITH (NOLOCK) '
+                         'WHERE "Sales Code"=? AND "PC Memo No"=?' )
+            prices_df = pd.read_sql(price_qry, conn, params=[sales_code, pc_memo])
+        except Exception as e:
+            price_qry = ('SELECT "Item No_", "Unit Price" AS SRP '
+                         'FROM dbo."Newtrends International Corp_$Sales Price" WITH (NOLOCK) '
+                         'WHERE "Sales Code"=? AND "PC Memo No"=?' )
+            prices_df = pd.read_sql(price_qry, conn, params=[sales_code, pc_memo])
 
         if prices_df.empty:
             return jsonify({"error": "No records found in Navision for the provided codes."}), 404
@@ -251,15 +258,27 @@ def process_template():
             # Update Progress File
             save_progress(req_id, i, total_items_count, f"Retrieving item details... ({i}/{total_items_count})")
 
-            # Updated Query in transactions.py
-            item_qry = (f'SELECT "No_" AS "Item No_", "Description", "Product Group Code" AS "Brand", '
-                        f'"Vendor Item No_" AS "Style_Stockcode", "Net Weight", "Gross Weight", '
-                        f'"Point_Power", "Base Unit of Measure" AS "Unit_of_Measure", '
-                        f'"Dial Color", "Case _Frame Size", "Gender", "Item Category Code" '
-                        f'FROM dbo."Newtrends International Corp_$Item" WITH (NOLOCK) '
-                        f'WHERE "No_" IN ({placeholders})')
+            # --- DYNAMIC DISCOUNT LEVEL FETCH (Item Table Fallback) ---
+            try:
+                item_qry = (f'SELECT "No_" AS "Item No_", "Description", "Product Group Code" AS "Brand", '
+                            f'"Vendor Item No_" AS "Style_Stockcode", "Net Weight", "Gross Weight", '
+                            f'"Point_Power", "Base Unit of Measure" AS "Unit_of_Measure", '
+                            f'"Dial Color", "Case _Frame Size", "Gender", "Item Category Code", '
+                            f'"Discount Level" AS "Item_Discount" '
+                            f'FROM dbo."Newtrends International Corp_$Item" WITH (NOLOCK) '
+                            f'WHERE "No_" IN ({placeholders})')
+                
+                chunk_df = pd.read_sql(item_qry, conn, params=chunk)
+            except Exception:
+                item_qry = (f'SELECT "No_" AS "Item No_", "Description", "Product Group Code" AS "Brand", '
+                            f'"Vendor Item No_" AS "Style_Stockcode", "Net Weight", "Gross Weight", '
+                            f'"Point_Power", "Base Unit of Measure" AS "Unit_of_Measure", '
+                            f'"Dial Color", "Case _Frame Size", "Gender", "Item Category Code" '
+                            f'FROM dbo."Newtrends International Corp_$Item" WITH (NOLOCK) '
+                            f'WHERE "No_" IN ({placeholders})')
+                
+                chunk_df = pd.read_sql(item_qry, conn, params=chunk)
             
-            chunk_df = pd.read_sql(item_qry, conn, params=chunk)
             items_dfs.append(chunk_df)
             
             # Tiny sleep to let other threads breathe
@@ -272,6 +291,14 @@ def process_template():
             items_df = pd.DataFrame()
 
         merged_df = pd.merge(items_df, prices_df, on="Item No_")
+
+        # Dynamically map Discount Level regardless of which table successfully extracted it
+        if 'Price_Discount' in merged_df.columns and not merged_df['Price_Discount'].isna().all():
+            merged_df['Discount Level'] = merged_df['Price_Discount']
+        elif 'Item_Discount' in merged_df.columns and not merged_df['Item_Discount'].isna().all():
+            merged_df['Discount Level'] = merged_df['Item_Discount']
+        else:
+            merged_df['Discount Level'] = ""
 
         # --- DYNAMIC VENDOR & BRAND LOOKUP (MYSQL) ---
         mysql_conn = get_mysql_conn()
@@ -303,6 +330,9 @@ def process_template():
         elif chain_selection == "GCAP":
             filename_base = f'GCAP {company_selection} {time_now.strftime("%m%d%Y")}' 
             final_zip_name = f"GCAP{zip_date}.zip"
+        elif chain_selection == "KCC":
+            filename_base = f'KCC SKU {time_now.strftime("%m%d%Y")} {company_selection}'
+            final_zip_name = f"KCC{zip_date}.zip"
         else:
             # Temporary savefile, will be zipped later and adjusted to required store chain format
             sm_ts = time_now.strftime('%m%d%H%M')
@@ -328,9 +358,7 @@ def process_template():
             merged_df['Buying U/M'] = "PCS"; merged_df['Selling U/M'] = "PCS"; merged_df['Standard Pack'] = "-"; merged_df['Minimum (Inner) Pack'] = "-"
             # PAGE 4
             merged_df['Coordinate Group'] = "RDS"; merged_df['Super Brand'] = ""; merged_df['Brand_Maint'] = merged_df['Brand'].fillna('')
-            merged_df['Buy Code(C/S)'] = "S"; merged_df['Season'] = "NA"; merged_df['Set Code'] = "-"; merged_df['Mfg. No.'] = "-"; merged_df['Age Code'] = "-"; merged_df['Label'] = "-"; merged_df['Origin'] = "-"; merged_df['Tag'] = "-"; merged_df['Fair Event'] = "-"; merged_df['Blank Field'] = "-"
-            merged_df['Price Point'] = merged_df['Point_Power'].fillna(''); merged_df['Merchandise Flag'] = "-"; merged_df['Hold Wholesale Order'] = "N"
-            merged_df['Size'] = merged_df['Case _Frame Size'].fillna(''); merged_df['Substitute SKU'] = ""; merged_df['Core SKU'] = ""; merged_df['Replacement SKU'] = ""
+            merged_df['Buy Code(C/S)'] = "S"; merged_df['Season'] = "NA"; merged_df['Set Code'] = "-"; merged_df['Mfg. No.'] = "-"; merged_df['Age Code'] = "-"; merged_df['Label'] = "-"; merged_df['Origin'] = "-"; merged_df['Tag'] = "-"; merged_df['Fair Event'] = "-"; merged_df['Blank Field'] = "-"; merged_df['Price Point'] = merged_df['Point_Power'].fillna(''); merged_df['Merchandise Flag'] = "-"; merged_df['Hold Wholesale Order'] = "N"; merged_df['Size'] = merged_df['Case _Frame Size'].fillna(''); merged_df['Substitute SKU'] = ""; merged_df['Core SKU'] = ""; merged_df['Replacement SKU'] = ""
             # PAGE 5
             merged_df['Replenishment Code'] = "0"; merged_df['Sales $ (Blank)'] = ""; merged_df['Distribution Method'] = ""; merged_df['Sales Units'] = ""; merged_df['Rpl Start Date'] = ""
             merged_df['Gross Margin'] = ""; merged_df['Rpl End Date'] = ""; merged_df['User Defined'] = ""; merged_df['Avg. Model Stock'] = ""; merged_df['Avg. Order at'] = ""; merged_df['Maximum Stock'] = ""; merged_df['Display Minimum'] = ""; merged_df['Stock in Mult. of'] = ""; merged_df['Minimum Rpl Qty'] = "-"; merged_df['Item Profile'] = ""; merged_df['Hold Order'] = "N"; merged_df['Plan Lead Time'] = ""
@@ -388,7 +416,6 @@ def process_template():
             )
 
             # 3. Item Category Abbreviation Logic
-            # Dictionary mapping FULL NAME -> ACRONYM
             cat_abbrevs = {
                 "NON": "NON-MERCHANDISE",
                 "OTH": "OTHERS",
@@ -402,19 +429,40 @@ def process_template():
             
             def abbreviate_category(val):
                 if not val: return ""
-                clean_val = str(val).strip().upper() # Clean the data (remove spaces, make uppercase)
-                return cat_abbrevs.get(clean_val, val) # Return Acronym if found, else original
+                clean_val = str(val).strip().upper()
+                return cat_abbrevs.get(clean_val, val) 
 
-            # Apply the abbreviation function
             merged_df['item category'] = merged_df['Item Category Code'].apply(abbreviate_category)
-
-            # 4. Description & Price Formatting
             merged_df['description'] = merged_df['Description'].fillna('')
             merged_df['price'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
             
-            # 5. Define Final Layout
             final_cols = ['brand', 'item code', 'promo category', 'item category', 'description', 'price']
             img_col_name, sheet_name_val, header_row_idx, data_start_row = None, "GCAP Template", 0, 1 
+
+        elif chain_selection == "KCC":
+            # Map EXACT headers from user template
+            merged_df['sku'] = merged_df['Item No_'] # Put the identifier here since barcode is blank
+            merged_df['barcode'] = "" # Kept blank as requested
+            merged_df['item code/stock#'] = merged_df['Style_Stockcode'].fillna('')
+            merged_df['brand'] = merged_df['Brand'].fillna('')
+            merged_df['description'] = merged_df['Description'].fillna('')
+            
+            # Prices
+            merged_df['regular price'] = pd.to_numeric(merged_df['Point_Power'], errors='coerce').fillna(0).map('{:,.2f}'.format)
+            merged_df['markdown price'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
+            
+            # Specifications and other standard fields
+            merged_df['specification'] = (merged_df['Dial Color'].fillna('') + " " + merged_df['Case _Frame Size'].fillna('')).str.strip()
+            merged_df['sample image'] = ""
+            merged_df['price category'] = "SALE ITEM"
+            merged_df['discount level'] = merged_df['Discount Level'].fillna('')
+            
+            final_cols = [
+                'sku', 'barcode', 'item code/stock#', 'brand', 'description', 
+                'regular price', 'markdown price', 'specification', 'sample image', 
+                'price category', 'discount level'
+            ] 
+            img_col_name, sheet_name_val, header_row_idx, data_start_row = 'sample image', "Sheet1", 5, 6
 
         else:
             # SM / Default Logic
@@ -454,7 +502,9 @@ def process_template():
                     # 1. Prepare Filename (Only for Zip mode)
                     filename = ""
                     if not is_multisheet_mode:
-                        if chain_selection != "RDS":
+                        if chain_selection in ["RDS", "GCAP", "KCC"]:
+                            filename = f"{filename_base} - {brand_name}.xlsx"
+                        else:
                             f_dept, f_class = "0000", "0000"
                             loop_conn = get_mysql_conn()
                             if loop_conn:
@@ -479,8 +529,6 @@ def process_template():
                             # Ensure sm_ts is available for SM filename
                             sm_ts = time_now.strftime('%m%d%H%M')
                             filename = f"SC{vendor_code}_{f_dept}_{f_class}_{sm_ts}.xlsx"
-                        else:
-                            filename = f"{filename_base} - {brand_name}.xlsx"
 
                         # [FIX] Check for Duplicate Filenames
                         if filename in used_filenames:
@@ -504,7 +552,7 @@ def process_template():
                         excel_output = io.BytesIO()
                         current_writer = pd.ExcelWriter(excel_output, engine='xlsxwriter')
                         current_sheet_name = sheet_name_val
-                        data_start_row = 2 if chain_selection == "RDS" else 1
+                        data_start_row = 2 if chain_selection == "RDS" else (6 if chain_selection == "KCC" else 1)
 
                     # 3. Write Data to Excel
                     bucket_df[final_cols].to_excel(current_writer, sheet_name=current_sheet_name, index=False, startrow=data_start_row, header=False)
@@ -581,6 +629,22 @@ def process_template():
                             # Widths: Description=45, Others=15
                             width = 45 if value == 'description' else 15
                             worksheet.set_column(col_num, col_num, width)
+
+                    elif chain_selection == "KCC":
+                        title_fmt = workbook.add_format({'bold': True, 'font_size': 11})
+                        header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D9D9D9', 'border': 1, 'align': 'center'})
+                        
+                        worksheet.write(0, 0, "KCC MALLS - SKU TEMPLATE", title_fmt)
+                        worksheet.write(1, 0, f"BRAND: {brand_name}")
+                        worksheet.write(2, 0, f"DATE: {datetime.now().strftime('%m/%d/%Y')}")
+                        
+                        for col_num, value in enumerate(final_cols):
+                            worksheet.write(5, col_num, value, header_fmt)
+                            # Custom widths
+                            if value == 'description': worksheet.set_column(col_num, col_num, 45)
+                            elif value == img_col_name: worksheet.set_column(col_num, col_num, 35)
+                            else: worksheet.set_column(col_num, col_num, 18)
+
                     else:
                         # [SM BLUE THEME]
                         header_fmt = workbook.add_format({'bold': True, 'bg_color': '#BDD7EE', 'border': 1, 'align': 'center'}) # SM Blue
@@ -599,7 +663,8 @@ def process_template():
                                     worksheet.set_column(col_num, col_num, 18)
                     
                     # 5. [IMAGE INSERTION]
-                    if chain_selection != "RDS" and img_col_name in final_cols:
+                    # Note: We updated this condition so KCC gets images since it has a "sample image" column!
+                    if chain_selection not in ["RDS", "GCAP"] and img_col_name in final_cols:
                         image_cache = build_image_cache(NETWORK_IMAGE_PATH)
                         img_col_idx = final_cols.index(img_col_name)
                         worksheet.set_column(img_col_idx, img_col_idx, 35) 
@@ -649,7 +714,7 @@ def process_template():
              mimetype_val = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         else:
              mimetype_val = 'application/zip'
-             if chain_selection in ["RDS", "RUSTANS"]: final_name = f"{filename_base}.zip"
+             if chain_selection in ["RDS", "RUSTANS", "GCAP", "KCC"]: final_name = f"{filename_base}.zip"
              else: final_name = f"SM{datetime.now().strftime('%m%d%Y')}.zip" if not final_zip_name or "SC_TEMP" in final_zip_name else final_zip_name
 
         response = make_response(send_file(output_buffer, mimetype=mimetype_val, as_attachment=True, download_name=final_name))
