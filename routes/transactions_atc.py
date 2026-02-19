@@ -30,7 +30,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         price_qry = (
             f'SELECT "Item No_", "SRP" FROM ('
             f'  SELECT "Item No_", "Unit Price" AS "SRP", '
-            f'  ROW_NUMBER() OVER (PARTITION BY "Item No_" ORDER BY "Unit Price" DESC) as RowNum '
+            f'  ROW_NUMBER() OVER (PARTITION BY "Item No_" ORDER BY "Starting Date" DESC) as RowNum '
             f'  FROM dbo."{table_prefix}$Sales Price" WITH (NOLOCK) '
             f'  WHERE "Sales Code"=? AND "PC Memo No"=?'
             f') t WHERE RowNum = 1'
