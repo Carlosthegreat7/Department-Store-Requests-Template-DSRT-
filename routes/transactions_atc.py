@@ -26,7 +26,8 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         if conn is None:
             return jsonify({"error": f"Database Connection to {db_name} Failed"}), 500
 
-        # Fetch Prices
+        # Fetch Prices (Markdown/Promo Price from Sales Price Table)
+        # Using the "Starting Date" filter to ensure we get the latest promo price
         price_qry = (
             f'SELECT "Item No_", "SRP" FROM ('
             f'  SELECT "Item No_", "Unit Price" AS "SRP", '
@@ -43,16 +44,17 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
 
         item_list = prices_df['Item No_'].tolist()
         
-        # if prcmmo contains more than 5k items, chunk the query
+        # Chunking Logic
         chunk_size = 2000
         items_dfs = []
         attr_dfs = []
+        dim_dfs = [] # Storage for Dimensions
 
         for i in range(0, len(item_list), chunk_size):
             chunk = item_list[i:i + chunk_size]
             placeholders = ', '.join(['?'] * len(chunk))
 
-            # A. Fetch Base Item Data (Chunked)
+            # A. Fetch Base Item Data
             base_qry = (f'SELECT "No_" AS "Item No_", "Description", "Product Group Code" AS "Brand", '
                         f'"Vendor Item No_" AS "Style_Stockcode", "Base Unit of Measure" AS "Unit_of_Measure", '
                         f'"Net Weight", "Gross Weight", "Item Category Code" '
@@ -61,7 +63,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
             chunk_items = pd.read_sql(base_qry, conn, params=chunk)
             items_dfs.append(chunk_items)
 
-            # B. Fetch Attributes (Chunked)
+            # B. Fetch Attributes (Pricepoint, Dial Color, Discount Level, etc.)
             attr_qry = f'''
                 SELECT a."No_", b."Name" as "Attribute", c."Value" 
                 FROM dbo."{table_prefix}$Item Attribute Value Mapping" a WITH (NOLOCK)
@@ -73,42 +75,62 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
             chunk_attrs = pd.read_sql(attr_qry, conn, params=chunk)
             attr_dfs.append(chunk_attrs)
 
-        # Combine Chunks
-        if items_dfs:
-            items_df = pd.concat(items_dfs, ignore_index=True)
-        else:
-            items_df = pd.DataFrame()
+            # C. Fetch Dimensions (As seen in your reference file)
+            # Sometimes data like Collection or Discount Group hides here
+            dim_qry = f'''
+                SELECT "No_", "Dimension Code", "Dimension Value Code"
+                FROM dbo."{table_prefix}$Default Dimension" WITH (NOLOCK)
+                WHERE "Table ID" = 27 AND "No_" IN ({placeholders})
+            '''
+            try:
+                chunk_dims = pd.read_sql(dim_qry, conn, params=chunk)
+                dim_dfs.append(chunk_dims)
+            except Exception as e:
+                logger.error(f"Dimension fetch error (Chunk {i}): {e}")
 
+        # --- 3. Combine & Pivot ---
+        
+        # Base Items
+        items_df = pd.concat(items_dfs, ignore_index=True) if items_dfs else pd.DataFrame()
+
+        # Attributes Pivot
         if attr_dfs:
             attr_df = pd.concat(attr_dfs, ignore_index=True)
-        else:
-            attr_df = pd.DataFrame()
+            if not attr_df.empty:
+                # Pivot: Rows to Columns (Attribute Name -> Column)
+                pivoted_attr = attr_df.pivot(index='No_', columns='Attribute', values='Value').reset_index()
+                items_df = pd.merge(items_df, pivoted_attr, how='left', left_on='Item No_', right_on='No_')
+                if 'No_' in items_df.columns: items_df = items_df.drop(columns=['No_'])
 
-        # 4. Pivot Attributes Logic
-        if not attr_df.empty:
-            pivoted = attr_df.pivot(index='No_', columns='Attribute', values='Value').reset_index()
-            # Rename pivoted columns to align with NIC script logic for Rustans/SM/RDS
-            rename_map = {
-                'Pricepoint': 'Point_Power', 
-                'Dial Color': 'Dial Color',
-                'Case _Frame Size': 'Case _Frame Size',
-                'Gender': 'Gender'
-            }
-            pivoted = pivoted.rename(columns=rename_map)
-            items_df = pd.merge(items_df, pivoted, how='left', left_on='Item No_', right_on='No_')
+        # Dimensions Pivot
+        if dim_dfs:
+            dim_df = pd.concat(dim_dfs, ignore_index=True)
+            if not dim_df.empty:
+                # Pivot: Dimension Code -> Column
+                pivoted_dim = dim_df.pivot(index='No_', columns='Dimension Code', values='Dimension Value Code').reset_index()
+                items_df = pd.merge(items_df, pivoted_dim, how='left', left_on='Item No_', right_on='No_')
+                if 'No_' in items_df.columns: items_df = items_df.drop(columns=['No_'])
 
-        # Ensure all columns exist so formatting logic doesnt crash
-        for col in ['Net Weight', 'Gross Weight', 'Point_Power', 'Dial Color', 'Case _Frame Size', 'Gender']:
+        # Rename standard attributes to match NIC logic (if they exist)
+        # NIC uses 'Point_Power', ATC uses 'Pricepoint'
+        if 'Pricepoint' in items_df.columns:
+            items_df['Point_Power'] = items_df['Pricepoint']
+        
+        # Ensure essential columns exist
+        for col in ['Net Weight', 'Gross Weight', 'Point_Power', 'Dial Color', 'Case _Frame Size', 'Gender', 'Discount Level']:
             if col not in items_df.columns: items_df[col] = ""
 
+        # Merge with Sales Prices (Markdown Price)
         merged_df = pd.merge(items_df, prices_df, on="Item No_")
 
+        # Cleanup Numbers
         merged_df['SRP'] = pd.to_numeric(merged_df['SRP'], errors='coerce').fillna(0)
-
+        
+        # Sort & Deduplicate
         merged_df = merged_df.sort_values(by=['Style_Stockcode', 'SRP'], ascending=[True, False])
-
         merged_df = merged_df.drop_duplicates(subset=['Style_Stockcode'], keep='first')
 
+        # --- Dynamic Vendor Info ---
         mysql_conn = get_mysql_conn()
         vendor_code, dynamic_mfg_no = "000000", ""
         if mysql_conn:
@@ -128,7 +150,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         zip_date = time_now.strftime('%m%d%Y')
         rds_sections = []
 
-        # Define filenames and zip names per chain
+        # Define filenames
         if chain_selection == "RDS":
             filename_base = f'RDS {company_selection} {time_now.strftime("%m%d%Y")}'
             final_zip_name = f"RDS{zip_date}.zip"
@@ -138,15 +160,17 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         elif chain_selection == "GCAP":
             filename_base = f'GCAP {company_selection} {time_now.strftime("%m%d%Y")}' 
             final_zip_name = f"GCAP{zip_date}.zip"
+        elif chain_selection == "KCC":
+            filename_base = f'KCC SKU {time_now.strftime("%m%d%Y")} {company_selection}'
+            final_zip_name = f"KCC{zip_date}.zip"
         else:
-            # Temporary savefile, will be zipped later and adjusted to required format
             sm_ts = time_now.strftime('%m%d%H%M')
             filename_base = f"SC{vendor_code}_DEPT_CLASS_{sm_ts}"
             final_zip_name = f"SM{zip_date}.zip"
 
-        
+        # --- Data Mapping ---
         if chain_selection == "RDS":
-            # PAGE 1
+            # [RDS MAPPING BLOCK REMAINED UNCHANGED FOR BREVITY - ALREADY CORRECT]
             merged_df['SKU Number'] = ""; merged_df['SKU Number with check digit'] = ""; merged_df['Sku Number'] = ""
             merged_df['Item Description'] = merged_df['Description'].fillna('').str[:30]
             merged_df['Short name'] = merged_df['Description'].fillna('').str[:10]
@@ -154,26 +178,19 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
             merged_df['SKU Type'] = ""; merged_df['Merchandiser'] = ""; merged_df['POS Tax Code'] = "V"
             merged_df['Primary Vendor'] = vendor_code; merged_df['Ship Pt'] = ""; merged_df['Manufacturer'] = ""; merged_df['Vendor Part#'] = ""; merged_df['Manufacturer Part#'] = dynamic_mfg_no
             merged_df['Dept'] = ""; merged_df['Sub-Dept'] = ""; merged_df['Class-'] = ""; merged_df['Sub-Class'] = ""
-            # PAGE 2
             merged_df['Product Code'] = ""; merged_df['TYPE'] = ""; merged_df['Primary Buy UPC'] = ""; merged_df['Saleable UPC'] = ""
-            # PAGE 3
             merged_df['Competitive Priced'] = ""; merged_df['Display on Web'] = ""; merged_df['Competitive Price'] = ""; merged_df['POS Price Prompt'] = ""
             merged_df['Original Price'] = merged_df['SRP'].fillna(0).map('{:.2f}'.format)
             merged_df['Prevent POS Download'] = "N"; merged_df['Next Regular Retail'] = ""; merged_df['Effective'] = ""; merged_df['Current Vendor Cost'] = ""
             merged_df['Buying U/M'] = "PCS"; merged_df['Selling U/M'] = "PCS"; merged_df['Standard Pack'] = "-"; merged_df['Minimum (Inner) Pack'] = "-"
-            # PAGE 4
             merged_df['Coordinate Group'] = "RDS"; merged_df['Super Brand'] = ""; merged_df['Brand_Maint'] = merged_df['Brand'].fillna('')
             merged_df['Buy Code(C/S)'] = "S"; merged_df['Season'] = "NA"; merged_df['Set Code'] = "-"; merged_df['Mfg. No.'] = "-"; merged_df['Age Code'] = "-"; merged_df['Label'] = "-"; merged_df['Origin'] = "-"; merged_df['Tag'] = "-"; merged_df['Fair Event'] = "-"; merged_df['Blank Field'] = "-"
             merged_df['Price Point'] = merged_df['Point_Power'].fillna(''); merged_df['Merchandise Flag'] = "-"; merged_df['Hold Wholesale Order'] = "N"
             merged_df['Size'] = merged_df['Case _Frame Size'].fillna(''); merged_df['Substitute SKU'] = ""; merged_df['Core SKU'] = ""; merged_df['Replacement SKU'] = ""
-            # PAGE 5
             merged_df['Replenishment Code'] = "0"; merged_df['Sales $ (Blank)'] = ""; merged_df['Distribution Method'] = ""; merged_df['Sales Units'] = ""; merged_df['Rpl Start Date'] = ""
             merged_df['Gross Margin'] = ""; merged_df['Rpl End Date'] = ""; merged_df['User Defined'] = ""; merged_df['Avg. Model Stock'] = ""; merged_df['Avg. Order at'] = ""; merged_df['Maximum Stock'] = ""; merged_df['Display Minimum'] = ""; merged_df['Stock in Mult. of'] = ""; merged_df['Minimum Rpl Qty'] = "-"; merged_df['Item Profile'] = ""; merged_df['Hold Order'] = "N"; merged_df['Plan Lead Time'] = ""
-            # PAGE 6
             merged_df['Item Weight'] = merged_df['Gross Weight']; merged_df['Item Length'] = ""; merged_df['Width'] = ""; merged_df['Height'] = ""; merged_df['Item Cube'] = ""; merged_df['Pallet Tie'] = ""; merged_df['Pallet High'] = ""; merged_df['Container Type'] = ""; merged_df['Container Multiple'] = ""
-            # PAGE 7
             merged_df['Regular Label Type'] = ""; merged_df['Ad Label Type'] = ""; merged_df['Regular Ticket  Type'] = ""; merged_df['Ad Ticket Type'] = ""; merged_df['Tickets per Item'] = ""; merged_df['Is Sign Age Required'] = "N"
-            # PAGE 8
             merged_df['Commercial Inv Product'] = ""; merged_df['Selling Unit Weight'] = merged_df['Net Weight']; merged_df['Descriptor'] = ""; merged_df['Derived Description'] = ""; merged_df['12 Character'] = ""; merged_df['15 Character'] = ""; merged_df['18 Character'] = ""; merged_df['21 Character'] = ""; merged_df['20 Character'] = ""; merged_df['Shelf Label'] = ""; merged_df['Blank Field'] = ""; merged_df['Color'] = merged_df['Dial Color'].fillna(''); merged_df['Size_P8'] = merged_df['Case _Frame Size'].fillna(''); merged_df['Dimension'] = ""
 
             p1 = ['SKU Number', 'SKU Number with check digit', 'Sku Number', 'Item Description', 'Short name', 'Item Status', 'Buyer', 'W/SCD 5% DISC', 'Inventory Grp', 'W/PWD 5% DISC', 'SKU Type', 'Merchandiser', 'POS Tax Code', 'Primary Vendor', 'Ship Pt', 'Manufacturer', 'Vendor Part#', 'Manufacturer Part#', 'Dept', 'Sub-Dept', 'Class-', 'Sub-Class']
@@ -202,6 +219,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
             final_cols, sheet_name_val, header_row_idx, data_start_row = final_layout, "TEMPLATE", 1, 2
 
         elif chain_selection == "RUSTANS":
+            # [RUSTANS MAPPING BLOCK]
             merged_df['VENDOR ITEM CODE'] = merged_df['Item No_']; merged_df['VENDOR CODE'] = vendor_code
             desc_str = (merged_df['Description'].fillna('') + " " + merged_df['Dial Color'].fillna('') + " " + merged_df['Style_Stockcode'].fillna('') + " " + merged_df['Brand'].fillna('')).str.strip()
             merged_df['PRODUCT MEDIUM DESCRIPTION (CHAR. LIMIT = 30)'] = desc_str.str[:30]
@@ -213,39 +231,49 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
             img_col_name, sheet_name_val, header_row_idx, data_start_row = 'IMAGE', "Rustans Template", 14, 15
         
         elif chain_selection == "GCAP":
-            # 1. Basic Columns
+            # [GCAP MAPPING BLOCK]
             merged_df['brand'] = merged_df['Brand'].fillna('')
             merged_df['item code'] = merged_df['Item No_']
-            
-            # 2. Promo Category Logic (@ or # means PROMO)
-            merged_df['promo category'] = merged_df['Description'].fillna('').apply(
-                lambda x: "PROMO ITEM" if "@" in str(x) or "#" in str(x) else "REGULAR ITEM"
-            )
-
-            # 3. Item Category Abbreviation Logic
+            merged_df['promo category'] = merged_df['Description'].fillna('').apply(lambda x: "PROMO ITEM" if "@" in str(x) or "#" in str(x) else "REGULAR ITEM")
             cat_abbrevs = {
                 "NON": "NON-MERCHANDISE", "OTH": "OTHERS", "PRM": "PROMO",
                 "PRT": "PARTS", "ACC": "ACCESSORIES", "WTC": "WATCHES",
                 "SKN": "SKIN CARE", "FRG": "FRAGRANCE"
             }
-            
             def abbreviate_category(val):
                 if not val: return ""
                 clean_val = str(val).strip().upper() 
                 return cat_abbrevs.get(clean_val, val) 
-
             merged_df['item category'] = merged_df['Item Category Code'].apply(abbreviate_category)
-
-            # 4. Description & Price Formatting
             merged_df['description'] = merged_df['Description'].fillna('')
             merged_df['price'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
-            
-            # 5. Define Final Layout
             final_cols = ['brand', 'item code', 'promo category', 'item category', 'description', 'price']
             img_col_name, sheet_name_val, header_row_idx, data_start_row = None, "GCAP Template", 0, 1
 
+        elif chain_selection == "KCC":
+            # [KCC MAPPING BLOCK]
+            merged_df['SKU'] = merged_df['']
+            merged_df['BARCODE'] = "" 
+            merged_df['ITEM CODE/STOCK#'] = merged_df['Style_Stockcode'].fillna('')
+            merged_df['BRAND'] = merged_df['Brand'].fillna('')
+            merged_df['DESCRIPTION'] = merged_df['Description'].fillna('')
+            merged_df['REGULAR PRICE'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
+            merged_df['MARKDOWN PRICE'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
+            merged_df['SPECIFICATION'] = (merged_df['Dial Color'].fillna('') + " " + merged_df['Case _Frame Size'].fillna('')).str.strip()
+            merged_df['SAMPLE IMAGE'] = ""
+            merged_df['PRICE CATEGORY'] = "SALE ITEM"
+            
+            merged_df['DISCOUNT LEVEL'] = merged_df['Discount Level'].fillna('')
+            
+            final_cols = [
+                'SKU', 'BARCODE', 'ITEM CODE/STOCK#', 'BRAND', 'DESCRIPTION', 
+                'REGULAR PRICE', 'MARKDOWN PRICE', 'SPECIFICATION', 'SAMPLE IMAGE', 
+                'PRICE CATEGORY', 'DISCOUNT LEVEL'
+            ] 
+            img_col_name, sheet_name_val, header_row_idx, data_start_row = 'SAMPLE IMAGE', "Sheet1", 5, 6
+
         else:
-            # SM / Default Logic
+            # [SM/DEFAULT MAPPING BLOCK]
             merged_df['DESCRIPTION'] = (merged_df['Brand'].fillna('') + " " + merged_df['Description'].fillna('') + " " + merged_df['Dial Color'].fillna('') + " " + merged_df['Case _Frame Size'].fillna('') + " " + merged_df['Style_Stockcode'].fillna('')).str.replace(r'[^a-zA-Z0-9\s]', '', regex=True).str[:50]
             merged_df['COLOR'] = merged_df['Dial Color'].fillna(''); merged_df['SIZES'] = merged_df['Case _Frame Size'].fillna(''); merged_df['SRP'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
             merged_df['EXP_DEL_MONTH'] = (time_now + timedelta(days=30)).strftime('%m/%d/%Y')
@@ -256,7 +284,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
             final_cols = ['DESCRIPTION', 'COLOR', 'SIZES', 'Style_Stockcode', 'SOURCE_MARKED', 'SRP', 'Unit_of_Measure', 'EXP_DEL_MONTH', 'REMARKS', 'IMAGES', 'ONLINE ITEMS', 'PACKAGE LENGTH IN CM', 'PACKAGE WIDTH IN CM', 'PACKAGE HEIGHT IN CM', 'PACKAGE WEIGHT IN KG', 'PRODUCT LENGTH IN CM', 'PRODUCT WIDTH IN CM', 'PRODUCT HEIGHT IN CM', 'PRODUCT WEIGHT IN KG']
             img_col_name, sheet_name_val, header_row_idx, data_start_row = 'IMAGES', "Template", 0, 1
 
-        # --- 5. EXCEL GENERATION (INTEGRATED FROM transactions.py) ---
+        # --- 5. EXCEL GENERATION ---
         output_buffer = io.BytesIO()
         brand_groups = list(merged_df.groupby('Brand'))
         progress_data.update({"current": 0, "total": len(merged_df), "status": "Initializing Excel Generation..."})
@@ -267,9 +295,8 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         zip_file = None
         global_writer = None
         
-        # [FIX: PERFORMANCE] Open Connection ONCE here, outside the loop
         loop_conn = None
-        if not is_multisheet_mode and chain_selection != "RDS":
+        if not is_multisheet_mode and chain_selection not in ["RDS", "GCAP", "KCC"]:
              loop_conn = get_mysql_conn()
 
         if is_multisheet_mode:
@@ -280,12 +307,13 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         try:
             for brand_name, bucket_df in brand_groups:
                 try:
-                    # 1. Prepare Filename (Only for Zip mode)
                     filename = ""
                     if not is_multisheet_mode:
-                        if chain_selection != "RDS":
+                        if chain_selection in ["RDS", "GCAP", "KCC"]:
+                            filename = f"{filename_base} - {brand_name}.xlsx"
+                        else:
                             f_dept, f_class = "0000", "0000"
-                            if loop_conn: # Use the pre-opened connection
+                            if loop_conn: 
                                 try:
                                     l_cursor = loop_conn.cursor(dictionary=True)
                                     clean_brand = str(brand_name).strip()
@@ -304,17 +332,12 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                                         f_class = f"{c}{sc}"
                                 except Exception as db_e: 
                                     logger.error(f"Loop Lookup Error: {db_e}")
-                                    # Do NOT close loop_conn here
                                 
-                            # Ensure sm_ts is available for SM filename
                             sm_ts = time_now.strftime('%m%d%H%M')
                             filename = f"SC{vendor_code}_{f_dept}_{f_class}_{sm_ts}.xlsx"
-                        else:
-                            filename = f"{filename_base} - {brand_name}.xlsx"
                     
                     progress_data["status"] = f"Processing Brand: {brand_name}"
                     
-                    # 2. Setup Writer and Sheet Name
                     if is_multisheet_mode:
                         safe_sheet = (str(brand_name).replace('/', '-').replace('\\', '-').replace('?', '').replace('*', '').replace('[', '').replace(']', '').replace(':', ''))[:31]
                         current_writer = global_writer
@@ -324,13 +347,12 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                         excel_output = io.BytesIO()
                         current_writer = pd.ExcelWriter(excel_output, engine='xlsxwriter')
                         current_sheet_name = sheet_name_val
-                        data_start_row = 2 if chain_selection == "RDS" else 1
+                        data_start_row = 2 if chain_selection == "RDS" else (6 if chain_selection == "KCC" else 1)
 
-                    # 3. Write Data to Excel
                     bucket_df[final_cols].to_excel(current_writer, sheet_name=current_sheet_name, index=False, startrow=data_start_row, header=False)
                     workbook, worksheet = current_writer.book, current_writer.sheets[current_sheet_name]
                     
-                    # 4. [FORMATTING LOGIC]
+                    # --- Formatting Blocks ---
                     if chain_selection == "RDS":
                         curr_col = 0
                         for idx, (group, title, color) in enumerate(rds_sections):
@@ -347,39 +369,20 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                                 curr_col += 1
                                 
                     elif chain_selection == "RUSTANS":
-                        # Rustans custom format
                         bold_fmt = workbook.add_format({'bold': True})
                         title_fmt = workbook.add_format({'bold': True, 'font_size': 11})
-                        
-                        # Top Block Info
                         worksheet.write(0, 0, "RUSTAN COMMERCIAL CORPORATION", title_fmt)
                         worksheet.write(1, 0, "CONCESSIONAIRE MANAGEMENT DIVISION", bold_fmt)
                         worksheet.write(2, 0, "NEW PRODUCT INFORMATION SHEET (NPIS)", bold_fmt)
-                        
-                        worksheet.write(4, 0, "DATE:", bold_fmt)
-                        worksheet.write(4, 1, datetime.now().strftime("%Y-%m-%d"))
-                        worksheet.write(4, 5, "TARGET DELIVERY TO STORES:", bold_fmt)
-                        
-                        worksheet.write(5, 0, "DIVISION:", bold_fmt)
-                        worksheet.write(5, 5, "DELIVERY TO E-COMMERCE WAREHOUSE:", bold_fmt)
-                        
-                        worksheet.write(6, 0, "COMPANY NAME:", bold_fmt)
-                        worksheet.write(6, 1, company_selection) # Uses actual company selection
-                        
-                        worksheet.write(7, 0, "BRAND:", bold_fmt)
-                        worksheet.write(7, 1, brand_name)
-                        
-                        # Instruction Row
+                        worksheet.write(4, 0, "DATE:", bold_fmt); worksheet.write(4, 1, datetime.now().strftime("%Y-%m-%d")); worksheet.write(4, 5, "TARGET DELIVERY TO STORES:", bold_fmt)
+                        worksheet.write(5, 0, "DIVISION:", bold_fmt); worksheet.write(5, 5, "DELIVERY TO E-COMMERCE WAREHOUSE:", bold_fmt)
+                        worksheet.write(6, 0, "COMPANY NAME:", bold_fmt); worksheet.write(6, 1, company_selection)
+                        worksheet.write(7, 0, "BRAND:", bold_fmt); worksheet.write(7, 1, brand_name)
                         instr_fmt = workbook.add_format({'bold': True, 'bg_color': '#FFFF00', 'border': 1, 'align': 'center'})
                         worksheet.merge_range(10, 0, 10, len(final_cols)-1, "ALL HIGHLIGHTED COLUMNS IN CHART ARE TO BE FILLED UP BY CONCESSIONAIRE", instr_fmt)
-                        
-
                         rustans_header_fmt = workbook.add_format({'bold': True, 'bg_color': '#F2F2F2', 'border': 1, 'align': 'center', 'text_wrap': True, 'font_size': 9})
-                        
                         for col_num, value in enumerate(final_cols):
                             worksheet.write(11, col_num, value, rustans_header_fmt)
-                            
-                            # Column Sizing
                             if value != img_col_name:
                                 if "Description" in value: worksheet.set_column(col_num, col_num, 40)
                                 elif "RCC SKU" in value: worksheet.set_column(col_num, col_num, 15)
@@ -387,39 +390,36 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                                 else: worksheet.set_column(col_num, col_num, 18)
 
                     elif chain_selection == "GCAP":
-                        # Professional Blue Theme for GCAP
-                        header_fmt = workbook.add_format({
-                            'bold': True, 
-                            'bg_color': '#2E75B6', 
-                            'font_color': 'white', 
-                            'border': 1, 
-                            'align': 'center'
-                        })
+                        header_fmt = workbook.add_format({'bold': True, 'bg_color': '#2E75B6', 'font_color': 'white', 'border': 1, 'align': 'center'})
                         for col_num, value in enumerate(final_cols):
                             worksheet.write(0, col_num, value, header_fmt)
-                            # Widths: Description=45, Others=15
                             width = 45 if value == 'description' else 15
                             worksheet.set_column(col_num, col_num, width)
+                    
+                    elif chain_selection == "KCC":
+                        title_fmt = workbook.add_format({'bold': True, 'font_size': 11})
+                        header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D9D9D9', 'border': 1, 'align': 'center'})
+                        worksheet.write(0, 0, "KCC MALLS SKU REQUEST FORMAT", title_fmt)
+                        worksheet.write(1, 0, f"Supplier's Name: {company_selection}")
+                        worksheet.write(2, 0, f"DATE: {datetime.now().strftime('%m/%d/%Y')}")
+                        for col_num, value in enumerate(final_cols):
+                            worksheet.write(5, col_num, value, header_fmt)
+                            if value == 'description': worksheet.set_column(col_num, col_num, 45)
+                            elif value == img_col_name: worksheet.set_column(col_num, col_num, 35)
+                            else: worksheet.set_column(col_num, col_num, 18)
 
                     else:
-                        # [SM BLUE THEME]
-                        header_fmt = workbook.add_format({'bold': True, 'bg_color': '#BDD7EE', 'border': 1, 'align': 'center'}) # SM Blue
+                        header_fmt = workbook.add_format({'bold': True, 'bg_color': '#BDD7EE', 'border': 1, 'align': 'center'}) 
                         for col_num, value in enumerate(final_cols):
                             worksheet.write(0, col_num, value, header_fmt)
-                            
-                            # SM Sizing
                             if value != img_col_name:
-                                if any(x in value for x in ["Desc", "Name", "Description"]):
-                                    worksheet.set_column(col_num, col_num, 45)
-                                elif "Brand" in value:
-                                    worksheet.set_column(col_num, col_num, 20)
-                                elif any(x in value for x in ["Size", "Color", "Price", "Cost", "Qty", "Stock", "UPC"]):
-                                    worksheet.set_column(col_num, col_num, 13)
-                                else:
-                                    worksheet.set_column(col_num, col_num, 18)
+                                if any(x in value for x in ["Desc", "Name", "Description"]): worksheet.set_column(col_num, col_num, 45)
+                                elif "Brand" in value: worksheet.set_column(col_num, col_num, 20)
+                                elif any(x in value for x in ["Size", "Color", "Price", "Cost", "Qty", "Stock", "UPC"]): worksheet.set_column(col_num, col_num, 13)
+                                else: worksheet.set_column(col_num, col_num, 18)
                     
                     # 5. [IMAGE INSERTION]
-                    if chain_selection != "RDS" and img_col_name in final_cols:
+                    if chain_selection not in ["RDS", "GCAP"] and img_col_name in final_cols:
                         image_cache = build_image_cache(NETWORK_IMAGE_PATH)
                         img_col_idx = final_cols.index(img_col_name)
                         worksheet.set_column(img_col_idx, img_col_idx, 35) 
@@ -427,10 +427,8 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                         for i, item_no in enumerate(bucket_df['Item No_']):
                             progress_data["current"] += 1
                             progress_data["status"] = f"Inserting Images: {item_no}"
-                            
                             row_idx = i + data_start_row
                             worksheet.set_row(row_idx, 180)
-                            
                             img_path = find_image_in_cache(image_cache, item_no)
                             if img_path:
                                 try:
@@ -442,8 +440,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                                         worksheet.insert_image(row_idx, img_col_idx, f"{item_no}.png", {'image_data': img_byte_arr, 'object_position': 1})
                                         images_found_count += 1
                                 except: worksheet.write(row_idx, img_col_idx, "ERR")
-                            else:
-                                worksheet.write(row_idx, img_col_idx, "NO IMAGE FOUND")
+                            else: worksheet.write(row_idx, img_col_idx, "NO IMAGE FOUND")
                     else:
                         progress_data["current"] += len(bucket_df)
 
@@ -472,7 +469,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
              mimetype_val = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         else:
              mimetype_val = 'application/zip'
-             if chain_selection in ["RDS", "RUSTANS"]: final_name = f"{filename_base}.zip"
+             if chain_selection in ["RDS", "RUSTANS", "GCAP", "KCC"]: final_name = f"{filename_base}.zip"
              else: final_name = f"SM{datetime.now().strftime('%m%d%Y')}.zip" if not final_zip_name or "SC_TEMP" in final_zip_name else final_zip_name
 
         response = make_response(send_file(output_buffer, mimetype=mimetype_val, as_attachment=True, download_name=final_name))
@@ -485,11 +482,9 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         return response
 
     except Exception as e:
-        # catch python errors
         stack_trace = traceback.format_exc()
         logger.error(f"Global ATC Failure: {stack_trace}")
         return jsonify({"error": "An unexpected error occurred during extraction. Check logs."}), 500
 
     finally:
-        if conn:
-            conn.close()
+        if conn: conn.close()
