@@ -440,18 +440,13 @@ def process_template():
             img_col_name, sheet_name_val, header_row_idx, data_start_row = None, "GCAP Template", 0, 1 
 
         elif chain_selection == "KCC":
-            # Map EXACT headers from user template
             merged_df['SKU'] = merged_df['Item No_']
             merged_df['BARCODE'] = "" 
             merged_df['ITEM CODE/STOCK#'] = merged_df['Style_Stockcode'].fillna('')
             merged_df['BRAND'] = merged_df['Brand'].fillna('')
             merged_df['DESCRIPTION'] = merged_df['Description'].fillna('')
-            
-            # Prices
             merged_df['REGULAR PRICE'] = pd.to_numeric(merged_df['Point_Power'], errors='coerce').fillna(0).map('{:,.2f}'.format)
             merged_df['MARKDOWN PRICE'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
-            
-            # Specifications and other standard fields
             merged_df['SPECIFICATION'] = (merged_df['Dial Color'].fillna('') + " " + merged_df['Case _Frame Size'].fillna('')).str.strip()
             merged_df['SAMPLE IMAGE'] = ""
             merged_df['PRICE CATEGORY'] = "SALE ITEM"
