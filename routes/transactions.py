@@ -228,14 +228,24 @@ def process_template():
 
         # --- DYNAMIC DISCOUNT LEVEL FETCH (Sales Price Table) ---
         try:
-            price_qry = ('SELECT "Item No_", "Unit Price" AS SRP, "Discount Level" AS "Price_Discount" '
-                         'FROM dbo."Newtrends International Corp_$Sales Price" WITH (NOLOCK) '
-                         'WHERE "Sales Code"=? AND "PC Memo No"=?' )
+            price_qry = (
+                'SELECT "Item No_", "SRP", "Price_Discount" FROM ('
+                '  SELECT "Item No_", "Unit Price" AS SRP, "Discount Level" AS "Price_Discount", '
+                '  ROW_NUMBER() OVER (PARTITION BY "Item No_" ORDER BY "Starting Date" DESC) as RowNum '
+                '  FROM dbo."Newtrends International Corp_$Sales Price" WITH (NOLOCK) '
+                '  WHERE "Sales Code"=? AND "PC Memo No"=?'
+                ') t WHERE RowNum = 1'
+            )
             prices_df = pd.read_sql(price_qry, conn, params=[sales_code, pc_memo])
         except Exception as e:
-            price_qry = ('SELECT "Item No_", "Unit Price" AS SRP '
-                         'FROM dbo."Newtrends International Corp_$Sales Price" WITH (NOLOCK) '
-                         'WHERE "Sales Code"=? AND "PC Memo No"=?' )
+            price_qry = (
+                'SELECT "Item No_", "SRP" FROM ('
+                '  SELECT "Item No_", "Unit Price" AS SRP, '
+                '  ROW_NUMBER() OVER (PARTITION BY "Item No_" ORDER BY "Starting Date" DESC) as RowNum '
+                '  FROM dbo."Newtrends International Corp_$Sales Price" WITH (NOLOCK) '
+                '  WHERE "Sales Code"=? AND "PC Memo No"=?'
+                ') t WHERE RowNum = 1'
+            )
             prices_df = pd.read_sql(price_qry, conn, params=[sales_code, pc_memo])
 
         if prices_df.empty:
@@ -246,9 +256,10 @@ def process_template():
         
         save_progress(req_id, 0, total_items_count, f"Found {total_items_count} items. Starting Retrieval...")
 
-        # --- CHUNKING LOGIC ---
+        # --- CHUNKING LOGIC (5K+ Items Support) ---
         chunk_size = 2000
         items_dfs = []
+        attr_dfs = []
 
         # Iterate through item list in chunks to prevent query overflow
         for i in range(0, len(item_list), chunk_size):
@@ -258,13 +269,12 @@ def process_template():
             # Update Progress File
             save_progress(req_id, i, total_items_count, f"Retrieving item details... ({i}/{total_items_count})")
 
-            # --- DYNAMIC DISCOUNT LEVEL FETCH (Item Table Fallback) ---
+            # A. Fetch Base Item Data
             try:
                 item_qry = (f'SELECT "No_" AS "Item No_", "Description", "Product Group Code" AS "Brand", '
                             f'"Vendor Item No_" AS "Style_Stockcode", "Net Weight", "Gross Weight", '
-                            f'"Point_Power", "Base Unit of Measure" AS "Unit_of_Measure", '
-                            f'"Dial Color", "Case _Frame Size", "Gender", "Item Category Code", '
-                            f'"Discount Level" AS "Item_Discount" '
+                            f'"Base Unit of Measure" AS "Unit_of_Measure", '
+                            f'"Item Category Code", "Discount Level" AS "Item_Discount" '
                             f'FROM dbo."Newtrends International Corp_$Item" WITH (NOLOCK) '
                             f'WHERE "No_" IN ({placeholders})')
                 
@@ -272,23 +282,59 @@ def process_template():
             except Exception:
                 item_qry = (f'SELECT "No_" AS "Item No_", "Description", "Product Group Code" AS "Brand", '
                             f'"Vendor Item No_" AS "Style_Stockcode", "Net Weight", "Gross Weight", '
-                            f'"Point_Power", "Base Unit of Measure" AS "Unit_of_Measure", '
-                            f'"Dial Color", "Case _Frame Size", "Gender", "Item Category Code" '
+                            f'"Base Unit of Measure" AS "Unit_of_Measure", '
+                            f'"Item Category Code" '
                             f'FROM dbo."Newtrends International Corp_$Item" WITH (NOLOCK) '
                             f'WHERE "No_" IN ({placeholders})')
                 
                 chunk_df = pd.read_sql(item_qry, conn, params=chunk)
             
             items_dfs.append(chunk_df)
+
+            # B. Fetch Attributes (EAV data like Dial Color, Case Size, Gender)
+            attr_qry = f'''
+                SELECT a."No_", b."Name" as "Attribute", c."Value" 
+                FROM dbo."Newtrends International Corp_$Item Attribute Value Mapping" a WITH (NOLOCK)
+                LEFT JOIN dbo."Newtrends International Corp_$Item Attribute" b ON a."Item Attribute ID" = b."ID"
+                LEFT JOIN dbo."Newtrends International Corp_$Item Attribute Value" c ON a."Item Attribute ID" = c."Attribute ID" 
+                     AND a."Item Attribute Value ID" = c."ID"
+                WHERE a."Table ID" = 27 AND a."No_" IN ({placeholders})
+            '''
+            try:
+                chunk_attrs = pd.read_sql(attr_qry, conn, params=chunk)
+                attr_dfs.append(chunk_attrs)
+            except Exception as e:
+                logger.error(f"Attribute fetch failed for chunk {i}: {e}")
             
             # Tiny sleep to let other threads breathe
             time.sleep(0.01)
 
-        # Combine all chunks
+        # --- DATA RECONSTRUCTION ---
         if items_dfs:
             items_df = pd.concat(items_dfs, ignore_index=True)
         else:
             items_df = pd.DataFrame()
+
+        if attr_dfs:
+            attr_df = pd.concat(attr_dfs, ignore_index=True)
+            if not attr_df.empty:
+                # Pivot the attributes to create columns
+                pivoted = attr_df.pivot(index='No_', columns='Attribute', values='Value').reset_index()
+                
+                # Map Attribute names to match existing Excel logic columns
+                rename_map = {
+                    'Pricepoint': 'Point_Power', 
+                    'Dial Color': 'Dial Color',
+                    'Case _Frame Size': 'Case _Frame Size',
+                    'Gender': 'Gender'
+                }
+                pivoted = pivoted.rename(columns=rename_map)
+                items_df = pd.merge(items_df, pivoted, how='left', left_on='Item No_', right_on='No_')
+
+        # Ensure all columns exist for the Excel mapping to avoid KeyErrors
+        for col in ['Point_Power', 'Dial Color', 'Case _Frame Size', 'Gender', 'Net Weight', 'Gross Weight', 'Item_Discount']:
+            if col not in items_df.columns:
+                items_df[col] = ""
 
         merged_df = pd.merge(items_df, prices_df, on="Item No_")
 
@@ -525,7 +571,7 @@ def process_template():
                             sm_ts = time_now.strftime('%m%d%H%M')
                             filename = f"SC{vendor_code}_{f_dept}_{f_class}_{sm_ts}.xlsx"
 
-                        # [FIX] Check for Duplicate Filenames
+                        # Check for Duplicate Filenames
                         if filename in used_filenames:
                             base, ext = os.path.splitext(filename)
                             counter = 1
