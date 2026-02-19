@@ -441,28 +441,28 @@ def process_template():
 
         elif chain_selection == "KCC":
             # Map EXACT headers from user template
-            merged_df['sku'] = merged_df['Item No_'] # Put the identifier here since barcode is blank
-            merged_df['barcode'] = "" # Kept blank as requested
-            merged_df['item code/stock#'] = merged_df['Style_Stockcode'].fillna('')
-            merged_df['brand'] = merged_df['Brand'].fillna('')
-            merged_df['description'] = merged_df['Description'].fillna('')
+            merged_df['SKU'] = merged_df['Item No_']
+            merged_df['BARCODE'] = "" 
+            merged_df['ITEM CODE/STOCK#'] = merged_df['Style_Stockcode'].fillna('')
+            merged_df['BRAND'] = merged_df['Brand'].fillna('')
+            merged_df['DESCRIPTION'] = merged_df['Description'].fillna('')
             
             # Prices
-            merged_df['regular price'] = pd.to_numeric(merged_df['Point_Power'], errors='coerce').fillna(0).map('{:,.2f}'.format)
-            merged_df['markdown price'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
+            merged_df['REGULAR PRICE'] = pd.to_numeric(merged_df['Point_Power'], errors='coerce').fillna(0).map('{:,.2f}'.format)
+            merged_df['MARKDOWN PRICE'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
             
             # Specifications and other standard fields
-            merged_df['specification'] = (merged_df['Dial Color'].fillna('') + " " + merged_df['Case _Frame Size'].fillna('')).str.strip()
-            merged_df['sample image'] = ""
-            merged_df['price category'] = "SALE ITEM"
-            merged_df['discount level'] = merged_df['Discount Level'].fillna('')
+            merged_df['SPECIFICATION'] = (merged_df['Dial Color'].fillna('') + " " + merged_df['Case _Frame Size'].fillna('')).str.strip()
+            merged_df['SAMPLE IMAGE'] = ""
+            merged_df['PRICE CATEGORY'] = "SALE ITEM"
+            merged_df['DISCOUNT LEVEL'] = merged_df['Discount Level'].fillna('')
             
             final_cols = [
-                'sku', 'barcode', 'item code/stock#', 'brand', 'description', 
-                'regular price', 'markdown price', 'specification', 'sample image', 
-                'price category', 'discount level'
+                'SKU', 'BARCODE', 'ITEM CODE/STOCK#', 'BRAND', 'DESCRIPTION', 
+                'REGULAR PRICE', 'MARKDOWN PRICE', 'SPECIFICATION', 'SAMPLE IMAGE', 
+                'PRICE CATEGORY', 'DISCOUNT LEVEL'
             ] 
-            img_col_name, sheet_name_val, header_row_idx, data_start_row = 'sample image', "Sheet1", 5, 6
+            img_col_name, sheet_name_val, header_row_idx, data_start_row = 'SAMPLE IMAGE', "Sheet1", 5, 6
 
         else:
             # SM / Default Logic
@@ -634,8 +634,8 @@ def process_template():
                         title_fmt = workbook.add_format({'bold': True, 'font_size': 11})
                         header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D9D9D9', 'border': 1, 'align': 'center'})
                         
-                        worksheet.write(0, 0, "KCC MALLS - SKU TEMPLATE", title_fmt)
-                        worksheet.write(1, 0, f"BRAND: {brand_name}")
+                        worksheet.write(0, 0, "KCC MALLS SKU REQUEST FORMAT", title_fmt)
+                        worksheet.write(1, 0, f"Supplier's Name: ")
                         worksheet.write(2, 0, f"DATE: {datetime.now().strftime('%m/%d/%Y')}")
                         
                         for col_num, value in enumerate(final_cols):
