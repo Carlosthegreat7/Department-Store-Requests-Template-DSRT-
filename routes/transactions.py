@@ -450,10 +450,19 @@ def process_template():
             merged_df['PRODUCT SHORT DESCRIPTION (CHAR. LIMIT = 10)'] = merged_df['Description'].fillna('').str[:10]
             merged_df['PRODUCT LONG DESCRIPTION (CHAR. LIMIT = 50)'] = desc_str.str[:50]
             merged_df['RETAIL PRICE'] = merged_df['SRP'].fillna(0).apply(lambda x: '{:.2f}'.format(x))
-            for col in ['RCC SKU', 'IMAGE', 'BRAND CODE', 'DEPARTMENT', 'SUBDEPARTMENT', 'CLASS', 'SUB CLASS', 'MERCHANDISER', 'BUYER', 'SEASON CODE', 'THEME', 'COLLECTION', 'SIZE RUN', 'SET / PC', 'MAKATI', 'SHANG', 'ATC', 'GW', 'CEBU', 'SOLENAD', 'E-COMM (FOR PO)', 'TOTAL', 'TOTAL RETAIL VALUE', 'SIZE SPECIFICATIONS', 'PRODUCT & CARE DETAILS', 'MATERIAL', 'LINK TO HI-RES IMAGE']: merged_df[col] = ""
+            merged_df['SET / PC'] = "PC"
+            merged_df['MATERIAL'] = merged_df['Material'].fillna('') if 'Material' in merged_df.columns else ""
+            merged_df['Gender'] = merged_df['Gender'].fillna('') if 'Gender' in merged_df.columns else ""
+            merged_df['Dial Color'] = merged_df['Dial Color'].fillna('') if 'Dial Color' in merged_df.columns else ""
+            merged_df['Case _Frame Size'] = merged_df['Case _Frame Size'].fillna('') if 'Case _Frame Size' in merged_df.columns else ""
+
+            #blank array
+            for col in ['RCC SKU', 'IMAGE', 'BRAND CODE', 'DEPARTMENT', 'SUBDEPARTMENT', 'CLASS', 'SUB CLASS', 'MERCHANDISER', 'BUYER', 'SEASON CODE', 'THEME', 'COLLECTION', 'SIZE RUN', 'MAKATI', 'SHANG', 'ATC', 'GW', 'CEBU', 'SOLENAD', 'E-COMM (FOR PO)', 'TOTAL', 'TOTAL RETAIL VALUE', 'SIZE SPECIFICATIONS', 'PRODUCT & CARE DETAILS', 'LINK TO HI-RES IMAGE']: 
+                merged_df[col] = ""
+                
             final_cols = ['RCC SKU', 'IMAGE', 'VENDOR ITEM CODE', 'PRODUCT MEDIUM DESCRIPTION (CHAR. LIMIT = 30)', 'PRODUCT SHORT DESCRIPTION (CHAR. LIMIT = 10)', 'PRODUCT LONG DESCRIPTION (CHAR. LIMIT = 50)', 'VENDOR CODE', 'BRAND CODE', 'RETAIL PRICE', 'DEPARTMENT', 'SUBDEPARTMENT', 'CLASS', 'SUB CLASS', 'MERCHANDISER', 'BUYER', 'SEASON CODE', 'THEME', 'COLLECTION', 'Dial Color', 'SIZE RUN', 'Case _Frame Size', 'SET / PC', 'MAKATI', 'SHANG', 'ATC', 'GW', 'CEBU', 'SOLENAD', 'E-COMM (FOR PO)', 'TOTAL', 'TOTAL RETAIL VALUE', 'SIZE SPECIFICATIONS', 'PRODUCT & CARE DETAILS', 'MATERIAL', 'LINK TO HI-RES IMAGE', 'Gender']
             img_col_name, sheet_name_val, header_row_idx, data_start_row = 'IMAGE', "Rustans Template", 14, 15
-        
+            
         elif chain_selection == "GCAP":
             # 1. Basic Columns
             merged_df['brand'] = merged_df['Brand'].fillna('')
@@ -750,25 +759,22 @@ def process_template():
                                     worksheet.set_column(col_num, col_num, 18)
                     
                     # 5. [IMAGE INSERTION]
-                    # Note: We updated this condition so KCC gets images since it has a "sample image" column!
                     if chain_selection not in ["RDS", "GCAP"] and img_col_name in final_cols:
                         image_cache = build_image_cache(NETWORK_IMAGE_PATH)
                         img_col_idx = final_cols.index(img_col_name)
-                        worksheet.set_column(img_col_idx, img_col_idx, 35) 
+                        worksheet.set_column(img_col_idx, img_col_idx, 18) 
                         
                         for i, item_no in enumerate(bucket_df['Item No_']):
-                            # Update global progress count
-                            # Note: To be perfectly accurate we should track a global index, but simplistic update is fine for UI
                             save_progress(req_id, i, len(bucket_df), f"Inserting Images: {item_no}")
                             
                             row_idx = i + data_start_row
-                            worksheet.set_row(row_idx, 180)
+                            worksheet.set_row(row_idx, 90)
                             
                             img_path = find_image_in_cache(image_cache, item_no)
                             if img_path:
                                 try:
                                     with Image.open(img_path) as img:
-                                        img_resized = img.resize((240, 240), Image.Resampling.LANCZOS)
+                                        img_resized = img.resize((120, 120), Image.Resampling.LANCZOS)
                                         img_byte_arr = io.BytesIO()
                                         img_resized.save(img_byte_arr, format='PNG')
                                         img_byte_arr.seek(0)

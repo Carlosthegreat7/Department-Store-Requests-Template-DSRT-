@@ -462,18 +462,18 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                     if chain_selection not in ["RDS", "GCAP"] and img_col_name in final_cols:
                         image_cache = build_image_cache(NETWORK_IMAGE_PATH)
                         img_col_idx = final_cols.index(img_col_name)
-                        worksheet.set_column(img_col_idx, img_col_idx, 35) 
+                        worksheet.set_column(img_col_idx, img_col_idx, 18) 
                         
                         for i, item_no in enumerate(bucket_df['Item No_']):
                             progress_data["current"] += 1
                             progress_data["status"] = f"Inserting Images: {item_no}"
                             row_idx = i + data_start_row
-                            worksheet.set_row(row_idx, 180)
+                            worksheet.set_row(row_idx, 90)
                             img_path = find_image_in_cache(image_cache, item_no)
                             if img_path:
                                 try:
                                     with Image.open(img_path) as img:
-                                        img_resized = img.resize((240, 240), Image.Resampling.LANCZOS)
+                                        img_resized = img.resize((120, 120), Image.Resampling.LANCZOS)
                                         img_byte_arr = io.BytesIO()
                                         img_resized.save(img_byte_arr, format='PNG')
                                         img_byte_arr.seek(0)
