@@ -379,6 +379,9 @@ def process_template():
         elif chain_selection == "KCC":
             filename_base = f'KCC SKU {time_now.strftime("%m%d%Y")} {company_selection}'
             final_zip_name = f"KCC{zip_date}.zip"
+        elif chain_selection == "GGRAND":
+            filename_base = f'GGRAND {company_selection} {time_now.strftime("%m%d%Y")}'
+            final_zip_name = f"GGRAND{zip_date}.zip"    
         else:
             # Temporary savefile, will be zipped later and adjusted to required store chain format
             sm_ts = time_now.strftime('%m%d%H%M')
@@ -573,7 +576,7 @@ def process_template():
                     # 1. Prepare Filename (Only for Zip mode)
                     filename = ""
                     if not is_multisheet_mode:
-                        if chain_selection in ["RDS", "GCAP", "KCC"]:
+                        if chain_selection in ["RDS", "GCAP", "KCC", "GGRAND", "ALTURAS"]:
                             filename = f"{filename_base} - {brand_name}.xlsx"
                         else:
                             f_dept, f_class = "0000", "0000"
@@ -623,7 +626,7 @@ def process_template():
                         excel_output = io.BytesIO()
                         current_writer = pd.ExcelWriter(excel_output, engine='xlsxwriter')
                         current_sheet_name = sheet_name_val
-                        data_start_row = 2 if chain_selection == "RDS" else (6 if chain_selection == "KCC" else 1)
+                        data_start_row = 2 if chain_selection == "RDS" else (6 if chain_selection == "KCC" else (3 if chain_selection == "GGRAND" else 1))
 
                     # 3. Write Data to Excel
                     bucket_df[final_cols].to_excel(current_writer, sheet_name=current_sheet_name, index=False, startrow=data_start_row, header=False)
@@ -720,13 +723,11 @@ def process_template():
                         title_fmt = workbook.add_format({'bold': True, 'font_size': 12})
                         header_fmt = workbook.add_format({'bold': True, 'bg_color': '#F2F2F2', 'border': 1, 'align': 'center'})
                         
-                        # Write the standalone title
                         worksheet.write(0, 0, "SKU REQUEST TEMPLATE", title_fmt)
                         
                         for col_num, value in enumerate(final_cols):
                             worksheet.write(2, col_num, value, header_fmt)
                             
-                            # Specific column sizing based on typical GGRAND data lengths
                             if value == 'DESCRIPTION': worksheet.set_column(col_num, col_num, 40)
                             elif value in ['BRAND', 'PROMO CATEGORY', 'ITEM CATEGORY']: worksheet.set_column(col_num, col_num, 20)
                             else: worksheet.set_column(col_num, col_num, 15)
