@@ -163,6 +163,9 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         elif chain_selection == "KCC":
             filename_base = f'KCC SKU {time_now.strftime("%m%d%Y")} {company_selection}'
             final_zip_name = f"KCC{zip_date}.zip"
+        elif chain_selection == "GGRAND":
+            filename_base = f'GGRAND {company_selection} {time_now.strftime("%m%d%Y")}'
+            final_zip_name = f"GGRAND{zip_date}.zip"
         else:
             sm_ts = time_now.strftime('%m%d%H%M')
             filename_base = f"SC{vendor_code}_DEPT_CLASS_{sm_ts}"
@@ -272,6 +275,30 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
             ] 
             img_col_name, sheet_name_val, header_row_idx, data_start_row = 'SAMPLE IMAGE', "Sheet1", 5, 6
 
+        elif chain_selection == "GGRAND":
+            cat_abbrevs = {
+                "NON": "NON-MERCHANDISE", "OTH": "OTHERS", "PRM": "PROMO",
+                "PRT": "PARTS", "ACC": "ACCESSORIES", "WTC": "WATCHES",
+                "SKN": "SKIN CARE", "FRG": "FRAGRANCE"
+            }
+            def abbreviate_category(val):
+                if not val: return ""
+                clean_val = str(val).strip().upper()
+                return cat_abbrevs.get(clean_val, val) 
+
+            merged_df['BRAND'] = merged_df['Brand'].fillna('')
+            merged_df['PROMO CATEGORY'] = merged_df['Description'].fillna('').apply(
+                lambda x: "PROMO ITEM" if "@" in str(x) or "#" in str(x) else "SALE ITEM"
+            )
+            merged_df['ITEM CATEGORY'] = merged_df['Item Category Code'].apply(abbreviate_category)
+            merged_df['DESCRIPTION'] = merged_df['Description'].fillna('')
+            merged_df['PRICE'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
+            merged_df['SKU'] = ""
+            merged_df['BARCODE'] = ""
+            
+            final_cols = ['BRAND', 'PROMO CATEGORY', 'ITEM CATEGORY', 'DESCRIPTION', 'PRICE', 'SKU', 'BARCODE']
+            img_col_name, sheet_name_val, header_row_idx, data_start_row = None, "GGRAND Template", 2, 3
+
         else:
             # [SM/DEFAULT MAPPING BLOCK]
             merged_df['DESCRIPTION'] = (merged_df['Brand'].fillna('') + " " + merged_df['Description'].fillna('') + " " + merged_df['Dial Color'].fillna('') + " " + merged_df['Case _Frame Size'].fillna('') + " " + merged_df['Style_Stockcode'].fillna('')).str.replace(r'[^a-zA-Z0-9\s]', '', regex=True).str[:50]
@@ -309,7 +336,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                 try:
                     filename = ""
                     if not is_multisheet_mode:
-                        if chain_selection in ["RDS", "GCAP", "KCC"]:
+                        if chain_selection in ["RDS", "GCAP", "KCC", "GGRAND"]:
                             filename = f"{filename_base} - {brand_name}.xlsx"
                         else:
                             f_dept, f_class = "0000", "0000"
@@ -347,7 +374,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                         excel_output = io.BytesIO()
                         current_writer = pd.ExcelWriter(excel_output, engine='xlsxwriter')
                         current_sheet_name = sheet_name_val
-                        data_start_row = 2 if chain_selection == "RDS" else (6 if chain_selection == "KCC" else 1)
+                        data_start_row = 2 if chain_selection == "RDS" else (6 if chain_selection == "KCC" else (3 if chain_selection == "GGRAND" else 1))
 
                     bucket_df[final_cols].to_excel(current_writer, sheet_name=current_sheet_name, index=False, startrow=data_start_row, header=False)
                     workbook, worksheet = current_writer.book, current_writer.sheets[current_sheet_name]
@@ -407,6 +434,19 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                             if value == 'description': worksheet.set_column(col_num, col_num, 45)
                             elif value == img_col_name: worksheet.set_column(col_num, col_num, 35)
                             else: worksheet.set_column(col_num, col_num, 18)
+
+                    elif chain_selection == "GGRAND":
+                        title_fmt = workbook.add_format({'bold': True, 'font_size': 12})
+                        header_fmt = workbook.add_format({'bold': True, 'bg_color': '#F2F2F2', 'border': 1, 'align': 'center'})
+                        
+                        worksheet.write(0, 0, "SKU REQUEST TEMPLATE", title_fmt)
+                        
+                        for col_num, value in enumerate(final_cols):
+                            worksheet.write(2, col_num, value, header_fmt)
+                            
+                            if value == 'DESCRIPTION': worksheet.set_column(col_num, col_num, 40)
+                            elif value in ['BRAND', 'PROMO CATEGORY', 'ITEM CATEGORY']: worksheet.set_column(col_num, col_num, 20)
+                            else: worksheet.set_column(col_num, col_num, 15)
 
                     else:
                         header_fmt = workbook.add_format({'bold': True, 'bg_color': '#BDD7EE', 'border': 1, 'align': 'center'}) 
@@ -469,7 +509,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
              mimetype_val = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         else:
              mimetype_val = 'application/zip'
-             if chain_selection in ["RDS", "RUSTANS", "GCAP", "KCC"]: final_name = f"{filename_base}.zip"
+             if chain_selection in ["RDS", "RUSTANS", "GCAP", "KCC", "GGRAND"]: final_name = f"{filename_base}.zip"
              else: final_name = f"SM{datetime.now().strftime('%m%d%Y')}.zip" if not final_zip_name or "SC_TEMP" in final_zip_name else final_zip_name
 
         response = make_response(send_file(output_buffer, mimetype=mimetype_val, as_attachment=True, download_name=final_name))
