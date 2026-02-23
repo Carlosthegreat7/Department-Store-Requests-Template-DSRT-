@@ -117,17 +117,10 @@ def progress():
     
     def generate():
         while True:
-            # READ from file
             data = get_progress_data(req_id)
-            
             yield f"data: {json.dumps(data)}\n\n"
-            
-            # Stop stream if finished
             if data["status"] == "Finalizing..." or (data["total"] > 0 and data["current"] >= data["total"]):
-                # Optional: Clean up file logic could go here, or rely on OS cleanup
                 break
-            
-            # Poll every 0.5 seconds to avoid server blocking
             time.sleep(0.5)
                 
     return Response(generate(), mimetype='text/event-stream')
@@ -138,7 +131,6 @@ def verify_codes():
     sales_code = request.form.get('sales_code', '').strip().upper()
     company_selection = request.form.get('company', '').strip().upper()
     
-    # logic to choose the correct DB
     is_atcrep = company_selection in ['ATC', 'TPC']
     db_target = 'ATCREP' if is_atcrep else 'NICREP'
     
@@ -209,8 +201,6 @@ def process_template():
     # 2. REDIRECTION LOGIC
     if company_selection in ['ATC', 'TPC']:
         logger.info(f"Redirecting to ATC/TPC logic for company: {company_selection}")
-        # Note: Ideally you pass save_progress to the ATC script, but for compatibility
-        # we act as if it's external.
         dummy_progress = {} 
         return process_atcrep_template(
             chain_selection, company_selection, pc_memo, sales_code, 
@@ -274,7 +264,7 @@ def process_template():
                 item_qry = (f'SELECT "No_" AS "Item No_", "Description", "Product Group Code" AS "Brand", '
                             f'"Vendor Item No_" AS "Style_Stockcode", "Net Weight", "Gross Weight", '
                             f'"Base Unit of Measure" AS "Unit_of_Measure", '
-                            f'"Item Category Code", "Discount Level" AS "Item_Discount" '
+                            f'"Dial Color", "Case _Frame Size", "Gender", "Case_Frame Material" AS "Material", "Item Category Code", "Discount Level" AS "Item_Discount" '
                             f'FROM dbo."Newtrends International Corp_$Item" WITH (NOLOCK) '
                             f'WHERE "No_" IN ({placeholders})')
                 
@@ -291,7 +281,6 @@ def process_template():
             
             items_dfs.append(chunk_df)
 
-            # B. Fetch Attributes (EAV data like Dial Color, Case Size, Gender)
             attr_qry = f'''
                 SELECT a."No_", b."Name" as "Attribute", c."Value" 
                 FROM dbo."Newtrends International Corp_$Item Attribute Value Mapping" a WITH (NOLOCK)
@@ -306,7 +295,7 @@ def process_template():
             except Exception as e:
                 logger.error(f"Attribute fetch failed for chunk {i}: {e}")
             
-            # Tiny sleep to let other threads breathe
+            # Tiny sleep to let other threads breathe DO NOT REMOVE
             time.sleep(0.01)
 
         # --- DATA RECONSTRUCTION ---
@@ -464,11 +453,10 @@ def process_template():
             img_col_name, sheet_name_val, header_row_idx, data_start_row = 'IMAGE', "Rustans Template", 14, 15
             
         elif chain_selection == "GCAP":
-            # 1. Basic Columns
             merged_df['brand'] = merged_df['Brand'].fillna('')
             merged_df['item code'] = merged_df['Item No_']
             
-            # 2. Promo Category Logic (@ or # means PROMO)
+            #Promo Category Logic (@ or # means PROMO)
             merged_df['promo category'] = merged_df['Description'].fillna('').apply(
                 lambda x: "PROMO ITEM" if "@" in str(x) or "#" in str(x) else "REGULAR ITEM"
             )
@@ -548,14 +536,29 @@ def process_template():
             img_col_name, sheet_name_val, header_row_idx, data_start_row = None, "GGRAND Template", 2, 3 
 
         else:
-            # SM / Default Logic
-            merged_df['DESCRIPTION'] = (merged_df['Brand'].fillna('') + " " + merged_df['Description'].fillna('') + " " + merged_df['Dial Color'].fillna('') + " " + merged_df['Case _Frame Size'].fillna('') + " " + merged_df['Style_Stockcode'].fillna('')).str.replace(r'[^a-zA-Z0-9\s]', '', regex=True).str[:50]
-            merged_df['COLOR'] = merged_df['Dial Color'].fillna(''); merged_df['SIZES'] = merged_df['Case _Frame Size'].fillna(''); merged_df['SRP'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
+            # [SM / Default Logic]
+            safe_color = merged_df['Dial Color'].fillna('') if 'Dial Color' in merged_df.columns else ""
+            safe_size = merged_df['Case _Frame Size'].fillna('') if 'Case _Frame Size' in merged_df.columns else ""
+            safe_brand = merged_df['Brand'].fillna('')
+            safe_desc = merged_df['Description'].fillna('')
+            safe_style = merged_df['Style_Stockcode'].fillna('')
+            
+            merged_df['COLOR'] = safe_color
+            merged_df['SIZES'] = safe_size
+            
+            raw_desc = (safe_brand + " " + safe_desc + " " + safe_color + " " + safe_size + " " + safe_style)
+            merged_df['DESCRIPTION'] = raw_desc.str.replace(r'[^a-zA-Z0-9\s]', '', regex=True).str.replace(r'\s+', ' ', regex=True).str.strip().str[:50]
+            
+            merged_df['SRP'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
             merged_df['EXP_DEL_MONTH'] = (time_now + timedelta(days=30)).strftime('%m/%d/%Y')
             merged_df['SOURCE_MARKED'] = ""; merged_df['REMARKS'] = ""; merged_df['ONLINE ITEMS'] = "NO"
             merged_df['PACKAGE WEIGHT IN KG'] = merged_df['Gross Weight']; merged_df['PRODUCT WEIGHT IN KG'] = merged_df['Net Weight']
-            for d in ['PACKAGE LENGTH IN CM', 'PACKAGE WIDTH IN CM', 'PACKAGE HEIGHT IN CM', 'PRODUCT LENGTH IN CM', 'PRODUCT WIDTH IN CM', 'PRODUCT HEIGHT IN CM']: merged_df[d] = "-"
+            
+            for d in ['PACKAGE LENGTH IN CM', 'PACKAGE WIDTH IN CM', 'PACKAGE HEIGHT IN CM', 'PRODUCT LENGTH IN CM', 'PRODUCT WIDTH IN CM', 'PRODUCT HEIGHT IN CM']: 
+                merged_df[d] = "-"
+                
             merged_df['IMAGES'] = ""
+            
             final_cols = ['DESCRIPTION', 'COLOR', 'SIZES', 'Style_Stockcode', 'SOURCE_MARKED', 'SRP', 'Unit_of_Measure', 'EXP_DEL_MONTH', 'REMARKS', 'IMAGES', 'ONLINE ITEMS', 'PACKAGE LENGTH IN CM', 'PACKAGE WIDTH IN CM', 'PACKAGE HEIGHT IN CM', 'PACKAGE WEIGHT IN KG', 'PRODUCT LENGTH IN CM', 'PRODUCT WIDTH IN CM', 'PRODUCT HEIGHT IN CM', 'PRODUCT WEIGHT IN KG']
             img_col_name, sheet_name_val, header_row_idx, data_start_row = 'IMAGES', "Template", 0, 1
 
