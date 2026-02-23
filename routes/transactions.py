@@ -504,7 +504,7 @@ def process_template():
                 'PRICE CATEGORY', 'DISCOUNT LEVEL'
             ] 
             img_col_name, sheet_name_val, header_row_idx, data_start_row = 'SAMPLE IMAGE', "Sheet1", 5, 6
-            
+
         elif chain_selection == "GGRAND":
 
             cat_abbrevs = {
@@ -534,6 +534,7 @@ def process_template():
             merged_df['BARCODE'] = ""
             final_cols = ['BRAND', 'PROMO CATEGORY', 'ITEM CATEGORY', 'DESCRIPTION', 'PRICE', 'SKU', 'BARCODE']
             img_col_name, sheet_name_val, header_row_idx, data_start_row = None, "GGRAND Template", 2, 3 
+
         else:
             # SM / Default Logic
             merged_df['DESCRIPTION'] = (merged_df['Brand'].fillna('') + " " + merged_df['Description'].fillna('') + " " + merged_df['Dial Color'].fillna('') + " " + merged_df['Case _Frame Size'].fillna('') + " " + merged_df['Style_Stockcode'].fillna('')).str.replace(r'[^a-zA-Z0-9\s]', '', regex=True).str[:50]
