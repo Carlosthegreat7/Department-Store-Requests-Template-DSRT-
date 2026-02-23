@@ -245,9 +245,9 @@
                             <option value="KCC">KCC</option>
                             <option value="ALTURAS">Alturas</option>
                             <option value="GGRAND">GGrand</option>
-                            <option value="BQ" disabled>BQ</option>
+                            <!-- <option value="BQ" disabled>BQ</option>
                             <option value="TIONGSAN" disabled>TiongSan</option>
-                            <option value="NCCC" disabled>NCCC</option>
+                            <option value="NCCC" disabled>NCCC</option> -->
                             <!-- remove disabled for other chains later on-->
                         </select>
                     </div>
@@ -510,21 +510,16 @@
 
                 // 3. Verification Passed - Proceed to Generation
                 $('#statusText').text("Initializing Excel Generation...");
-
-                // --- FIX START: Prevent Progress Bar "Rewind" Animation ---
                 const $bar = $('#progressBar');
-                $bar.css('transition', 'none');       // 1. Disable animation momentarily
-                $bar.css('width', '0%');              // 2. Snap instantly to 0%
+                $bar.css('transition', 'none');
+                $bar.css('width', '0%');
                 $bar.removeClass('progress-bar-animated progress-bar-striped');
-                void $bar[0].offsetWidth;             // 3. Force browser to paint the 0% state
-                $bar.css('transition', 'width 0.4s ease'); // 4. Re-enable animation for the actual progress
+                void $bar[0].offsetWidth;
+                $bar.css('transition', 'width 0.4s ease');
                 $('#itemCount').text("Preparing data...");
-                // --- FIX END ---
 
                 abortController = new AbortController();
 
-                // const eventSource = new EventSource("{{ url_for('transactions.progress') }}");
-                // Use Sales Code as a simple ID, or generate a random one
                 const uniqueId = $('#salesCodeInput').val().trim();
                 const eventSource = new EventSource("{{ url_for('transactions.progress') }}?id=" + encodeURIComponent(uniqueId));
                 eventSource.onmessage = (e) => {

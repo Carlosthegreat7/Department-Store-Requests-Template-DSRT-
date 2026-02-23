@@ -27,7 +27,6 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
             return jsonify({"error": f"Database Connection to {db_name} Failed"}), 500
 
         # Fetch Prices (Markdown/Promo Price from Sales Price Table)
-        # Using the "Starting Date" filter to ensure we get the latest promo price
         price_qry = (
             f'SELECT "Item No_", "SRP" FROM ('
             f'  SELECT "Item No_", "Unit Price" AS "SRP", '
@@ -48,7 +47,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         chunk_size = 2000
         items_dfs = []
         attr_dfs = []
-        dim_dfs = [] # Storage for Dimensions
+        dim_dfs = []
 
         for i in range(0, len(item_list), chunk_size):
             chunk = item_list[i:i + chunk_size]
@@ -63,7 +62,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
             chunk_items = pd.read_sql(base_qry, conn, params=chunk)
             items_dfs.append(chunk_items)
 
-            # B. Fetch Attributes (Pricepoint, Dial Color, Discount Level, etc.)
+            # B. Fetch Attributes 
             attr_qry = f'''
                 SELECT a."No_", b."Name" as "Attribute", c."Value" 
                 FROM dbo."{table_prefix}$Item Attribute Value Mapping" a WITH (NOLOCK)
@@ -75,8 +74,6 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
             chunk_attrs = pd.read_sql(attr_qry, conn, params=chunk)
             attr_dfs.append(chunk_attrs)
 
-            # C. Fetch Dimensions (As seen in your reference file)
-            # Sometimes data like Collection or Discount Group hides here
             dim_qry = f'''
                 SELECT "No_", "Dimension Code", "Dimension Value Code"
                 FROM dbo."{table_prefix}$Default Dimension" WITH (NOLOCK)
@@ -111,8 +108,6 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                 items_df = pd.merge(items_df, pivoted_dim, how='left', left_on='Item No_', right_on='No_')
                 if 'No_' in items_df.columns: items_df = items_df.drop(columns=['No_'])
 
-        # Rename standard attributes to match NIC logic (if they exist)
-        # NIC uses 'Point_Power', ATC uses 'Pricepoint'
         if 'Pricepoint' in items_df.columns:
             items_df['Point_Power'] = items_df['Pricepoint']
         
@@ -120,13 +115,8 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         for col in ['Net Weight', 'Gross Weight', 'Point_Power', 'Dial Color', 'Case _Frame Size', 'Gender', 'Discount Level']:
             if col not in items_df.columns: items_df[col] = ""
 
-        # Merge with Sales Prices (Markdown Price)
         merged_df = pd.merge(items_df, prices_df, on="Item No_")
-
-        # Cleanup Numbers
         merged_df['SRP'] = pd.to_numeric(merged_df['SRP'], errors='coerce').fillna(0)
-        
-        # Sort & Deduplicate
         merged_df = merged_df.sort_values(by=['Style_Stockcode', 'SRP'], ascending=[True, False])
         merged_df = merged_df.drop_duplicates(subset=['Style_Stockcode'], keep='first')
 
@@ -163,9 +153,9 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         elif chain_selection == "KCC":
             filename_base = f'KCC SKU {time_now.strftime("%m%d%Y")} {company_selection}'
             final_zip_name = f"KCC{zip_date}.zip"
-        elif chain_selection == "GGRAND":
-            filename_base = f'GGRAND {company_selection} {time_now.strftime("%m%d%Y")}'
-            final_zip_name = f"GGRAND{zip_date}.zip"
+        elif chain_selection in ["GGRAND", "ALTURAS"]:
+            filename_base = f'{chain_selection} {company_selection} {time_now.strftime("%m%d%Y")}'
+            final_zip_name = f"{chain_selection}{zip_date}.zip"
         else:
             sm_ts = time_now.strftime('%m%d%H%M')
             filename_base = f"SC{vendor_code}_DEPT_CLASS_{sm_ts}"
@@ -262,7 +252,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
 
         elif chain_selection == "KCC":
             # [KCC MAPPING BLOCK]
-            merged_df['SKU'] = merged_df['']
+            merged_df['SKU'] = merged_df['Item No_']  # <--- FIXED THIS LINE
             merged_df['BARCODE'] = "" 
             merged_df['ITEM CODE/STOCK#'] = merged_df['Style_Stockcode'].fillna('')
             merged_df['BRAND'] = merged_df['Brand'].fillna('')
@@ -282,7 +272,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
             ] 
             img_col_name, sheet_name_val, header_row_idx, data_start_row = 'SAMPLE IMAGE', "Sheet1", 5, 6
 
-        elif chain_selection == "GGRAND":
+        elif chain_selection in ["GGRAND", "ALTURAS"]:
             cat_abbrevs = {
                 "NON": "NON-MERCHANDISE", "OTH": "OTHERS", "PRM": "PROMO",
                 "PRT": "PARTS", "ACC": "ACCESSORIES", "WTC": "WATCHES",
@@ -304,7 +294,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
             merged_df['BARCODE'] = ""
             
             final_cols = ['BRAND', 'PROMO CATEGORY', 'ITEM CATEGORY', 'DESCRIPTION', 'PRICE', 'SKU', 'BARCODE']
-            img_col_name, sheet_name_val, header_row_idx, data_start_row = None, "GGRAND Template", 2, 3
+            img_col_name, sheet_name_val, header_row_idx, data_start_row = None, f"{chain_selection.title()} Template", 2, 3
 
         else:
             # [SM/DEFAULT MAPPING BLOCK]
@@ -356,7 +346,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                 try:
                     filename = ""
                     if not is_multisheet_mode:
-                        if chain_selection in ["RDS", "GCAP", "KCC", "GGRAND"]:
+                        if chain_selection in ["RDS", "GCAP", "KCC", "GGRAND", "ALTURAS"]:
                             filename = f"{filename_base} - {brand_name}.xlsx"
                         else:
                             f_dept, f_class = "0000", "0000"
@@ -394,7 +384,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                         excel_output = io.BytesIO()
                         current_writer = pd.ExcelWriter(excel_output, engine='xlsxwriter')
                         current_sheet_name = sheet_name_val
-                        data_start_row = 2 if chain_selection == "RDS" else (6 if chain_selection == "KCC" else (3 if chain_selection == "GGRAND" else 1))
+                        data_start_row = 2 if chain_selection == "RDS" else (6 if chain_selection == "KCC" else (3 if chain_selection in ["GGRAND", "ALTURAS"] else 1))
 
                     bucket_df[final_cols].to_excel(current_writer, sheet_name=current_sheet_name, index=False, startrow=data_start_row, header=False)
                     workbook, worksheet = current_writer.book, current_writer.sheets[current_sheet_name]
@@ -455,7 +445,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                             elif value == img_col_name: worksheet.set_column(col_num, col_num, 35)
                             else: worksheet.set_column(col_num, col_num, 18)
 
-                    elif chain_selection == "GGRAND":
+                    elif chain_selection in ["GGRAND", "ALTURAS"]:
                         title_fmt = workbook.add_format({'bold': True, 'font_size': 12})
                         header_fmt = workbook.add_format({'bold': True, 'bg_color': '#F2F2F2', 'border': 1, 'align': 'center'})
                         
@@ -529,7 +519,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
              mimetype_val = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         else:
              mimetype_val = 'application/zip'
-             if chain_selection in ["RDS", "RUSTANS", "GCAP", "KCC", "GGRAND"]: final_name = f"{filename_base}.zip"
+             if chain_selection in ["RDS", "RUSTANS", "GCAP", "KCC", "GGRAND", "ALTURAS"]: final_name = f"{filename_base}.zip"
              else: final_name = f"SM{datetime.now().strftime('%m%d%Y')}.zip" if not final_zip_name or "SC_TEMP" in final_zip_name else final_zip_name
 
         response = make_response(send_file(output_buffer, mimetype=mimetype_val, as_attachment=True, download_name=final_name))
