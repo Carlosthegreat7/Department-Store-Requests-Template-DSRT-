@@ -476,11 +476,15 @@ def process_template():
                 return cat_abbrevs.get(clean_val, val) 
 
             merged_df['item category'] = merged_df['Item Category Code'].apply(abbreviate_category)
-            merged_df['description'] = merged_df['Description'].fillna('')
             merged_df['price'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
+            merged_df['description'] = (
+                merged_df['Description'].fillna('').astype(str) + " " + 
+                merged_df['item code'].astype(str) + " " + 
+                merged_df['price'].astype(str)
+            ).str.strip()
             
             final_cols = ['brand', 'item code', 'promo category', 'item category', 'description', 'price']
-            img_col_name, sheet_name_val, header_row_idx, data_start_row = None, "GCAP Template", 0, 1 
+            img_col_name, sheet_name_val, header_row_idx, data_start_row = None, "GCAP Template", 0, 1
 
         elif chain_selection == "KCC":
             merged_df['SKU'] = merged_df['Item No_']
@@ -524,9 +528,18 @@ def process_template():
             merged_df['PROMO CATEGORY'] = merged_df['Description'].fillna('').apply(
                 lambda x: "PROMO ITEM" if "@" in str(x) or "#" in str(x) else "SALE ITEM"
             )
+            
+            # Generate ITEM CATEGORY and PRICE first for concatenation
             merged_df['ITEM CATEGORY'] = merged_df['Item Category Code'].apply(abbreviate_category)
-            merged_df['DESCRIPTION'] = merged_df['Description'].fillna('')
             merged_df['PRICE'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
+            
+            # Concatenate Description, Price, and Item Category with safe typecasting
+            merged_df['DESCRIPTION'] = (
+                merged_df['Description'].fillna('').astype(str) + " " + 
+                merged_df['PRICE'].astype(str) + " " + 
+                merged_df['ITEM CATEGORY'].astype(str)
+            ).str.strip()
+            
             merged_df['SKU'] = ""
             merged_df['BARCODE'] = ""
             final_cols = ['BRAND', 'PROMO CATEGORY', 'ITEM CATEGORY', 'DESCRIPTION', 'PRICE', 'SKU', 'BARCODE']
