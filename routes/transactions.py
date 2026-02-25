@@ -368,6 +368,11 @@ def process_template():
         elif chain_selection in ["GGRAND", "ALTURAS"]:
             filename_base = f'{chain_selection} {company_selection} {time_now.strftime("%m%d%Y")}'
             final_zip_name = f"{chain_selection}{zip_date}.zip"
+        elif chain_selection in ["WATSONS", "WATSONS ONLINE"]:
+            sm_ts = time_now.strftime('%m%d%H%M')
+            filename_base = f"SC{vendor_code}_DEPT_CLASS_{sm_ts}"
+            chain_prefix = "WATSONS_ONLINE" if chain_selection == "WATSONS ONLINE" else "WATSONS"
+            final_zip_name = f"{chain_prefix}{zip_date}.zip"
         else:
             # Temporary savefile, will be zipped later and adjusted to required store chain format
             sm_ts = time_now.strftime('%m%d%H%M')
@@ -544,6 +549,34 @@ def process_template():
             merged_df['BARCODE'] = ""
             final_cols = ['BRAND', 'PROMO CATEGORY', 'ITEM CATEGORY', 'DESCRIPTION', 'PRICE', 'SKU', 'BARCODE']
             img_col_name, sheet_name_val, header_row_idx, data_start_row = None, f"{chain_selection.title()} Template", 2, 3
+
+        elif chain_selection in ["WATSONS", "WATSONS ONLINE"]:
+            safe_color = merged_df['Dial Color'].fillna('') if 'Dial Color' in merged_df.columns else ""
+            safe_size = merged_df['Case _Frame Size'].fillna('') if 'Case _Frame Size' in merged_df.columns else ""
+            safe_brand = merged_df['Brand'].fillna('')
+            safe_desc = merged_df['Description'].fillna('')
+            safe_style = merged_df['Style_Stockcode'].fillna('')
+            
+            merged_df['COLOR'] = safe_color
+            merged_df['SIZES'] = safe_size
+            
+            raw_desc = (safe_brand + " " + safe_desc + " " + safe_color + " " + safe_size + " " + safe_style)
+            merged_df['DESCRIPTION'] = raw_desc.str.replace(r'[^a-zA-Z0-9\s]', '', regex=True).str.replace(r'\s+', ' ', regex=True).str.strip().str[:50]
+            
+            merged_df['SRP'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
+            merged_df['EXP_DEL_MONTH'] = (time_now + timedelta(days=30)).strftime('%m/%d/%Y')
+            merged_df['SOURCE_MARKED'] = ""; merged_df['REMARKS'] = ""
+            merged_df['ONLINE ITEMS'] = "YES" if chain_selection == "WATSONS ONLINE" else "NO"
+            
+            merged_df['PACKAGE WEIGHT IN KG'] = merged_df['Gross Weight']; merged_df['PRODUCT WEIGHT IN KG'] = merged_df['Net Weight']
+            
+            for d in ['PACKAGE LENGTH IN CM', 'PACKAGE WIDTH IN CM', 'PACKAGE HEIGHT IN CM', 'PRODUCT LENGTH IN CM', 'PRODUCT WIDTH IN CM', 'PRODUCT HEIGHT IN CM']: 
+                merged_df[d] = "-"
+                
+            merged_df['IMAGES'] = ""
+            
+            final_cols = ['DESCRIPTION', 'COLOR', 'SIZES', 'Style_Stockcode', 'SOURCE_MARKED', 'SRP', 'Unit_of_Measure', 'EXP_DEL_MONTH', 'REMARKS', 'IMAGES', 'ONLINE ITEMS', 'PACKAGE LENGTH IN CM', 'PACKAGE WIDTH IN CM', 'PACKAGE HEIGHT IN CM', 'PACKAGE WEIGHT IN KG', 'PRODUCT LENGTH IN CM', 'PRODUCT WIDTH IN CM', 'PRODUCT HEIGHT IN CM', 'PRODUCT WEIGHT IN KG']
+            img_col_name, sheet_name_val, header_row_idx, data_start_row = 'IMAGES', "Template", 0, 1
 
         else:
             # [SM / Default Logic]
@@ -821,6 +854,9 @@ def process_template():
         else:
              mimetype_val = 'application/zip'
              if chain_selection in ["RDS", "RUSTANS", "GCAP", "KCC", "GGRAND", "ALTURAS"]: final_name = f"{filename_base}.zip"
+             
+             elif chain_selection in ["WATSONS", "WATSONS ONLINE"]: final_name = final_zip_name
+             
              else: final_name = f"SM{datetime.now().strftime('%m%d%Y')}.zip" if not final_zip_name or "SC_TEMP" in final_zip_name else final_zip_name
 
         response = make_response(send_file(output_buffer, mimetype=mimetype_val, as_attachment=True, download_name=final_name))
