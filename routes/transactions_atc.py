@@ -480,6 +480,9 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                     elif chain_selection in ["GGRAND", "ALTURAS"]:
                         title_fmt = workbook.add_format({'bold': True, 'font_size': 12})
                         header_fmt = workbook.add_format({'bold': True, 'bg_color': '#F2F2F2', 'border': 1, 'align': 'center'})
+                        
+                        worksheet.write(0, 0, "SKU REQUEST TEMPLATE", title_fmt)
+                        
                         for col_num, value in enumerate(final_cols):
                             worksheet.write(2, col_num, value, header_fmt)
                             
