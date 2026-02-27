@@ -866,7 +866,7 @@ def process_template():
 
                         worksheet.set_row(6, 45)
                         worksheet.set_row(7, 85)
-
+# asdasdasd
                         for col_num in range(len(row6)):
                             val6 = row6[col_num]
                             val7 = row7[col_num]
