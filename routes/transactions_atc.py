@@ -156,6 +156,9 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         elif chain_selection in ["GGRAND", "ALTURAS"]:
             filename_base = f'{chain_selection} {company_selection} {time_now.strftime("%m%d%Y")}'
             final_zip_name = f"{chain_selection}{zip_date}.zip"
+        elif chain_selection == "METRO":
+            filename_base = f'{chain_selection} {company_selection} {time_now.strftime("%m%d%Y")}'
+            final_zip_name = f"{chain_selection}{zip_date}.zip"
         elif chain_selection in ["WATSONS", "WATSONS ONLINE"]:
             sm_ts = time_now.strftime('%m%d%H%M')
             filename_base = f"SC{vendor_code}_DEPT_CLASS_{sm_ts}"
@@ -327,6 +330,39 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
             
             final_cols = ['DESCRIPTION', 'COLOR', 'SIZES', 'Style_Stockcode', 'SOURCE_MARKED', 'SRP', 'Unit_of_Measure', 'EXP_DEL_MONTH', 'REMARKS', 'IMAGES', 'ONLINE ITEMS', 'PACKAGE LENGTH IN CM', 'PACKAGE WIDTH IN CM', 'PACKAGE HEIGHT IN CM', 'PACKAGE WEIGHT IN KG', 'PRODUCT LENGTH IN CM', 'PRODUCT WIDTH IN CM', 'PRODUCT HEIGHT IN CM', 'PRODUCT WEIGHT IN KG']
             img_col_name, sheet_name_val, header_row_idx, data_start_row = 'IMAGES', "Template", 0, 1
+        
+        elif chain_selection == "METRO"
+            merged_df['NO'] = range(1, len(merged_df) + 1)
+            merged_df['PRODUCT IMAGE'] = ""
+            merged_df['DEPT'] = "5926"
+            merged_df['CLASS'] = "1"
+            merged_df['SUBCLASS'] = "1"
+            merged_df['EAN-13'] = ""
+            merged_df['BRAND NAME'] = merged_df['Brand'].fillna('')
+            merged_df['ITEM DESCRIPTION'] = merged_df['Description'].fillna('')
+            merged_df['STOCK/ PRODUCT CODE'] = merged_df['Style_Stockcode'].fillna('')
+            
+            merged_df['COLOR'] = merged_df['Dial Color'].fillna('') if 'Dial Color' in merged_df.columns else ""
+            merged_df['SIZE'] = merged_df['Case _Frame Size'].fillna('') if 'Case _Frame Size' in merged_df.columns else ""
+            merged_df['MATERIAL/FABRIC'] = merged_df['Material'].fillna('') if 'Material' in merged_df.columns else ""
+            
+            merged_df['REGULAR PRICE'] = pd.to_numeric(merged_df['SRP'], errors='coerce').fillna(0)
+            merged_df['SALE PRICE'] = ""
+            merged_df['STOCK AVAILABILITY'] = "FEBRUARY ONWARDS"
+            
+            for i in range(27):
+                merged_df[f'Store_{i}'] = ""
+                
+            merged_df['TOTAL QTY'] = ""
+            merged_df['APPROVED'] = ""
+            merged_df['DISAPPROVED'] = ""
+            merged_df['SKU'] = ""
+            merged_df['UPC'] = ""
+            merged_df['MDSG REMARKS'] = ""
+            
+            final_cols = ['NO', 'PRODUCT IMAGE', 'DEPT', 'CLASS', 'SUBCLASS', 'EAN-13', 'BRAND NAME', 'ITEM DESCRIPTION', 'STOCK/ PRODUCT CODE', 'COLOR', 'SIZE', 'MATERIAL/FABRIC', 'REGULAR PRICE', 'SALE PRICE', 'STOCK AVAILABILITY'] + [f'Store_{i}' for i in range(27)] + ['TOTAL QTY', 'APPROVED', 'DISAPPROVED', 'SKU', 'UPC', 'MDSG REMARKS']
+            
+            img_col_name, sheet_name_val, header_row_idx, data_start_row = 'PRODUCT IMAGE', "New Item Sample Sheet", 6, 8
 
         else:
             # [SM/DEFAULT MAPPING BLOCK]
@@ -365,7 +401,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         global_writer = None
         
         loop_conn = None
-        if not is_multisheet_mode and chain_selection not in ["RDS", "GCAP", "KCC"]:
+        if not is_multisheet_mode and chain_selection not in ["RDS", "GCAP", "KCC", "ALTURAS", "METRO"]:
              loop_conn = get_mysql_conn()
 
         if is_multisheet_mode:
@@ -378,7 +414,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                 try:
                     filename = ""
                     if not is_multisheet_mode:
-                        if chain_selection in ["RDS", "GCAP", "KCC", "GGRAND", "ALTURAS"]:
+                        if chain_selection in ["RDS", "GCAP", "KCC", "GGRAND", "ALTURAS", "METRO"]:
                             filename = f"{filename_base} - {brand_name}.xlsx"
                         else:
                             f_dept, f_class = "0000", "0000"
@@ -416,7 +452,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                         excel_output = io.BytesIO()
                         current_writer = pd.ExcelWriter(excel_output, engine='xlsxwriter')
                         current_sheet_name = sheet_name_val
-                        data_start_row = 2 if chain_selection == "RDS" else (6 if chain_selection == "KCC" else (3 if chain_selection in ["GGRAND", "ALTURAS"] else 1))
+                        data_start_row = 8 if chain_selection == "METRO" else (2 if chain_selection == "RDS" else (6 if chain_selection == "KCC" else (3 if chain_selection in ["GGRAND", "ALTURAS"] else 1)))
 
                     bucket_df[final_cols].to_excel(current_writer, sheet_name=current_sheet_name, index=False, startrow=data_start_row, header=False)
                     workbook, worksheet = current_writer.book, current_writer.sheets[current_sheet_name]
@@ -500,6 +536,76 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                                 elif any(x in value for x in ["Size", "Color", "Price", "Cost", "Qty", "Stock", "UPC"]): worksheet.set_column(col_num, col_num, 13)
                                 else: worksheet.set_column(col_num, col_num, 18)
 
+                    elif chain_selection == "METRO":
+                        bold_fmt = workbook.add_format({'bold': True})
+                        hdr_fmt = workbook.add_format({'bold': True, 'bg_color': '#D9D9D9', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True, 'font_size': 9})
+                        red_hdr_fmt = workbook.add_format({'bold': True, 'bg_color': '#E6B8B7', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True, 'font_size': 9})
+                        rotate_hdr_fmt = workbook.add_format({'bold': True, 'bg_color': '#D9D9D9', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_size': 9, 'rotation': 90})
+                        
+                        worksheet.write(0, 0, "VENDOR NAME :", bold_fmt)
+                        worksheet.write(0, 2, f"[{company_selection}]", bold_fmt)
+                        worksheet.write(0, 10, "ITEM CLASSIFICATION (Please check):", bold_fmt)
+                        worksheet.write(1, 0, "DEPT/CATEGORY :", bold_fmt)
+                        worksheet.write(1, 2, "[Better Accesories]", bold_fmt)
+                        worksheet.write(1, 10, "[  x  ] REGULAR ITEM", bold_fmt)
+                        worksheet.write(2, 0, "BUYING MONTH/YEAR :", bold_fmt)
+                        worksheet.write(2, 2, f"[{time_now.strftime('%m/%Y')}]", bold_fmt)
+                        worksheet.write(2, 10, "[     ] PROMOTIONAL/SEASONAL ITEM  |  DURATION: __________________", bold_fmt)
+                        worksheet.write(4, 0, "To be filled up by Supplier:", bold_fmt)
+                        worksheet.write(4, 15, "Initial Quantity Allocation per Store (for Concession Items Only):", bold_fmt)
+                        worksheet.write(4, 42, "To be filled up by Metro Gaisano:", bold_fmt)
+                        worksheet.write(5, 0, "NEW ITEM DETAILS", bold_fmt)
+                        worksheet.write(5, 9, "PRODUCT ATTRIBUTES", bold_fmt)
+                        worksheet.write(5, 12, "PRICING", bold_fmt)
+                        worksheet.write(5, 14, "REMARKS", bold_fmt)
+                        
+                        dept_names = ['Colon', 'Mandaue', 'Ayala', 'Legazpi', 'Lucena', 'Market Market', 'Angeles', 'Alabang', 'Danao', 'Bacolod', 'Tacloban', 'Pasig', 'Baybay', 'Catbalogan', 'Imus']
+                        hyp_names = ['Toledo', 'Maasin', 'Talisay', 'Lapulapu', 'Colon', 'Mambaling', 'Calbayog', 'Carcar', 'Bogo', 'Naga-Camsur', 'Tagaytay', 'Mactan LG']
+                        store_names = dept_names + hyp_names
+                        dept_codes = ['2001', '2002', '2093', '2004', '2005', '2006', '2007', '2009', '2015', '2016', '2017', '2018', '2019', '2020', '2223']
+                        hyp_codes = ['2008', '2010', '6001', '6003', '6004', '6005', '6006', '6009', '6010', '6013', '2015', ''] 
+                        store_codes = dept_codes + hyp_codes
+                        
+                        worksheet.merge_range(5, 15, 5, 15 + len(dept_names) - 1, "Department Store", bold_fmt)
+                        worksheet.merge_range(5, 15 + len(dept_names), 5, 15 + len(store_names) - 1, "Hypermarket", bold_fmt)
+
+                        headers_row6 = ['NO', 'PRODUCT IMAGE', 'HIERARCHY', '', '', '', '', '', '', '', '', '', '', '', '']
+                        end_headers6 = ['Total Qty Allocation', 'APPROVED', 'DISAPPROVED', 'ITEM CODES', '', '']
+                        row6 = headers_row6 + store_codes + end_headers6
+                        
+                        headers_row7 = ['', '', 'DEPT', 'CLASS', 'SUBCLASS', 'EAN-13 (if_available)', 'BRAND NAME', 'ITEM DESCRIPTION ', 'STOCK/ PRODUCT CODE', 'COLOR', 'SIZE', 'MATERIAL/FABRIC', 'REGULAR PRICE', 'SALE PRICE (promo item only)', 'STOCK AVAILABILITY']
+                        end_headers7 = ['Qty', '', '', 'SKU', 'UPC', 'MDSG REMARKS']
+                        row7 = headers_row7 + store_names + end_headers7
+
+                        worksheet.set_row(6, 45)
+                        worksheet.set_row(7, 85)
+
+                        for col_num in range(len(row6)):
+                            val6 = row6[col_num]
+                            val7 = row7[col_num]
+                            
+                            is_store_col = (col_num >= 15 and col_num < 15 + len(store_names))
+                            
+                            if val6 == 'ITEM CODES' or val7 in ['SKU', 'UPC', 'MDSG REMARKS']:
+                                worksheet.write(6, col_num, val6, red_hdr_fmt)
+                                worksheet.write(7, col_num, val7, red_hdr_fmt)
+                            elif is_store_col:
+                                worksheet.write(6, col_num, val6, hdr_fmt)
+                                worksheet.write(7, col_num, val7, rotate_hdr_fmt)
+                            else:
+                                worksheet.write(6, col_num, val6, hdr_fmt)
+                                worksheet.write(7, col_num, val7, hdr_fmt)
+                            
+                            if col_num == 1: worksheet.set_column(col_num, col_num, 15)
+                            elif col_num == 7: worksheet.set_column(col_num, col_num, 35)
+                            elif col_num == 8: worksheet.set_column(col_num, col_num, 18)
+                            elif is_store_col: worksheet.set_column(col_num, col_num, 5)
+                            else: worksheet.set_column(col_num, col_num, 12)
+                            
+                        worksheet.merge_range(6, 2, 6, 4, "HIERARCHY", hdr_fmt)
+                        item_code_start = 15 + len(store_names) + 3 
+                        worksheet.merge_range(6, item_code_start, 6, item_code_start + 2, "ITEM CODES", red_hdr_fmt)
+
                     else:
                         header_fmt = workbook.add_format({'bold': True, 'bg_color': '#BDD7EE', 'border': 1, 'align': 'center'}) 
                         for col_num, value in enumerate(final_cols):
@@ -560,8 +666,8 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
              final_name = f"{filename_base}.xlsx"
              mimetype_val = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         else:
-             mimetype_val = 'application/zip'
-             if chain_selection in ["RDS", "RUSTANS", "GCAP", "KCC", "GGRAND", "ALTURAS"]: final_name = f"{filename_base}.zip"
+             mimetype_val = 'application/zip'-
+             if chain_selection in ["RDS", "RUSTANS", "GCAP", "KCC", "GGRAND", "ALTURAS", "METRO"]: final_name = f"{filename_base}.zip"
              elif chain_selection in ["WATSONS", "WATSONS ONLINE"]: final_name = final_zip_name
              else: final_name = f"SM{datetime.now().strftime('%m%d%Y')}.zip" if not final_zip_name or "SC_TEMP" in final_zip_name else final_zip_name
 
