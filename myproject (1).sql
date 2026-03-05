@@ -3,7 +3,7 @@
 -- https://www.phpmyadmin.net/
 --
 -- Host: 127.0.0.1
--- Generation Time: Jan 27, 2026 at 02:13 AM
+-- Generation Time: Mar 05, 2026 at 02:54 AM
 -- Server version: 10.4.32-MariaDB
 -- PHP Version: 8.2.12
 
@@ -38,7 +38,6 @@ CREATE TABLE `age_codes_rds` (
 --
 
 INSERT INTO `age_codes_rds` (`id`, `age_code`, `description`) VALUES
-(1, '22', 'December 2022'),
 (2, '23', 'January 2023'),
 (3, '24', 'February 2023'),
 (4, '25', 'March 2023'),
@@ -50,7 +49,8 @@ INSERT INTO `age_codes_rds` (`id`, `age_code`, `description`) VALUES
 (10, '31', 'September 2023'),
 (11, '32', 'October 2023'),
 (12, '33', 'November 2023'),
-(13, '34', 'December 2023');
+(13, '34', 'December 2023'),
+(14, '22', 'December 2023');
 
 -- --------------------------------------------------------
 
@@ -115,7 +115,8 @@ INSERT INTO `hierarchy_rds` (`id`, `dept`, `sdept`, `class`, `sclass`, `sclass_n
 (3, '710', '400', '409', '402', 'Watch Batteries'),
 (4, '710', '400', '409', '403', 'Watches Women\'s'),
 (5, '710', '400', '409', '404', 'Watches Men\'s'),
-(6, '710', '400', '409', '405', 'Watches Unisex');
+(6, '710', '400', '409', '405', 'Watches Unisex'),
+(7, '711', '404', '120', '121', 'Watch me whip');
 
 -- --------------------------------------------------------
 
@@ -283,11 +284,9 @@ CREATE TABLE `vendors` (
 
 INSERT INTO `vendors` (`vendor_code`, `vendor_name`) VALUES
 ('014353', 'ABOUT TIME CORP.'),
-('111111', 'CARLOS CORPORAT'),
-('120604', 'CARLO CORP.'),
-('144011', 'NEWTRENDS INTERNATIONAL CORP.'),
-('676767', 'EXAMPLE INC.'),
-('694267', 'INC. AH MAGNAYE');
+('120604', 'CARL MARX'),
+('123456', 'TPC'),
+('144011', 'NEWTRENDS INTERNATIONAL CORP.');
 
 -- --------------------------------------------------------
 
@@ -307,8 +306,10 @@ CREATE TABLE `vendors_rds` (
 --
 
 INSERT INTO `vendors_rds` (`id`, `company_name`, `vendor_code`, `mfg_part_no`) VALUES
-(1, 'Newtrends International Corp.', '703921', '7090517'),
-(2, 'About Time Corp.', '700194', '7091392');
+(8, 'NIC', '703921', '7090517'),
+(9, 'ATC', '700194', '7091392'),
+(10, 'TPC', '6767676', '67676767'),
+(11, 'test', '0928434', '320589-1');
 
 -- --------------------------------------------------------
 
@@ -330,12 +331,12 @@ CREATE TABLE `vendor_chain_mappings` (
 INSERT INTO `vendor_chain_mappings` (`id`, `chain_name`, `company_selection`, `vendor_code`) VALUES
 (1, 'SM', 'NIC', '144011'),
 (2, 'SM', 'ATC', '014353'),
-(3, 'RUSTANS', 'NIC', '703921'),
-(4, 'RUSTANS', 'ATC', '700194'),
-(5, 'SM', 'CARLOS_COR', '120604'),
-(6, 'SM', 'CARLO_CORP', '111111'),
-(7, 'SM', 'EXAMPLE', '676767'),
-(8, 'SM', 'INC._AH_MA', '694267');
+(10, 'SM', 'TPC', '123456'),
+(12, 'SM', 'CARL_MARX', '120604'),
+(14, 'RDS', 'NIC', '703921'),
+(15, 'RDS', 'ATC', '700194'),
+(16, 'RDS', 'TPC', '6767676'),
+(17, 'RDS', 'test', '0928434');
 
 --
 -- Indexes for dumped tables
@@ -397,13 +398,13 @@ ALTER TABLE `vendor_chain_mappings`
 -- AUTO_INCREMENT for table `age_codes_rds`
 --
 ALTER TABLE `age_codes_rds`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=14;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=15;
 
 --
 -- AUTO_INCREMENT for table `hierarchy_rds`
 --
 ALTER TABLE `hierarchy_rds`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=7;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=8;
 
 --
 -- AUTO_INCREMENT for table `price_points_rds`
@@ -415,13 +416,13 @@ ALTER TABLE `price_points_rds`
 -- AUTO_INCREMENT for table `vendors_rds`
 --
 ALTER TABLE `vendors_rds`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=3;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=12;
 
 --
 -- AUTO_INCREMENT for table `vendor_chain_mappings`
 --
 ALTER TABLE `vendor_chain_mappings`
-  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=9;
+  MODIFY `id` int(11) NOT NULL AUTO_INCREMENT, AUTO_INCREMENT=18;
 
 --
 -- Constraints for dumped tables
