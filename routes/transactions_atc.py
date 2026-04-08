@@ -331,7 +331,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
             final_cols = ['DESCRIPTION', 'COLOR', 'SIZES', 'Style_Stockcode', 'SOURCE_MARKED', 'SRP', 'Unit_of_Measure', 'EXP_DEL_MONTH', 'REMARKS', 'IMAGES', 'ONLINE ITEMS', 'PACKAGE LENGTH IN CM', 'PACKAGE WIDTH IN CM', 'PACKAGE HEIGHT IN CM', 'PACKAGE WEIGHT IN KG', 'PRODUCT LENGTH IN CM', 'PRODUCT WIDTH IN CM', 'PRODUCT HEIGHT IN CM', 'PRODUCT WEIGHT IN KG']
             img_col_name, sheet_name_val, header_row_idx, data_start_row = 'IMAGES', "Template", 0, 1
         
-        elif chain_selection == "METRO"
+        elif chain_selection == "METRO":
             merged_df['NO'] = range(1, len(merged_df) + 1)
             merged_df['PRODUCT IMAGE'] = ""
             merged_df['DEPT'] = "5926"
@@ -666,7 +666,7 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
              final_name = f"{filename_base}.xlsx"
              mimetype_val = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
         else:
-             mimetype_val = 'application/zip'-
+             mimetype_val = 'application/zip'
              if chain_selection in ["RDS", "RUSTANS", "GCAP", "KCC", "GGRAND", "ALTURAS", "METRO"]: final_name = f"{filename_base}.zip"
              elif chain_selection in ["WATSONS", "WATSONS ONLINE"]: final_name = final_zip_name
              else: final_name = f"SM{datetime.now().strftime('%m%d%Y')}.zip" if not final_zip_name or "SC_TEMP" in final_zip_name else final_zip_name
