@@ -19,7 +19,7 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:@localhost/myproje
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize DB with App
-db.init_app(app)a
+db.init_app(app)
 # --- REGISTER BLUEPRINTS ---
 app.register_blueprint(vendor_bp)
 app.register_blueprint(hierarchy_bp)
