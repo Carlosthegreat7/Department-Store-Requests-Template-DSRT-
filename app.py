@@ -116,16 +116,33 @@ def admin_management():
 
 @app.route('/admin/audit', methods=['GET'])
 @loggedin_required()
+# @admin_required()  <-- Strongly recommended to implement a role check like this
 def audit_tab():
-    # Fetch all logs, ordering by the most recent first
-    logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).all()
-    return render_template('audit_log.html', logs=logs)
+    # 1. Check admin privileges (if you don't have a decorator for it)
+    # if not current_user.is_admin:
+    #     abort(403) 
 
+    # 2. Get the current page from the URL query string (default is page 1)
+    page = request.args.get('page', 1, type=int)
+    
+    # 3. Paginate the query instead of fetching .all()
+    # Adjust per_page to whatever fits your UI best
+    pagination = AuditLog.query.order_by(AuditLog.timestamp.desc()).paginate(
+        page=page, per_page=50, error_out=False
+    )
+    
+    # 4. Pass the items and the pagination object to the template
+    return render_template(
+        'audit_log.html', 
+        logs=pagination.items, 
+        pagination=pagination
+    )
 
 if __name__ == '__main__':
-    # Use this context only once if you need to create tables automatically
-    # with app.app_context():
-    #     db.create_all()
-    app.run(debug=True)
+    # Use environment variables to control debug mode instead of hardcoding True
+    import os
+    is_debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+    
+    app.run(debug=is_debug)
 
 # CarlosTheGreat was here :)
