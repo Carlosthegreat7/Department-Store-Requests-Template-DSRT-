@@ -1,7 +1,7 @@
 from flask import session, jsonify, request, render_template, redirect, url_for, flash
 from portal import app, loggedin_required
 from extensions import db
-from models import Vendor, Brand, SubClass, VendorRDS, HierarchyRDS, PricePointRDS, AgeCodeRDS
+from models import Vendor, Brand, SubClass, VendorRDS, HierarchyRDS, PricePointRDS, AgeCodeRDS, AuditLog
 from datetime import datetime, timedelta, date
 import ldap
 import pyodbc
@@ -12,7 +12,6 @@ from routes.hierarchy import hierarchy_bp
 from routes.subclass import subclass_bp
 from routes.transactions import transactions_bp
 from routes.rds_mng import rds_mng_bp
-
 
 # --- DATABASE CONFIGURATION ---
 app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:@localhost/myproject'
@@ -31,6 +30,13 @@ app.register_blueprint(rds_mng_bp)
 # --- HELPERS ---
 def generate_earliest_missing_date(days):
     return (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
+
+def log_user_action(action_description):
+    """Helper function to record an action to the AuditLog."""
+    username = session.get('sdr_curr_user_username', 'Unknown/System')
+    new_log = AuditLog(user=username, action=action_description, timestamp=datetime.now())
+    db.session.add(new_log)
+    db.session.commit()
 
 # --- CORE ROUTES (LDAP & AUTH) ---
 
@@ -65,6 +71,10 @@ def index():
                         'sdr_loggedin': True,
                         'sdr_usertype': 'Head Office'
                     })
+                    
+                    # Log the successful login
+                    log_user_action("User successfully logged in")
+                    
                     return redirect(url_for('index', _external=True))
                 except ldap.INVALID_CREDENTIALS:
                     flash("Invalid Domain Login")
@@ -81,6 +91,7 @@ def index():
 @app.route('/logout')
 @loggedin_required()
 def logout():
+    log_user_action("User logged out")
     session.clear()
     return redirect(url_for('index', _external=True))
 
@@ -100,6 +111,16 @@ def admin_management():
                                Brand.class_code
                            ).all(), 
                            subclasses=SubClass.query.all())
+
+# --- AUDIT LOG ROUTE ---
+
+@app.route('/admin/audit', methods=['GET'])
+@loggedin_required()
+def audit_tab():
+    # Fetch all logs, ordering by the most recent first
+    logs = AuditLog.query.order_by(AuditLog.timestamp.desc()).all()
+    return render_template('audit_log.html', logs=logs)
+
 
 if __name__ == '__main__':
     # Use this context only once if you need to create tables automatically
