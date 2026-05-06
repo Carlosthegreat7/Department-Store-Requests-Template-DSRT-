@@ -1,7 +1,7 @@
 from flask import session, jsonify, request, render_template, redirect, url_for, flash
 from portal import app, loggedin_required
 from extensions import db
-from models import Vendor, Brand, SubClass, VendorRDS, HierarchyRDS, PricePointRDS, AgeCodeRDS, AuditLog
+from models import Vendor, Brand, SubClass, VendorRDS, HierarchyRDS, PricePointRDS, AgeCodeRDS
 from datetime import datetime, timedelta, date
 import ldap
 import pyodbc
@@ -30,13 +30,6 @@ app.register_blueprint(rds_mng_bp)
 # --- HELPERS ---
 def generate_earliest_missing_date(days):
     return (date.today() - timedelta(days=days)).strftime("%Y-%m-%d")
-
-def log_user_action(action_description):
-    """Helper function to record an action to the AuditLog."""
-    username = session.get('sdr_curr_user_username', 'Unknown/System')
-    new_log = AuditLog(user=username, action=action_description, timestamp=datetime.now())
-    db.session.add(new_log)
-    db.session.commit()
 
 # --- CORE ROUTES (LDAP & AUTH) ---
 
@@ -72,9 +65,6 @@ def index():
                         'sdr_usertype': 'Head Office'
                     })
                     
-                    # Log the successful login
-                    log_user_action("User successfully logged in")
-                    
                     return redirect(url_for('index', _external=True))
                 except ldap.INVALID_CREDENTIALS:
                     flash("Invalid Domain Login")
@@ -91,7 +81,6 @@ def index():
 @app.route('/logout')
 @loggedin_required()
 def logout():
-    log_user_action("User logged out")
     session.clear()
     return redirect(url_for('index', _external=True))
 
@@ -112,37 +101,9 @@ def admin_management():
                            ).all(), 
                            subclasses=SubClass.query.all())
 
-# --- AUDIT LOG ROUTE ---
-
-@app.route('/admin/audit', methods=['GET'])
-@loggedin_required()
-# @admin_required()  <-- Strongly recommended to implement a role check like this
-def audit_tab():
-    # 1. Check admin privileges (if you don't have a decorator for it)
-    # if not current_user.is_admin:
-    #     abort(403) 
-
-    # 2. Get the current page from the URL query string (default is page 1)
-    page = request.args.get('page', 1, type=int)
-    
-    # 3. Paginate the query instead of fetching .all()
-    # Adjust per_page to whatever fits your UI best
-    pagination = AuditLog.query.order_by(AuditLog.timestamp.desc()).paginate(
-        page=page, per_page=50, error_out=False
-    )
-    
-    # 4. Pass the items and the pagination object to the template
-    return render_template(
-        'audit_log.html', 
-        logs=pagination.items, 
-        pagination=pagination
-    )
-
 if __name__ == '__main__':
-    # Use environment variables to control debug mode instead of hardcoding True
     import os
     is_debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
-    
     app.run(debug=is_debug)
 
 # CarlosTheGreat was here :)
