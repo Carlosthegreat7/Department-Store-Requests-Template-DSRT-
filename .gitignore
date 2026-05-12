@@ -1,8 +1,16 @@
-# Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
 *$py.class
-
+flask/
+__pycache__/
+*.pyc
+python_ldap-3.3.1-cp38-cp38-win_amd64.whl
+venv/
+env/
+.venv/
+flask/
+__pycache__/
+*.pyc
 # C extensions
 *.so
 

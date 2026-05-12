@@ -425,3 +425,151 @@ th.sort-desc::after { content: '\f0dd'; opacity: 1; }
     animation: spin 0.8s cubic-bezier(0.68, -0.55, 0.27, 1.55) infinite;
 }
 @keyframes spin { 100% { transform: rotate(360deg); } }
+
+/* ==============================================================
+   NEW DESIGNS FOR BARCODE VALIDATION PAGE
+   ============================================================== */
+
+/* Back Button Hover */
+.back-btn-bento:hover {
+    background: var(--primary-color) !important;
+    transform: translateX(-3px);
+}
+.back-btn-bento:hover i {
+    color: white !important;
+}
+
+/* Bento Info Alert */
+.alert-bento-info {
+    background: rgba(67, 97, 238, 0.05);
+    border: 1px solid rgba(67, 97, 238, 0.15);
+    border-radius: var(--radius-md);
+    padding: 18px 24px;
+    display: flex;
+    align-items: flex-start;
+    gap: 15px;
+    color: var(--dark-text);
+    box-shadow: inset 0 2px 10px rgba(255,255,255,0.5);
+}
+.alert-bento-info i {
+    color: var(--primary-color);
+    font-size: 1.5rem;
+    margin-top: 2px;
+}
+
+/* Bento Form Controls (Select & Inputs) */
+.form-control-bento {
+    height: 55px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--glass-border);
+    background: rgba(255, 255, 255, 0.7);
+    font-weight: 500;
+    color: var(--dark-text);
+    transition: var(--transition);
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
+}
+.form-control-bento:focus {
+    background: #fff;
+    border-color: var(--primary-color);
+    box-shadow: 0 0 0 4px rgba(67, 97, 238, 0.15);
+    outline: none;
+}
+
+/* Custom File Input Styling */
+.custom-file-bento {
+    height: 55px;
+}
+.custom-file-bento .custom-file-label {
+    height: 55px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--glass-border);
+    background: rgba(255, 255, 255, 0.7);
+    font-weight: 500;
+    color: var(--muted-text);
+    cursor: pointer;
+    transition: var(--transition);
+    display: flex;
+    align-items: center;
+    padding-left: 20px;
+    box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);
+}
+.custom-file-bento .custom-file-label::after {
+    display: none; /* Hides the ugly default "Browse" button */
+}
+.custom-file-bento:hover .custom-file-label {
+    background: white;
+    border-color: var(--primary-color);
+}
+.custom-file-bento .custom-file-label.selected {
+    color: var(--dark-text);
+    background: white;
+    border-color: rgba(67, 97, 238, 0.4);
+}
+
+/* Bento Table Styling */
+.table-bento {
+    margin-bottom: 0;
+    background: transparent;
+}
+.table-bento thead {
+    background: rgba(67, 97, 238, 0.04);
+}
+.table-bento th {
+    font-weight: 700;
+    font-size: 0.8rem;
+    letter-spacing: 1px;
+    color: var(--muted-text);
+    border-top: none !important;
+    border-bottom: 1px solid rgba(0,0,0,0.05) !important;
+    text-transform: uppercase;
+    padding: 16px 12px;
+}
+.table-bento td {
+    vertical-align: middle;
+    font-size: 0.95rem;
+    border-top: 1px solid rgba(0,0,0,0.03);
+    padding: 16px 12px;
+    transition: background-color 0.2s ease;
+}
+.table-bento tbody tr:hover td {
+    background-color: rgba(67, 97, 238, 0.03);
+}
+
+/* Soft Badges */
+.badge-bento-light {
+    background: rgba(67, 97, 238, 0.1);
+    color: var(--primary-color);
+    font-weight: 700;
+    border: 1px solid rgba(67, 97, 238, 0.2);
+}
+.bg-warning-light {
+    background-color: #fff3cd;
+    color: #856404;
+    border: 1px solid #ffeeba;
+}
+
+/* Icon Squares */
+.icon-square-bento {
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    background: rgba(67, 97, 238, 0.1);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* Smooth Entrance Animation */
+@keyframes fadeInUp {
+    from {
+        opacity: 0;
+        transform: translateY(30px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}
+.animate-fade-in-up {
+    animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}

@@ -1,0 +1,251 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="bg-blob blob-purple"></div>
+<div class="bg-blob blob-blue"></div>
+
+<div class="container pb-5">
+    <div class="d-flex align-items-center mb-4 mt-3">
+        <a href="{{ url_for('index') }}" class="btn btn-light rounded-circle shadow-sm mr-3 back-btn-bento" style="width: 48px; height: 48px; display: inline-flex; align-items: center; justify-content: center; transition: all 0.3s ease;">
+            <i class="fas fa-arrow-left text-primary" style="font-size: 1.2rem;"></i>
+        </a>
+        <div>
+            <h2 style="font-weight: 900; letter-spacing: -1px; color: var(--dark-text); margin-bottom: 2px;">Validate Barcode</h2>
+            <p class="text-muted mb-0 font-weight-500">Upload chain templates to extract and verify SKUs.</p>
+        </div>
+    </div>
+
+    <div class="card border-0 shadow-sm mb-4 bento-card" style="background: var(--card-bg); backdrop-filter: blur(25px); border-radius: var(--radius-lg);">
+        <div class="card-body p-4 p-md-5">
+            <form id="uploadForm">
+                
+                <div class="alert-bento-info mb-4">
+                    <i class="fas fa-info-circle"></i>
+                    <div>
+                        <strong>Important:</strong> Please ensure your Excel file only contains <strong>one sheet</strong> before uploading.<br>
+                        <span class="text-muted small"><em>(In Excel: Right-click the tab > Move or Copy > To book: (new book) > Save As)</em></span>
+                    </div>
+                </div>
+
+                <div class="row align-items-end form-row-spacing">
+                    <div class="col-md-4 mb-3 mb-md-0">
+                        <label class="font-weight-bold text-muted small text-uppercase mb-2">Select Chain</label>
+                        <select name="template_type" id="template_type" class="form-control form-control-bento" required>
+                            <option value="" disabled selected>Choose a department store...</option>
+                            <option value="SM">SM (Index Based)</option>
+                            <option value="RDS">Robinsons (RDS)</option>
+                            <option value="GCAP">GCAP</option>
+                            <option value="ALTURAS">Alturas</option>
+                        </select>
+                    </div>
+                    
+                    <div class="col-md-5 mb-3 mb-md-0">
+                        <label class="font-weight-bold text-muted small text-uppercase mb-2">Upload Template</label>
+                        <div class="custom-file custom-file-bento">
+                            <input type="file" class="custom-file-input" id="skuFile" name="file" accept=".xlsx, .xls" required>
+                            <label class="custom-file-label d-flex align-items-center text-muted" for="skuFile">
+                                <i class="fas fa-cloud-upload-alt mr-2"></i> Choose file...
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="col-md-3 mt-3 mt-md-0">
+                        <button type="submit" class="btn-bento-primary w-100 shadow-sm" id="processBtn">
+                            <i class="fas fa-magic mr-2"></i> Extract Data
+                        </button>
+                    </div>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div id="resultsContainer" style="display: none;">
+        <div class="card border-0 shadow-sm bento-card" style="background: var(--card-bg); backdrop-filter: blur(25px); border-radius: var(--radius-lg); overflow: hidden;">
+            
+            <div class="card-header bg-white border-0 py-4 px-4 d-flex justify-content-between align-items-center" style="border-bottom: 1px solid rgba(0,0,0,0.03) !important;">
+                <h5 class="font-weight-bold mb-0 d-flex align-items-center">
+                    <div class="icon-square-bento mr-3"><i class="fas fa-table text-primary"></i></div>
+                    Extracted Data Preview
+                </h5>
+                <span class="badge badge-pill badge-bento-light px-3 py-2" id="rowCountBadge">0 Rows Found</span>
+            </div>
+            
+            <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+                <table class="table table-bento mb-0">
+                    <thead>
+                        <tr>
+                            <th class="px-4">#</th>
+                            <th>ITEM CODE</th>
+                            <th>BARCODE (BAR_STDRD)</th>
+                            <th>STATUS</th>
+                            <th>REASON</th>
+                            <th id="extraHeaders"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultsTableBody">
+                        </tbody>
+                </table>
+            </div>
+            
+            <div class="card-footer bg-white border-0 py-4 px-4 d-flex justify-content-between align-items-center" style="border-top: 1px solid rgba(0,0,0,0.03) !important;">
+                <span class="text-warning small font-weight-bold bg-warning-light px-3 py-2 rounded-pill">
+                    <i class="fas fa-shield-alt mr-1"></i> Read-only mode: Updates disabled.
+                </span>
+                <div>
+                    <button class="btn btn-light rounded-pill px-4 mr-2 font-weight-bold shadow-sm" onclick="hideResults()">Clear</button>
+                    <button id="commitBtn" type="button" class="btn btn-success rounded-pill px-4 shadow-sm font-weight-bold" onclick="commitToDatabase()">
+                        <i class="fas fa-cloud-upload-alt mr-1"></i> Commit to Database
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+// --- Custom File Input Label Fix ---
+$('.custom-file-input').on('change', function() {
+    let fileName = $(this).val().split('\\').pop();
+    $(this).next('.custom-file-label').addClass("selected").html('<i class="fas fa-file-excel mr-2 text-success"></i>' + fileName);
+});
+
+// --- Hide Results Helper ---
+function hideResults() {
+    const container = document.getElementById('resultsContainer');
+    container.classList.remove('animate-fade-in-up');
+    container.style.display = 'none';
+    document.getElementById('uploadForm').reset();
+    $('.custom-file-label').html('<i class="fas fa-cloud-upload-alt mr-2"></i> Choose file...');
+}
+
+// --- Form Submission ---
+document.getElementById('uploadForm').addEventListener('submit', function(e) {
+    e.preventDefault();
+
+    const fileInput   = document.getElementById('skuFile');
+    const templateType = document.getElementById('template_type').value;
+    const processBtn  = document.getElementById('processBtn');
+
+    if (!fileInput.files.length || !templateType) return;
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    formData.append('template_type', templateType);
+
+    processBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Processing...';
+    processBtn.disabled  = true;
+    
+    const resultsContainer = document.getElementById('resultsContainer');
+    resultsContainer.style.display = 'none';
+    resultsContainer.classList.remove('animate-fade-in-up');
+
+    fetch("{{ url_for('transactions.parse_sku_file') }}", {
+        method: 'POST',
+        body: formData
+    })
+    .then(r => r.json())
+    .then(data => {
+        processBtn.innerHTML = '<i class="fas fa-magic mr-2"></i> Extract Data';
+        processBtn.disabled  = false;
+
+        if (data.error) { alert('Error: ' + data.error); return; }
+
+        // Cache for commit step
+        window.lastParsedData  = data.data;
+        window.lastTemplateType = templateType;
+
+        const tbody       = document.getElementById('resultsTableBody');
+        const extraHeaders = document.getElementById('extraHeaders');
+        tbody.innerHTML   = '';
+
+        if (templateType === 'ALTURAS') {
+            extraHeaders.innerHTML = 'DESCRIPTION <span class="mx-1 text-muted">|</span> VENDOR <span class="mx-1 text-muted">|</span> DIV';
+        } else {
+            extraHeaders.innerHTML = '';
+        }
+
+        // Status badge style map
+        const statusBadge = {
+            'ok':        '<span class="badge badge-primary px-3 py-2 rounded-pill shadow-sm"><i class="fas fa-check mr-1"></i> OK</span>',
+            'update':    '<span class="badge badge-success px-3 py-2 rounded-pill shadow-sm"><i class="fas fa-sync-alt mr-1"></i> WILL UPDATE</span>',
+            'conflict':  '<span class="badge badge-danger px-3 py-2 rounded-pill shadow-sm"><i class="fas fa-exclamation-triangle mr-1"></i> CONFLICT</span>',
+            'rejected':  '<span class="badge badge-secondary px-3 py-2 rounded-pill shadow-sm"><i class="fas fa-times mr-1"></i> REJECTED</span>',
+            'duplicate': '<span class="badge badge-warning px-3 py-2 rounded-pill shadow-sm text-dark"><i class="fas fa-copy mr-1"></i> DUPLICATE</span>',
+        };
+
+        data.data.forEach((row, index) => {
+            let extraHtml = templateType === 'ALTURAS'
+                ? `<td><span class="text-dark">${row.DESC || '-'}</span> <span class="mx-1 text-muted">|</span> <span class="text-primary">${row.VENDOR || '-'}</span> <span class="mx-1 text-muted">|</span> <span class="text-info">${row.DIV || '-'}</span></td>`
+                : `<td>-</td>`;
+
+            tbody.innerHTML += `
+                <tr>
+                    <td class="text-muted px-4">${index + 1}</td>
+                    <td class="font-weight-bold text-dark">${row.ITEM_CODE}</td>
+                    <td class="text-primary font-weight-bold" style="letter-spacing: 1px;">${row.BARCODE}</td>
+                    <td>${statusBadge[row.status] || row.status}</td>
+                    <td class="text-muted small"><em>${row.reason || ''}</em></td>
+                    ${extraHtml}
+                </tr>
+            `;
+        });
+
+        // Summary badges
+        const s = data.summary;
+        document.getElementById('rowCountBadge').innerHTML =
+            `<i class="fas fa-database mr-1"></i> ${data.row_count} Rows &nbsp;|&nbsp;
+             <span class="text-success"><i class="fas fa-sync-alt mr-1"></i> ${s.update} to update</span> &nbsp;|&nbsp;
+             <span class="text-danger"><i class="fas fa-exclamation-triangle mr-1"></i> ${s.conflict} conflicts</span> &nbsp;|&nbsp;
+             <span class="text-secondary"><i class="fas fa-times mr-1"></i> ${s.rejected} rejected</span>`;
+
+        // Show and animate
+        resultsContainer.style.display = 'block';
+        resultsContainer.classList.add('animate-fade-in-up');
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        alert('A network or server error occurred.');
+        processBtn.innerHTML = '<i class="fas fa-magic mr-2"></i> Extract Data';
+        processBtn.disabled  = false;
+    });
+});
+
+// --- Commit to DB ---
+function commitToDatabase() {
+    const commitBtn = document.getElementById('commitBtn');
+
+    // Count how many rows will actually be committed
+    const toCommit = (window.lastParsedData || []).filter(r => r.status === 'update');
+    if (toCommit.length === 0) {
+        alert('Nothing to commit — no rows have status "WILL UPDATE".');
+        return;
+    }
+
+    if (!confirm(`Commit ${toCommit.length} rows to the database?`)) return;
+
+    commitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Saving...';
+    commitBtn.disabled  = true;
+
+    fetch("{{ url_for('transactions.commit_barcodes') }}", {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            data:          window.lastParsedData,
+            template_type: window.lastTemplateType
+        })
+    })
+    .then(r => r.json())
+    .then(data => {
+        commitBtn.innerHTML = '<i class="fas fa-cloud-upload-alt mr-1"></i> Commit to Database';
+        commitBtn.disabled  = false;
+        if (data.error) { alert('Error: ' + data.error); return; }
+        alert(`✅ ${data.committed} rows updated.\n⏭️ ${data.skipped} rows skipped.\n${data.message || ''}`);
+    })
+    .catch(() => {
+        alert('A network error occurred.');
+        commitBtn.innerHTML = '<i class="fas fa-cloud-upload-alt mr-1"></i> Commit to Database';
+        commitBtn.disabled  = false;
+    });
+}
+</script>
+{% endblock %}

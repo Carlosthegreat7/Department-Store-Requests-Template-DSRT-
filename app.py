@@ -4,6 +4,7 @@ from extensions import db
 from models import Vendor, Brand, SubClass, VendorRDS, HierarchyRDS, PricePointRDS, AgeCodeRDS, AuditLog
 from datetime import datetime, timedelta, date
 import ldap
+import pymysql
 import pyodbc
 
 # --- BLUEPRINT IMPORTS (routes folder)---
@@ -18,6 +19,8 @@ app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:@localhost/myproje
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 # Initialize DB with App
+db.init_app(app)
+
 db.init_app(app)
 
 # --- REGISTER BLUEPRINTS ---
@@ -139,6 +142,9 @@ def audit_tab():
     )
 
 if __name__ == '__main__':
+    import os
+    is_debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
+    app.run(debug=is_debug)
     # Use environment variables to control debug mode instead of hardcoding True
     import os
     is_debug = os.environ.get('FLASK_DEBUG', 'False').lower() == 'true'
