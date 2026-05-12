@@ -4,6 +4,7 @@ from extensions import db
 from models import Vendor, Brand, SubClass, VendorRDS, HierarchyRDS, PricePointRDS, AgeCodeRDS
 from datetime import datetime, timedelta, date
 import ldap
+import pymysql
 import pyodbc
 
 # --- BLUEPRINT IMPORTS (routes folder)---
@@ -12,6 +13,7 @@ from routes.hierarchy import hierarchy_bp
 from routes.subclass import subclass_bp
 from routes.transactions import transactions_bp
 from routes.rds_mng import rds_mng_bp
+
 
 # --- DATABASE CONFIGURATION ---
 app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:@localhost/myproject'
