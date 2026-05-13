@@ -21,8 +21,6 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 # Initialize DB with App
 db.init_app(app)
 
-db.init_app(app)
-
 # --- REGISTER BLUEPRINTS ---
 app.register_blueprint(vendor_bp)
 app.register_blueprint(hierarchy_bp)
