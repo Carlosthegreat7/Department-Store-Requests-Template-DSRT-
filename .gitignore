@@ -174,3 +174,12 @@ __marimo__/
 Thumbs.db
 desktop.ini
 $RECYCLE.BIN/
+
+
+# =========================
+# Testing Files
+# =========================
+check_table.py
+test_network.py
+test.py
+myproject (1).sql
