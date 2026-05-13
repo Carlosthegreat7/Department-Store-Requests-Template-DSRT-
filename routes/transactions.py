@@ -1,18 +1,21 @@
-import os
-import pyodbc
-import pandas as pd
 import io
 import json
-import zipfile
-import traceback
 import logging
-import mysql.connector
-import time
+import os
+import re
 import shutil
 import tempfile
+import time
+import traceback
+import zipfile
 from datetime import datetime, timedelta
+from typing import Optional
+
+import mysql.connector
+import pandas as pd
+import pyodbc
+from flask import Blueprint, make_response, render_template, request, jsonify, Response, send_file, session
 from PIL import Image
-from flask import Blueprint, render_template, request, jsonify, session, send_file, make_response, Response
 from werkzeug.utils import secure_filename
 
 # Import ATC script
@@ -36,45 +39,51 @@ except ImportError:
 
 transactions_bp = Blueprint('transactions', __name__)
 
+def _is_blank(val: str) -> bool:
+    """Return True if a string value represents an empty/missing cell."""
+    return val.lower() in ('', 'nan', 'none')
+
+
+
+
 NETWORK_IMAGE_PATH = r'\\mgsvr03\catalog'
+
+
+def _best_odbc_driver() -> Optional[str]:
+    """Return the highest-priority installed SQL Server ODBC driver, or None."""
+    drivers = [d for d in pyodbc.drivers() if 'ODBC Driver' in d and 'SQL Server' in d]
+    for version in ('18', '17', '13'):
+        for d in drivers:
+            if version in d:
+                return d
+    return drivers[0] if drivers else None
 
 
 # ==============================================================
 # SHARED: get a direct Windows-Auth connection to Barcodes DB
-# FIXED: Cleaned up connection string for ODBC 18 compatibility
 # ==============================================================
 def _get_barcodes_conn():
-    conn, cursor = None, None
-
-    # Primary: direct Windows Auth to MGSVR14 (Bypasses SQLconnect hang)
-    try:
-        drivers = [d for d in pyodbc.drivers() if 'ODBC Driver' in d and 'SQL Server' in d]
-        driver  = next((d for v in ['18', '17', '13'] for d in drivers if v in d), drivers[0] if drivers else None)
-        
-        if driver:
-            # Clean, minimal connection string
+    # Primary: direct Windows Auth to MGSVR14 (bypasses SQLconnect hang)
+    driver = _best_odbc_driver()
+    if driver:
+        try:
             conn_str = f"DRIVER={{{driver}}};SERVER=MGSVR14;DATABASE=Barcodes;Trusted_Connection=yes;"
-            
-            # ODBC 18 strictly requires TrustServerCertificate for internal networks
-            if "18" in driver:
-                conn_str += "TrustServerCertificate=yes;"
-                
+            if '18' in driver:
+                conn_str += 'TrustServerCertificate=yes;'
             conn = pyodbc.connect(conn_str, timeout=5)
-            cursor = conn.cursor()
-            logger.info("Barcodes DB: connected via direct pyodbc")
-            return conn, cursor
-            
-    except Exception as e:
-        logger.warning(f"Barcodes DB direct connection failed: {e}")
+            logger.info('Barcodes DB: connected via direct pyodbc')
+            return conn, conn.cursor()
+        except Exception as e:
+            logger.warning(f'Barcodes DB direct connection failed: {e}')
 
     # Fallback: via SQLconnect registry
     if SQLconnect:
         try:
-            c, cur, _ = SQLconnect("Barcodes", "DSRT")
+            c, cur, _ = SQLconnect('Barcodes', 'DSRT')
             if c is not None:
                 return c, cur
         except Exception as e:
-            logger.error(f"SQLconnect fallback failed: {e}")
+            logger.error(f'SQLconnect fallback failed: {e}')
 
     return None, None
 
@@ -244,7 +253,7 @@ def parse_sku_template(file_path: str, template_type: str) -> list:
             
             for file_col, target_key in col_map.items():
                 val = str(row[file_col]).strip()
-                if val.lower() not in ['nan', 'none', '']:
+                if val.lower() not in ('nan', 'none', ''):
                     row_dict[target_key] = val
                     has_data = True
             
@@ -270,14 +279,13 @@ def normalize_rows(parsed_data: list) -> list:
         item_raw = str(row.get('ITEM_CODE', '')).strip()
         bar_raw  = str(row.get('BARCODE', '')).strip()
 
-        # Strip trailing ".0" float artifact more safely
-        import re as _re
-        bar_raw  = _re.sub(r'\.0+$', '', bar_raw)
-        item_raw = _re.sub(r'\.0+$', '', item_raw)
+        # Strip trailing ".0" float artifact (e.g. Excel reads "007890" as 7890.0)
+        bar_raw  = re.sub(r'\.0+$', '', bar_raw)
+        item_raw = re.sub(r'\.0+$', '', item_raw)
 
         item_chk = item_raw.lower()
         bar_chk  = bar_raw.lower()
-        if item_chk in ['', 'nan', 'none'] and bar_chk in ['', 'nan', 'none']:
+        if _is_blank(item_chk) and _is_blank(bar_chk):
             continue
 
         item_clean = item_raw.upper()
@@ -322,10 +330,10 @@ def validate_rows(parsed_data: list, template_type: str) -> tuple:
         result    = dict(row)
 
         # VR-002: Empty fields
-        if not barcode or barcode.lower() in ['nan', 'none']:
+        if not barcode or _is_blank(barcode.lower()):
             result.update({'status': 'rejected', 'reason': 'VR-002: Barcode is empty'}); results.append(result); continue
 
-        if not item_code or item_code.lower() in ['nan', 'none']:
+        if not item_code or _is_blank(item_code.lower()):
             result.update({'status': 'rejected', 'reason': 'VR-002: Item Code is empty'}); results.append(result); continue
 
         # VR-004: Duplicate barcode within this specific upload file
@@ -434,7 +442,7 @@ def commit_rows_to_db(rows: list, committed_by: str) -> dict:
     except Exception as e:
         errors.append({'BARCODE': 'BATCH', 'error': str(e)})
         try: conn.rollback()
-        except: pass
+        except Exception: pass
     finally:
         conn.close()
 
@@ -694,11 +702,10 @@ def get_audit_log():
 # We use files instead of variables so this works even if the server uses multiple worker processes.
 
 PROGRESS_DIR = os.path.join(os.getcwd(), 'temp_progress')
-if not os.path.exists(PROGRESS_DIR):
-    os.makedirs(PROGRESS_DIR)
+os.makedirs(PROGRESS_DIR, exist_ok=True)
 
-def save_progress(req_id, current, total, status):
-    """Writes progress to a JSON file accessible by all workers."""
+def save_progress(req_id: str, current: int, total: int, status: str) -> None:
+    """Write progress state to a JSON file readable by all worker processes."""
     try:
         file_path = os.path.join(PROGRESS_DIR, f"{req_id}.json")
         data = {"current": current, "total": total, "status": status}
@@ -707,8 +714,8 @@ def save_progress(req_id, current, total, status):
     except Exception as e:
         logger.error(f"Failed to write progress: {e}")
 
-def get_progress_data(req_id):
-    """Reads progress from the JSON file."""
+def get_progress_data(req_id: str) -> dict:
+    """Read progress state from the JSON file written by save_progress."""
     try:
         file_path = os.path.join(PROGRESS_DIR, f"{req_id}.json")
         if os.path.exists(file_path):
@@ -723,17 +730,23 @@ def get_progress_data(req_id):
 def get_mysql_conn():
     try:
         return mysql.connector.connect(
-            host="localhost",
-            user="root",
-            password="",
-            database="myproject"
+            host=os.getenv('MYSQL_HOST', 'localhost'),
+            user=os.getenv('MYSQL_USER', 'root'),
+            password=os.getenv('MYSQL_PASSWORD', ''),
+            database=os.getenv('MYSQL_DB', 'myproject'),
         )
     except Exception:
         return None
 
-def build_image_cache(base_path):
+def _safe_sheet_name(name: str, max_len: int = 31) -> str:
+    """Strip characters Excel forbids in sheet names and truncate to max_len."""
+    return re.sub(r'[/\\?*\[\]:]', '', str(name))[:max_len]
+
+
+def build_image_cache(base_path: str) -> dict:
+    """Walk *base_path* and index image files by their first character for fast lookup."""
     cache = {}
-    extensions = {'.jpg', '.JPG', '.jpeg', '.png'}
+    extensions = {'.jpg', '.jpeg', '.png'}
     try:
         if os.path.exists(base_path):
             for root, _, files in os.walk(base_path):
@@ -750,11 +763,14 @@ def build_image_cache(base_path):
         logger.error(f"Cache build error: {e}")
     return cache
 
-def find_image_in_cache(cache, item_no):
+def find_image_in_cache(cache: dict, item_no: str) -> Optional[str]:
+    """Return the full path of the image for *item_no*, or None if not found."""
     item_no_lower = str(item_no).strip().lower()
-    if not item_no_lower: return None
+    if not item_no_lower:
+        return None
     first_char = item_no_lower[0]
     bucket = cache.get(first_char, [])
+    # Exact match first, then prefix match
     for name, path in bucket:
         if name == item_no_lower:
             return path
@@ -1362,7 +1378,7 @@ def process_template():
                     
                     # 2. Setup Writer and Sheet Name
                     if is_multisheet_mode:
-                        safe_sheet = (str(brand_name).replace('/', '-').replace('\\', '-').replace('?', '').replace('*', '').replace('[', '').replace(']', '').replace(':', ''))[:31]
+                        safe_sheet = _safe_sheet_name(brand_name)
                         current_writer = global_writer
                         current_sheet_name = safe_sheet
                         data_start_row = 12 
@@ -1370,7 +1386,8 @@ def process_template():
                         excel_output = io.BytesIO()
                         current_writer = pd.ExcelWriter(excel_output, engine='xlsxwriter')
                         current_sheet_name = sheet_name_val
-                        data_start_row = 8 if chain_selection == "METRO" else (2 if chain_selection == "RDS" else (6 if chain_selection == "KCC" else (3 if chain_selection in ["GGRAND", "ALTURAS"] else 1)))
+                        _start_row_map = {'METRO': 8, 'RDS': 2, 'KCC': 6, 'GGRAND': 3, 'ALTURAS': 3}
+                        data_start_row = _start_row_map.get(chain_selection, 1)
 
                     # 3. Write Data to Excel
                     bucket_df[final_cols].to_excel(current_writer, sheet_name=current_sheet_name, index=False, startrow=data_start_row, header=False)
@@ -1583,7 +1600,8 @@ def process_template():
                                         img_byte_arr.seek(0)
                                         worksheet.insert_image(row_idx, img_col_idx, f"{item_no}.png", {'image_data': img_byte_arr, 'object_position': 1})
                                         images_found_count += 1
-                                except: worksheet.write(row_idx, img_col_idx, "ERR")
+                                except Exception:
+                                    worksheet.write(row_idx, img_col_idx, 'ERR')
                     
                     # 6. Save (If in Zip Mode)
                     if not is_multisheet_mode:
