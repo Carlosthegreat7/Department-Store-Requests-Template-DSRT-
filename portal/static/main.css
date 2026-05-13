@@ -277,10 +277,13 @@ body {
     font-size: 3.5rem;
     margin-bottom: 25px;
     background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
+    background-clip: text;
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
+    display: inline-block; /* <-- ADD THIS line */
     transition: transform 0.4s ease;
 }
+
 .action-tile:hover i { transform: scale(1.15) rotate(-5deg); }
 
 .action-tile h5 { font-weight: 800; letter-spacing: -0.5px; font-size: 1.4rem; margin-bottom: 10px; }
@@ -497,6 +500,7 @@ th.sort-desc::after { content: '\f0dd'; opacity: 1; }
     white-space: nowrap;
 }
 .custom-file-bento .custom-file-label::after {
+    content: ""; /* Satisfies the CSS linter */
     display: none; /* Hides the ugly default "Browse" button */
 }
 .custom-file-bento:hover .custom-file-label {
@@ -573,6 +577,7 @@ th.sort-desc::after { content: '\f0dd'; opacity: 1; }
         transform: translateY(0);
     }
 }
+
 .animate-fade-in-up {
     animation: fadeInUp 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
