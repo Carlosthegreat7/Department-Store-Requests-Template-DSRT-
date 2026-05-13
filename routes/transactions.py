@@ -41,8 +41,7 @@ NETWORK_IMAGE_PATH = r'\\mgsvr03\catalog'
 
 # ==============================================================
 # SHARED: get a direct Windows-Auth connection to Barcodes DB
-# FIXED: Tries the direct pyodbc connection FIRST to prevent 
-# the system from hanging on SQLconnect due to ODBC 18 strictness.
+# FIXED: Cleaned up connection string for ODBC 18 compatibility
 # ==============================================================
 def _get_barcodes_conn():
     conn, cursor = None, None
@@ -51,20 +50,20 @@ def _get_barcodes_conn():
     try:
         drivers = [d for d in pyodbc.drivers() if 'ODBC Driver' in d and 'SQL Server' in d]
         driver  = next((d for v in ['18', '17', '13'] for d in drivers if v in d), drivers[0] if drivers else None)
+        
         if driver:
-            trust = "TrustServerCertificate=yes;" if "18" in driver else ""
-            conn  = pyodbc.connect(
-                f"DRIVER={{{driver}}};"
-                "SERVER=192.168.100.114;" # Using IP to bypass DNS latency
-                "DATABASE=Barcodes;"
-                "Trusted_Connection=yes;"
-                "LoginTimeout=3;" # Prevents infinite hanging
-                f"Encrypt=optional;{trust}",
-                timeout=3
-            )
+            # Clean, minimal connection string
+            conn_str = f"DRIVER={{{driver}}};SERVER=MGSVR14;DATABASE=Barcodes;Trusted_Connection=yes;"
+            
+            # ODBC 18 strictly requires TrustServerCertificate for internal networks
+            if "18" in driver:
+                conn_str += "TrustServerCertificate=yes;"
+                
+            conn = pyodbc.connect(conn_str, timeout=5)
             cursor = conn.cursor()
             logger.info("Barcodes DB: connected via direct pyodbc")
             return conn, cursor
+            
     except Exception as e:
         logger.warning(f"Barcodes DB direct connection failed: {e}")
 
@@ -81,101 +80,179 @@ def _get_barcodes_conn():
 
 
 # ==============================================================
-# STAGE 1 — TEMPLATE DETECTION
-# Auto-sniffs the uploaded file (CSV or EXCEL) and returns the template type.
+# MASTER CHAIN MAPPINGS
+# Add new stores here. Format: 'EXCEL COLUMN HEADER': 'DB_TARGET_KEY'
+# ==============================================================
+CHAIN_MAPPINGS = {
+    'ALTURAS': {
+        'SKU/ITEM CODE': 'ITEM_CODE',
+        'BARCODE':       'BARCODE',
+        'DESCRIPTION':   'DESC',
+        'VENDOR NO.':    'VENDOR'
+    },
+    'KCC': {
+        'BARCODE':       'BARCODE',
+        'DESCRIPTION':   'DESC',
+        'SKU':           'SKU',
+        'ITEM CODE':     'ITEM_CODE',
+        'BRAND':         'BRAND_CODE'
+    },
+    'RDS': {
+        'SKU NO.':          'BARCODE',
+        'VENDOR PART #':    'ITEM_CODE',
+        'ITEM DESCRIPTION': 'DESC',
+        'BRAND':            'BRAND_CODE'
+    },
+    'RUSTANS': {
+        'RCC SKU':          'BARCODE',
+        'VENDOR ITEM CODE': 'ITEM_CODE'
+    },
+    'GGRAND': {
+        'BRAND':       'BRAND_CODE',
+        'DESCRIPTION': 'DESC',
+        'SKU':         'ITEM_CODE', # Mapped to ITEM_CODE for database validation
+        'BARCODE':     'BARCODE'
+    },
+    'GCAP': {
+        'BRAND':        'BRAND_CODE',
+        'ITEM CODE':    'ITEM_CODE',
+        'DESCRIPTION':  'DESC',
+        'GCAP BARCODE': 'BARCODE'
+    },
+    'SM': {
+        'ITEM':   'ITEM_CODE',
+        'SM UPC': 'BARCODE'
+    }
+}
+
+
+# ==============================================================
+# STAGE 1 — TEMPLATE DETECTION (THE SNIFFER)
+# FIXED: Exact header matching + Explicitly reading Sheet 0
 # ==============================================================
 def detect_template_type(file_path: str) -> str:
-    """
-    Returns: 'GCAP' | 'RDS' | 'SM' | 'ALTURAS' | 'UNKNOWN'
-    """
     try:
         is_csv = file_path.lower().endswith('.csv')
         
-        if is_csv:
-            df_head = pd.read_csv(file_path, nrows=10, header=None, encoding='utf-8', encoding_errors='ignore')
-        else:
-            df_head = pd.read_excel(file_path, nrows=10, header=None)
+        # FIX: Explicitly added sheet_name=0 to force it to only read the first sheet
+        df_head = pd.read_csv(file_path, nrows=30, header=None, encoding='utf-8', encoding_errors='ignore') if is_csv else pd.read_excel(file_path, sheet_name=0, nrows=30, header=None)
+        
+        best_match = 'UNKNOWN'
+        max_matches = 0
+        
+        for _, row in df_head.iterrows():
+            # Clean the row values for exact matching
+            row_vals = [str(v).strip().upper() for v in row.values if pd.notna(v)]
+            row_vals_no_spaces = [v.replace(" ", "") for v in row_vals]
             
-        all_text = ' '.join(str(v).upper() for v in df_head.values.flatten() if pd.notna(v))
-
-        if 'GCAP BARCODE' in all_text and 'ITEM CODE' in all_text:
-            return 'GCAP'
-        if 'SKU NUMBER' in all_text and 'ITEM DESCRIPTION' in all_text:
-            return 'RDS'
-        if 'ALTURAS' in all_text or ('VENDOR NO' in all_text and 'BAR CODE' in all_text):
-            return 'ALTURAS'
-
-        if is_csv:
-            df_full = pd.read_csv(file_path, header=None, nrows=1, encoding='utf-8', encoding_errors='ignore')
-        else:
-            df_full = pd.read_excel(file_path, header=None, nrows=1)
-            
-        if len(df_full.columns) >= 82:
-            return 'SM'
+            for chain, mapping in CHAIN_MAPPINGS.items():
+                matches = 0
+                for expected in mapping.keys():
+                    exp_upper = str(expected).upper()
+                    exp_no_spaces = exp_upper.replace(" ", "")
+                    
+                    # FIX: Exact match instead of partial match prevents KCC from stealing other templates
+                    if exp_upper in row_vals or exp_no_spaces in row_vals_no_spaces:
+                        matches += 1
+                
+                # Tie-breaker logic: Pick the template with the highest match percentage
+                match_percentage = matches / len(mapping) if len(mapping) > 0 else 0
+                
+                if matches >= 2 and matches > max_matches:
+                    max_matches = matches
+                    best_match = chain
+                elif matches >= 2 and matches == max_matches:
+                    current_best_mapping = CHAIN_MAPPINGS[best_match]
+                    current_best_pct = max_matches / len(current_best_mapping)
+                    if match_percentage > current_best_pct:
+                        best_match = chain
+                    
+        # Fallback for old SM template (82 columns, no headers)
+        if best_match == 'UNKNOWN':
+            df_full = pd.read_csv(file_path, header=None, nrows=1, encoding='utf-8', encoding_errors='ignore') if is_csv else pd.read_excel(file_path, sheet_name=0, header=None, nrows=1)
+            if len(df_full.columns) >= 82:
+                return 'SM'
+                
+        return best_match
 
     except Exception as e:
         logger.error(f"Template detection failed: {e}")
-
-    return 'UNKNOWN'
+        return 'UNKNOWN'
 
 
 # ==============================================================
-# STAGE 2 — PARSE ROWS
-# Reads the Excel/CSV and extracts raw rows per template.
+# STAGE 2 — PARSE ROWS (THE MAPPER)
+# FIXED: Added dtype=str to prevent dropping leading zeros
 # ==============================================================
 def parse_sku_template(file_path: str, template_type: str) -> list:
     extracted_data = []
     is_csv = file_path.lower().endswith('.csv')
     
     try:
-        if template_type == 'GCAP':
-            df = pd.read_csv(file_path, encoding='utf-8', encoding_errors='ignore') if is_csv else pd.read_excel(file_path)
-            for _, row in df.iterrows():
-                extracted_data.append({
-                    'ITEM_CODE': str(row.get('ITEM CODE',    '')).strip(),
-                    'BARCODE': str(row.get('GCAP BARCODE', '')).strip(),
-                })
+        if template_type not in CHAIN_MAPPINGS:
+            if template_type == 'SM':
+                # Force dtype=str to read as text
+                df = pd.read_csv(file_path, header=None, dtype=str, encoding='utf-8', encoding_errors='ignore') if is_csv else pd.read_excel(file_path, sheet_name=0, header=None, dtype=str)
+                for _, row in df.iterrows():
+                    extracted_data.append({
+                        'ITEM_CODE': str(row.iloc[0]).strip() if len(row) > 0 else '',
+                        'BARCODE': str(row.iloc[81]).strip() if len(row) > 81 else '',
+                    })
+            return extracted_data
 
-        elif template_type == 'RDS':
-            df = pd.read_csv(file_path, encoding='utf-8', encoding_errors='ignore') if is_csv else pd.read_excel(file_path)
-            for _, row in df.iterrows():
-                extracted_data.append({
-                    'ITEM_CODE': str(row.get('Item Description', '')).strip(),
-                    'BARCODE': str(row.get('SKU Number',        '')).strip(),
-                })
-
-        elif template_type == 'SM':
-            df = pd.read_csv(file_path, header=None, encoding='utf-8', encoding_errors='ignore') if is_csv else pd.read_excel(file_path, header=None)
-            for _, row in df.iterrows():
-                extracted_data.append({
-                    'ITEM_CODE': str(row.iloc[0]).strip()  if len(row) >  0 else '',
-                    'BARCODE': str(row.iloc[81]).strip() if len(row) > 81 else '',
-                })
-
-        elif template_type == 'ALTURAS':
-            # Try reading with fewer skipped rows if 7 results in an empty file
-            df = pd.read_csv(file_path, skiprows=7, header=None, encoding='utf-8', encoding_errors='ignore') if is_csv else pd.read_excel(file_path, sheet_name=0, skiprows=7, header=None)
+        mapping = CHAIN_MAPPINGS[template_type]
+        
+        # Force dtype=str to read as text and preserve exact barcode formatting
+        df_full = pd.read_csv(file_path, header=None, dtype=str, encoding='utf-8', encoding_errors='ignore') if is_csv else pd.read_excel(file_path, sheet_name=0, header=None, dtype=str)
+        
+        header_idx = -1
+        max_matches = 0
+        
+        for idx in range(min(50, len(df_full))):
+            row_vals = [str(v).strip().upper() for v in df_full.iloc[idx].values if pd.notna(v)]
+            row_vals_no_spaces = [v.replace(" ", "") for v in row_vals]
             
-            # If the dataframe is empty after skipping 7 rows, try again skipping only 0
-            if df.empty:
-                df = pd.read_csv(file_path, header=None, encoding='utf-8', encoding_errors='ignore') if is_csv else pd.read_excel(file_path, header=None)
+            matches = 0
+            for expected in mapping.keys():
+                exp_upper = str(expected).upper()
+                exp_no_spaces = exp_upper.replace(" ", "")
+                if exp_upper in row_vals or exp_no_spaces in row_vals_no_spaces:
+                    matches += 1
+            
+            if matches > max_matches:
+                max_matches = matches
+                header_idx = idx
+        
+        if header_idx == -1 or max_matches == 0:
+            return extracted_data
 
-            for _, row in df.iterrows():
-                # Reduced requirement to 2 columns (Item and Barcode) to be safer
-                if len(row) >= 2:
-                    item_code = str(row.iloc[0]).strip()
-                    barcode   = str(row.iloc[1]).strip()
-                    
-                    # Only process if we have a valid Item Code
-                    if item_code and item_code.lower() not in ['nan', 'none', '']:
-                        extracted_data.append({
-                            'ITEM_CODE': item_code,
-                            'BARCODE':   barcode,
-                            # Use index checks for the optional columns so it doesn't crash on smaller files
-                            'DESC':      str(row.iloc[2]).strip() if len(row) > 2 else '',
-                            'DIV':       str(row.iloc[6]).strip() if len(row) > 6 else '',
-                            'VENDOR':    str(row.iloc[7]).strip() if len(row) > 7 else '',
-                        })
+        raw_columns = [str(c).strip().upper() if pd.notna(c) else f"UNNAMED_{i}" for i, c in enumerate(df_full.iloc[header_idx].values)]
+        df_full.columns = raw_columns
+        df_data = df_full.iloc[header_idx + 1:].copy()
+        
+        col_map = {}
+        for source_key, target_key in mapping.items():
+            expected = str(source_key).upper()
+            for col in df_data.columns:
+                if expected == col or expected.replace(" ", "") == col.replace(" ", ""):
+                    col_map[col] = target_key
+                    break
+
+        for _, row in df_data.iterrows():
+            row_dict = {'ITEM_CODE': '', 'BARCODE': ''}
+            has_data = False
+            
+            for file_col, target_key in col_map.items():
+                val = str(row[file_col]).strip()
+                if val.lower() not in ['nan', 'none', '']:
+                    row_dict[target_key] = val
+                    has_data = True
+            
+            if not row_dict.get('ITEM_CODE') and row_dict.get('SKU'):
+                 row_dict['ITEM_CODE'] = row_dict['SKU']
+                 
+            if has_data:
+                extracted_data.append(row_dict)
 
     except Exception as e:
         logger.error(f"parse_sku_template error [{template_type}]: {e}")
@@ -185,7 +262,7 @@ def parse_sku_template(file_path: str, template_type: str) -> list:
 
 # ==============================================================
 # STAGE 3 — NORMALIZE
-# Strips, uppercases, removes junk before validation runs.
+# FIXED: Eradicates the ".0" decimal artifact from Excel floats
 # ==============================================================
 def normalize_rows(parsed_data: list) -> list:
     normalized = []
@@ -193,18 +270,21 @@ def normalize_rows(parsed_data: list) -> list:
         item_raw = str(row.get('ITEM_CODE', '')).strip()
         bar_raw  = str(row.get('BARCODE', '')).strip()
 
-        # FIXED: Safer check for empty rows and Pandas NaN artifacts
+        # Strip trailing ".0" float artifact more safely
+        import re as _re
+        bar_raw  = _re.sub(r'\.0+$', '', bar_raw)
+        item_raw = _re.sub(r'\.0+$', '', item_raw)
+
         item_chk = item_raw.lower()
         bar_chk  = bar_raw.lower()
         if item_chk in ['', 'nan', 'none'] and bar_chk in ['', 'nan', 'none']:
             continue
 
-        # Normalize ITEM_CODE — uppercase, strip leading zeros if purely numeric
         item_clean = item_raw.upper()
-        if item_clean.isdigit():
-            item_clean = str(int(item_clean))
+        # Leading zeros are preserved — do NOT convert to int()
+        # NICREP item codes like '007890' must stay as '007890'
 
-        # Normalize BARCODE — digits only
+        # Only keep digits, but now leading zeros will survive!
         bar_clean = ''.join(c for c in bar_raw if c.isdigit())
 
         normalized_row = dict(row)
@@ -219,24 +299,23 @@ def normalize_rows(parsed_data: list) -> list:
 
 
 # ==============================================================
-# STAGE 4 — VALIDATE ROWS
-# Runs VR-001 to VR-004. Returns (results, db_online, db_error)
+# STAGE 4 — VALIDATE ROWS (LOCAL DB AUDIT)
+# BASED EXCLUSIVELY ON dbo.barcodes (NO NICREP)
 # ==============================================================
 def validate_rows(parsed_data: list, template_type: str) -> tuple:
     results       = []
-    seen_codes    = {}
-    seen_barcodes = {}
     db_error      = None
 
     # Normalize first
     parsed_data = normalize_rows(parsed_data)
 
-    # Open DB connection
+    # CONNECT TO LOCAL BARCODES DB ONLY
     conn, cursor = _get_barcodes_conn()
     if conn is None:
-        db_error = "Could not connect to Barcodes DB (MGSVR14 unreachable or access denied)"
+        db_error = "Could not connect to Barcodes Database"
         logger.error(db_error)
 
+    seen_barcodes = {}
     for row in parsed_data:
         item_code = row.get('ITEM_CODE', '').strip()
         barcode   = row.get('BARCODE', '').strip()
@@ -244,63 +323,48 @@ def validate_rows(parsed_data: list, template_type: str) -> tuple:
 
         # VR-002: Empty fields
         if not barcode or barcode.lower() in ['nan', 'none']:
-            result.update({'status': 'rejected', 'reason': 'VR-002: Barcode is empty'})
-            results.append(result)
-            continue
+            result.update({'status': 'rejected', 'reason': 'VR-002: Barcode is empty'}); results.append(result); continue
 
         if not item_code or item_code.lower() in ['nan', 'none']:
-            result.update({'status': 'rejected', 'reason': 'VR-002: Item Code is empty'})
-            results.append(result)
-            continue
+            result.update({'status': 'rejected', 'reason': 'VR-002: Item Code is empty'}); results.append(result); continue
 
-        # VR-004: Duplicate within batch
-        if item_code in seen_codes or barcode in seen_barcodes:
-            result.update({'status': 'duplicate', 'reason': 'VR-004: Duplicate row in this upload'})
-            results.append(result)
-            continue
-
-        seen_codes[item_code]  = True
+        # VR-004: Duplicate barcode within this specific upload file
+        if barcode in seen_barcodes:
+            result.update({'status': 'duplicate', 'reason': 'VR-004: Duplicate barcode in this file'}); results.append(result); continue
         seen_barcodes[barcode] = True
 
-        # VR-001 + VR-003: DB checks
+        # LOCAL DB Master checks
         if conn and cursor:
             try:
+                # Look for the Barcode in the local dbo.barcodes table
                 cursor.execute(
-                    "SELECT BARCODE FROM dbo.barcodes WHERE ITEM_CODE = ?",
-                    (item_code,)
+                    'SELECT ITEM_CODE FROM dbo.barcodes WHERE BARCODE = ?',
+                    (barcode,)
                 )
                 db_row = cursor.fetchone()
 
                 if not db_row:
-                    result.update({'status': 'rejected', 'reason': 'VR-001: Item Code not found in Database'})
+                    # Barcode does not exist yet -> Mark as NEW (Ready for manual commit)
+                    result.update({
+                        'status': 'update',  # We keep the 'update' key so the frontend commit button picks it up
+                        'reason': 'New Barcode - Ready to Add to Database'
+                    })
                 else:
-                    current_db_barcode = str(db_row[0]).strip() if db_row[0] else ""
+                    db_item_code = str(db_row[0]).strip()
+                    db_normalized = db_item_code.upper()
+                    csv_normalized = item_code.upper()
 
-                    cursor.execute(
-                        "SELECT ITEM_CODE FROM dbo.barcodes WHERE BARCODE = ? AND ITEM_CODE != ?",
-                        (barcode, item_code)
-                    )
-                    conflict = cursor.fetchone()
-
-                    if conflict:
-                        result.update({
-                            'status': 'conflict',
-                            'reason': f'VR-003: Barcode already assigned to {conflict[0]}'
-                        })
-                    elif current_db_barcode == barcode:
+                    if db_normalized == csv_normalized:
+                        # Barcode already exists and matches the Item Code
                         result.update({
                             'status': 'ok',
-                            'reason': 'Match: DB and file are identical — no update needed'
-                        })
-                    elif current_db_barcode == "":
-                        result.update({
-                            'status': 'update',
-                            'reason': 'New: Item exists in DB but has no barcode yet'
+                            'reason': 'Exists in Database - Already Validated'
                         })
                     else:
+                        # Barcode exists but is assigned to a different Item Code!
                         result.update({
-                            'status': 'update',
-                            'reason': f'Change: Replacing [{current_db_barcode}] with [{barcode}]'
+                            'status': 'conflict',
+                            'reason': f'Mismatch: Database says this Barcode belongs to Item [{db_item_code}]'
                         })
 
             except Exception as e:
@@ -308,7 +372,7 @@ def validate_rows(parsed_data: list, template_type: str) -> tuple:
         else:
             result.update({
                 'status': 'db_offline',
-                'reason': 'DB Offline — local checks passed but DB could not be reached'
+                'reason': 'Validation Offline — Cannot reach Database'
             })
 
         results.append(result)
@@ -321,63 +385,67 @@ def validate_rows(parsed_data: list, template_type: str) -> tuple:
 
 
 # ==============================================================
-# STAGE 5 — COMMIT (DB UPDATE)
-# Writes approved rows (status='update') to dbo.barcodes.
+# STAGE 5 — COMMIT (MANUAL SAVE NEW BARCODES)
+# PREVENTS DUPLICATES AND KEEPS EXISTING RECORDS
 # ==============================================================
 def commit_rows_to_db(rows: list, committed_by: str) -> dict:
     conn, cursor = _get_barcodes_conn()
 
     if conn is None:
         return {
-            'success':   False,
-            'committed': 0,
-            'skipped':   0,
-            'errors':    [],
-            'message':   'Cannot commit — Barcodes DB is unreachable'
+            'success': False, 'committed': 0, 'skipped': 0, 'errors': [],
+            'message': 'Cannot commit — Barcodes DB is unreachable'
         }
 
-    committed = 0
-    skipped   = 0
-    errors    = []
+    committed = 0; skipped = 0; errors = []
 
     try:
         for row in rows:
-            status    = row.get('status')
-            item_code = row.get('ITEM_CODE', '').strip()
-            barcode   = row.get('BARCODE', '').strip()
-
-            if status != 'update':
+            if row.get('status') != 'update':
                 skipped += 1
                 continue
+            
+            item_code = row.get('ITEM_CODE', '').strip()
+            barcode   = row.get('BARCODE', '').strip()
+            desc      = row.get('DESC', '').strip()
+            vendor    = row.get('VENDOR', '').strip()
+            brand     = row.get('BRAND_CODE', '').strip()
+            sku       = row.get('SKU', '').strip()
 
             try:
-                cursor.execute(
-                    "UPDATE dbo.barcodes SET BARCODE = ? WHERE ITEM_CODE = ?",
-                    (barcode, item_code)
-                )
+                # INSERT ONLY IF NOT EXISTS (Prevents duplicates completely)
+                cursor.execute("""
+                    IF NOT EXISTS (SELECT 1 FROM dbo.barcodes WHERE BARCODE = ?)
+                    BEGIN
+                        INSERT INTO dbo.barcodes (ITEM_CODE, BARCODE, [DESC], VENDOR, BRAND_CODE, SKU, DATEADDED)
+                        VALUES (?, ?, ?, ?, ?, ?, GETDATE())
+                    END
+                """, (
+                    barcode, # 1. For EXISTS check
+                    item_code, barcode, desc, vendor, brand, sku # 2. For INSERT
+                ))
+                
                 committed += 1
             except Exception as e:
-                errors.append({'ITEM_CODE': item_code, 'error': str(e)})
+                errors.append({'BARCODE': barcode, 'error': str(e)})
 
         conn.commit()
 
     except Exception as e:
-        errors.append({'ITEM_CODE': 'BATCH', 'error': str(e)})
-        try:
-            conn.rollback()
-        except Exception:
-            pass
+        errors.append({'BARCODE': 'BATCH', 'error': str(e)})
+        try: conn.rollback()
+        except: pass
     finally:
         conn.close()
 
     _write_audit_log(rows, committed_by, committed, errors)
 
     return {
-        'success':   len(errors) == 0,
+        'success': len(errors) == 0,
         'committed': committed,
-        'skipped':   skipped,
-        'errors':    errors,
-        'message':   f'{committed} row(s) committed, {skipped} skipped, {len(errors)} error(s)'
+        'skipped': skipped,
+        'errors': errors,
+        'message': f'{committed} new barcode(s) saved, {skipped} skipped, {len(errors)} error(s)'
     }
 
 
@@ -1034,373 +1102,153 @@ def process_template():
             img_col_name, sheet_name_val, header_row_idx, data_start_row = None, "GCAP Template", 0, 1
 
         elif chain_selection == "KCC":
-            merged_df['SKU'] = merged_df['Item No_']
-            merged_df['BARCODE'] = "" 
-            merged_df['ITEM CODE/STOCK#'] = merged_df['Style_Stockcode'].fillna('')
-            merged_df['BRAND'] = merged_df['Brand'].fillna('')
-            merged_df['DESCRIPTION'] = merged_df['Description'].fillna('')
-            merged_df['REGULAR PRICE'] = pd.to_numeric(merged_df['Point_Power'], errors='coerce').fillna(0).map('{:,.2f}'.format)
-            merged_df['MARKDOWN PRICE'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
-            merged_df['SPECIFICATION'] = (merged_df['Dial Color'].fillna('') + " " + merged_df['Case _Frame Size'].fillna('')).str.strip()
-            merged_df['SAMPLE IMAGE'] = ""
-            merged_df['PRICE CATEGORY'] = "SALE ITEM"
-            merged_df['DISCOUNT LEVEL'] = merged_df['Discount Level'].fillna('')
-            final_cols = ['SKU', 'BARCODE', 'ITEM CODE/STOCK#', 'BRAND', 'DESCRIPTION', 'REGULAR PRICE', 'MARKDOWN PRICE', 'SPECIFICATION', 'SAMPLE IMAGE', 'PRICE CATEGORY', 'DISCOUNT LEVEL'] 
-            img_col_name, sheet_name_val, header_row_idx, data_start_row = 'SAMPLE IMAGE', "Sheet1", 5, 6
+            title_fmt = workbook.add_format({'bold': True, 'font_size': 11})
+            header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D9D9D9', 'border': 1, 'align': 'center'})
+            worksheet.write(0, 0, "KCC MALLS SKU REQUEST FORMAT", title_fmt)
+            worksheet.write(1, 0, f"Supplier's Name: ")
+            worksheet.write(2, 0, f"DATE: {datetime.now().strftime('%m/%d/%Y')}")
+            for col_num, value in enumerate(final_cols):
+                worksheet.write(5, col_num, value, header_fmt)
+                if value == 'description': worksheet.set_column(col_num, col_num, 45)
+                elif value == img_col_name: worksheet.set_column(col_num, col_num, 35)
+                else: worksheet.set_column(col_num, col_num, 18)
 
         elif chain_selection in ["GGRAND", "ALTURAS"]:
-            cat_abbrevs = {"NON": "NON-MERCHANDISE", "OTH": "OTHERS", "PRM": "PROMO", "PRT": "PARTS", "ACC": "ACCESSORIES", "WTC": "WATCHES", "SKN": "SKIN CARE", "FRG": "FRAGRANCE"}
-            def abbreviate_category(val):
-                if not val: return ""
-                return cat_abbrevs.get(str(val).strip().upper(), val)
-            merged_df['BRAND'] = merged_df['Brand'].fillna('')
-            merged_df['PROMO CATEGORY'] = merged_df['Description'].fillna('').apply(lambda x: "PROMO ITEM" if "@" in str(x) or "#" in str(x) else "SALE ITEM")
-            merged_df['ITEM CATEGORY'] = merged_df['Item Category Code'].apply(abbreviate_category)
-            merged_df['PRICE'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
-            merged_df['DESCRIPTION'] = (merged_df['Description'].fillna('').astype(str) + " " + merged_df['PRICE'].astype(str) + " " + merged_df['ITEM CATEGORY'].astype(str)).str.strip()
-            merged_df['SKU'] = ""
-            merged_df['BARCODE'] = ""
-            final_cols = ['BRAND', 'PROMO CATEGORY', 'ITEM CATEGORY', 'DESCRIPTION', 'PRICE', 'SKU', 'BARCODE']
-            img_col_name, sheet_name_val, header_row_idx, data_start_row = None, f"{chain_selection.title()} Template", 2, 3
-
-        elif chain_selection in ["WATSONS", "WATSONS ONLINE"]:
-            safe_color = merged_df['Dial Color'].fillna('') if 'Dial Color' in merged_df.columns else ""
-            safe_size = merged_df['Case _Frame Size'].fillna('') if 'Case _Frame Size' in merged_df.columns else ""
-            safe_brand = merged_df['Brand'].fillna('')
-            safe_desc = merged_df['Description'].fillna('')
-            safe_style = merged_df['Style_Stockcode'].fillna('')
-            merged_df['COLOR'] = safe_color
-            merged_df['SIZES'] = safe_size
-            raw_desc = (safe_brand + " " + safe_desc + " " + safe_color + " " + safe_size + " " + safe_style)
-            merged_df['DESCRIPTION'] = raw_desc.str.replace(r'[^a-zA-Z0-9\s]', '', regex=True).str.replace(r'\s+', ' ', regex=True).str.strip().str[:50]
-            merged_df['SRP'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
-            merged_df['EXP_DEL_MONTH'] = (time_now + timedelta(days=30)).strftime('%m/%d/%Y')
-            merged_df['SOURCE_MARKED'] = ""; merged_df['REMARKS'] = ""
-            merged_df['ONLINE ITEMS'] = "YES" if chain_selection == "WATSONS ONLINE" else "NO"
-            merged_df['PACKAGE WEIGHT IN KG'] = merged_df['Gross Weight']; merged_df['PRODUCT WEIGHT IN KG'] = merged_df['Net Weight']
-            for d in ['PACKAGE LENGTH IN CM', 'PACKAGE WIDTH IN CM', 'PACKAGE HEIGHT IN CM', 'PRODUCT LENGTH IN CM', 'PRODUCT WIDTH IN CM', 'PRODUCT HEIGHT IN CM']: 
-                merged_df[d] = "-"
-            merged_df['IMAGES'] = ""
-            final_cols = ['DESCRIPTION', 'COLOR', 'SIZES', 'Style_Stockcode', 'SOURCE_MARKED', 'SRP', 'Unit_of_Measure', 'EXP_DEL_MONTH', 'REMARKS', 'IMAGES', 'ONLINE ITEMS', 'PACKAGE LENGTH IN CM', 'PACKAGE WIDTH IN CM', 'PACKAGE HEIGHT IN CM', 'PACKAGE WEIGHT IN KG', 'PRODUCT LENGTH IN CM', 'PRODUCT WIDTH IN CM', 'PRODUCT HEIGHT IN CM', 'PRODUCT WEIGHT IN KG']
-            img_col_name, sheet_name_val, header_row_idx, data_start_row = 'IMAGES', "Template", 0, 1
+            title_fmt = workbook.add_format({'bold': True, 'font_size': 12})
+            header_fmt = workbook.add_format({'bold': True, 'bg_color': '#F2F2F2', 'border': 1, 'align': 'center'})
+            worksheet.write(0, 0, "SKU REQUEST TEMPLATE", title_fmt)
+            for col_num, value in enumerate(final_cols):
+                worksheet.write(2, col_num, value, header_fmt)
+                if value == 'DESCRIPTION': worksheet.set_column(col_num, col_num, 40)
+                elif value in ['BRAND', 'PROMO CATEGORY', 'ITEM CATEGORY']: worksheet.set_column(col_num, col_num, 20)
+                else: worksheet.set_column(col_num, col_num, 15)
 
         elif chain_selection == "METRO":
-            merged_df['NO'] = range(1, len(merged_df) + 1)
-            merged_df['PRODUCT IMAGE'] = ""
-            merged_df['DEPT'] = "5926"; merged_df['CLASS'] = "1"; merged_df['SUBCLASS'] = "1"; merged_df['EAN-13'] = ""
-            merged_df['BRAND NAME'] = merged_df['Brand'].fillna('')
-            merged_df['ITEM DESCRIPTION'] = merged_df['Description'].fillna('')
-            merged_df['STOCK/ PRODUCT CODE'] = merged_df['Style_Stockcode'].fillna('')
-            merged_df['COLOR'] = merged_df['Dial Color'].fillna('') if 'Dial Color' in merged_df.columns else ""
-            merged_df['SIZE'] = merged_df['Case _Frame Size'].fillna('') if 'Case _Frame Size' in merged_df.columns else ""
-            merged_df['MATERIAL/FABRIC'] = merged_df['Material'].fillna('') if 'Material' in merged_df.columns else ""
-            merged_df['REGULAR PRICE'] = pd.to_numeric(merged_df['SRP'], errors='coerce').fillna(0)
-            merged_df['SALE PRICE'] = ""
-            merged_df['STOCK AVAILABILITY'] = "FEBRUARY ONWARDS"
-            for i in range(27):
-                merged_df[f'Store_{i}'] = ""
-            merged_df['TOTAL QTY'] = ""; merged_df['APPROVED'] = ""; merged_df['DISAPPROVED'] = ""; merged_df['SKU'] = ""; merged_df['UPC'] = ""; merged_df['MDSG REMARKS'] = ""
-            final_cols = ['NO', 'PRODUCT IMAGE', 'DEPT', 'CLASS', 'SUBCLASS', 'EAN-13', 'BRAND NAME', 'ITEM DESCRIPTION', 'STOCK/ PRODUCT CODE', 'COLOR', 'SIZE', 'MATERIAL/FABRIC', 'REGULAR PRICE', 'SALE PRICE', 'STOCK AVAILABILITY'] + [f'Store_{i}' for i in range(27)] + ['TOTAL QTY', 'APPROVED', 'DISAPPROVED', 'SKU', 'UPC', 'MDSG REMARKS']
-            img_col_name, sheet_name_val, header_row_idx, data_start_row = 'PRODUCT IMAGE', "New Item Sample Sheet", 6, 8
-
+            bold_fmt = workbook.add_format({'bold': True})
+            hdr_fmt = workbook.add_format({'bold': True, 'bg_color': '#D9D9D9', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True, 'font_size': 9})
+            red_hdr_fmt = workbook.add_format({'bold': True, 'bg_color': '#E6B8B7', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True, 'font_size': 9})
+            rotate_hdr_fmt = workbook.add_format({'bold': True, 'bg_color': '#D9D9D9', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_size': 9, 'rotation': 90})
+            worksheet.write(0, 0, "VENDOR NAME :", bold_fmt)
+            worksheet.write(0, 2, f"[{company_selection}]", bold_fmt)
+            worksheet.write(0, 10, "ITEM CLASSIFICATION (Please check):", bold_fmt)
+            worksheet.write(1, 0, "DEPT/CATEGORY :", bold_fmt)
+            worksheet.write(1, 2, "[Better Accesories]", bold_fmt)
+            worksheet.write(1, 10, "[  x  ] REGULAR ITEM", bold_fmt)
+            worksheet.write(2, 0, "BUYING MONTH/YEAR :", bold_fmt)
+            worksheet.write(2, 2, f"[{time_now.strftime('%m/%Y')}]", bold_fmt)
+            worksheet.write(2, 10, "[     ] PROMOTIONAL/SEASONAL ITEM  |  DURATION: __________________", bold_fmt)
+            worksheet.write(4, 0, "To be filled up by Supplier:", bold_fmt)
+            worksheet.write(4, 15, "Initial Quantity Allocation per Store (for Concession Items Only):", bold_fmt)
+            worksheet.write(4, 42, "To be filled up by Metro Gaisano:", bold_fmt)
+            worksheet.write(5, 0, "NEW ITEM DETAILS", bold_fmt)
+            worksheet.write(5, 9, "PRODUCT ATTRIBUTES", bold_fmt)
+            worksheet.write(5, 12, "PRICING", bold_fmt)
+            worksheet.write(5, 14, "REMARKS", bold_fmt)
+            dept_names = ['Colon', 'Mandaue', 'Ayala', 'Legazpi', 'Lucena', 'Market Market', 'Angeles', 'Alabang', 'Danao', 'Bacolod', 'Tacloban', 'Pasig', 'Baybay', 'Catbalogan', 'Imus']
+            hyp_names = ['Toledo', 'Maasin', 'Talisay', 'Lapulapu', 'Colon', 'Mambaling', 'Calbayog', 'Carcar', 'Bogo', 'Naga-Camsur', 'Tagaytay', 'Mactan LG']
+            store_names = dept_names + hyp_names
+            dept_codes = ['2001', '2002', '2093', '2004', '2005', '2006', '2007', '2009', '2015', '2016', '2017', '2018', '2019', '2020', '2223']
+            hyp_codes = ['2008', '2010', '6001', '6003', '6004', '6005', '6006', '6009', '6010', '6013', '2015', ''] 
+            store_codes = dept_codes + hyp_codes
+            worksheet.merge_range(5, 15, 5, 15 + len(dept_names) - 1, "Department Store", bold_fmt)
+            worksheet.merge_range(5, 15 + len(dept_names), 5, 15 + len(store_names) - 1, "Hypermarket", bold_fmt)
+            headers_row6 = ['NO', 'PRODUCT IMAGE', 'HIERARCHY', '', '', '', '', '', '', '', '', '', '', '', '']
+            end_headers6 = ['Total Qty Allocation', 'APPROVED', 'DISAPPROVED', 'ITEM CODES', '', '']
+            row6 = headers_row6 + store_codes + end_headers6
+            headers_row7 = ['', '', 'DEPT', 'CLASS', 'SUBCLASS', 'EAN-13 (if_available)', 'BRAND NAME', 'ITEM DESCRIPTION ', 'STOCK/ PRODUCT CODE', 'COLOR', 'SIZE', 'MATERIAL/FABRIC', 'REGULAR PRICE', 'SALE PRICE (promo item only)', 'STOCK AVAILABILITY']
+            end_headers7 = ['Qty', '', '', 'SKU', 'UPC', 'MDSG REMARKS']
+            row7 = headers_row7 + store_names + end_headers7
+            worksheet.set_row(6, 45)
+            worksheet.set_row(7, 85)
+            for col_num in range(len(row6)):
+                val6 = row6[col_num]
+                val7 = row7[col_num]
+                is_store_col = (col_num >= 15 and col_num < 15 + len(store_names))
+                if val6 == 'ITEM CODES' or val7 in ['SKU', 'UPC', 'MDSG REMARKS']:
+                    worksheet.write(6, col_num, val6, red_hdr_fmt)
+                    worksheet.write(7, col_num, val7, red_hdr_fmt)
+                elif is_store_col:
+                    worksheet.write(6, col_num, val6, hdr_fmt)
+                    worksheet.write(7, col_num, val7, rotate_hdr_fmt)
+                else:
+                    worksheet.write(6, col_num, val6, hdr_fmt)
+                    worksheet.write(7, col_num, val7, hdr_fmt)
+                if col_num == 1: worksheet.set_column(col_num, col_num, 15)
+                elif col_num == 7: worksheet.set_column(col_num, col_num, 35)
+                elif col_num == 8: worksheet.set_column(col_num, col_num, 18)
+                elif is_store_col: worksheet.set_column(col_num, col_num, 5)
+                else: worksheet.set_column(col_num, col_num, 12)
+            worksheet.merge_range(6, 2, 6, 4, "HIERARCHY", hdr_fmt)
+            item_code_start = 15 + len(store_names) + 3 
+            worksheet.merge_range(6, item_code_start, 6, item_code_start + 2, "ITEM CODES", red_hdr_fmt)
         else:
-            safe_color = merged_df['Dial Color'].fillna('') if 'Dial Color' in merged_df.columns else ""
-            safe_size = merged_df['Case _Frame Size'].fillna('') if 'Case _Frame Size' in merged_df.columns else ""
-            safe_brand = merged_df['Brand'].fillna('')
-            safe_desc = merged_df['Description'].fillna('')
-            safe_style = merged_df['Style_Stockcode'].fillna('')
-            merged_df['COLOR'] = safe_color
-            merged_df['SIZES'] = safe_size
-            raw_desc = (safe_brand + " " + safe_desc + " " + safe_color + " " + safe_size + " " + safe_style)
-            merged_df['DESCRIPTION'] = raw_desc.str.replace(r'[^a-zA-Z0-9\s]', '', regex=True).str.replace(r'\s+', ' ', regex=True).str.strip().str[:50]
-            merged_df['SRP'] = merged_df['SRP'].fillna(0).map('{:,.2f}'.format)
-            merged_df['EXP_DEL_MONTH'] = (time_now + timedelta(days=30)).strftime('%m/%d/%Y')
-            merged_df['SOURCE_MARKED'] = ""; merged_df['REMARKS'] = ""; merged_df['ONLINE ITEMS'] = "NO"
-            merged_df['PACKAGE WEIGHT IN KG'] = merged_df['Gross Weight']; merged_df['PRODUCT WEIGHT IN KG'] = merged_df['Net Weight']
-            for d in ['PACKAGE LENGTH IN CM', 'PACKAGE WIDTH IN CM', 'PACKAGE HEIGHT IN CM', 'PRODUCT LENGTH IN CM', 'PRODUCT WIDTH IN CM', 'PRODUCT HEIGHT IN CM']: 
-                merged_df[d] = "-"
-            merged_df['IMAGES'] = ""
-            final_cols = ['DESCRIPTION', 'COLOR', 'SIZES', 'Style_Stockcode', 'SOURCE_MARKED', 'SRP', 'Unit_of_Measure', 'EXP_DEL_MONTH', 'REMARKS', 'IMAGES', 'ONLINE ITEMS', 'PACKAGE LENGTH IN CM', 'PACKAGE WIDTH IN CM', 'PACKAGE HEIGHT IN CM', 'PACKAGE WEIGHT IN KG', 'PRODUCT LENGTH IN CM', 'PRODUCT WIDTH IN CM', 'PRODUCT HEIGHT IN CM', 'PRODUCT WEIGHT IN KG']
-            img_col_name, sheet_name_val, header_row_idx, data_start_row = 'IMAGES', "Template", 0, 1
-
-        # --- 5. EXCEL GENERATION ---
-        output_buffer = io.BytesIO()
-        brand_groups = list(merged_df.groupby('Brand'))
-        
-        save_progress(req_id, 0, len(merged_df), "Initializing Excel Generation...")
-        
-        images_found_count = 0 
-        is_multisheet_mode = (chain_selection == "RUSTANS")
-        
-        zip_file = None
-        global_writer = None
-        
-        used_filenames = set()
-
-        if is_multisheet_mode:
-            global_writer = pd.ExcelWriter(output_buffer, engine='xlsxwriter')
-        else:
-            zip_file = zipfile.ZipFile(output_buffer, 'w', zipfile.ZIP_DEFLATED)
-
-        try:
-            for brand_name, bucket_df in brand_groups:
-                try:
-                    filename = ""
-                    if not is_multisheet_mode:
-                        if chain_selection in ["RDS", "GCAP", "KCC", "GGRAND", "ALTURAS", "METRO"]:
-                            filename = f"{filename_base} - {brand_name}.xlsx"
-                        else:
-                            f_dept, f_class = "0000", "0000"
-                            loop_conn = get_mysql_conn()
-                            if loop_conn:
-                                try:
-                                    l_cursor = loop_conn.cursor(dictionary=True)
-                                    clean_brand = str(brand_name).strip()
-                                    search_term = clean_brand + '%'
-                                    qry = """SELECT b.dept_code, b.sub_dept_code, b.class_code, s.subclass_code
-                                             FROM brands b LEFT JOIN sub_classes s ON b.product_group = s.product_group
-                                             WHERE b.brand_name LIKE %s LIMIT 1"""
-                                    l_cursor.execute(qry, (search_term,))
-                                    res = l_cursor.fetchone()
-                                    if res:
-                                        d = res.get('dept_code') or '00'
-                                        sd = res.get('sub_dept_code') or '00'
-                                        c = res.get('class_code') or '00'
-                                        sc = res.get('subclass_code') or '00'
-                                        f_dept = f"{d}{sd}"
-                                        f_class = f"{c}{sc}"
-                                except Exception as db_e: logger.error(f"Loop Lookup Error: {db_e}")
-                                finally: loop_conn.close()
-                            sm_ts = time_now.strftime('%m%d%H%M')
-                            filename = f"SC{vendor_code}_{f_dept}_{f_class}_{sm_ts}.xlsx"
-
-                        if filename in used_filenames:
-                            base, ext = os.path.splitext(filename)
-                            counter = 1
-                            while f"{base}_{counter}{ext}" in used_filenames:
-                                counter += 1
-                            filename = f"{base}_{counter}{ext}"
-                        used_filenames.add(filename)
-                    
-                    save_progress(req_id, 0, len(merged_df), f"Processing Brand: {brand_name}")
-                    
-                    if is_multisheet_mode:
-                        safe_sheet = (str(brand_name).replace('/', '-').replace('\\', '-').replace('?', '').replace('*', '').replace('[', '').replace(']', '').replace(':', ''))[:31]
-                        current_writer = global_writer
-                        current_sheet_name = safe_sheet
-                        data_start_row = 12 
+            header_fmt = workbook.add_format({'bold': True, 'bg_color': '#BDD7EE', 'border': 1, 'align': 'center'})
+            for col_num, value in enumerate(final_cols):
+                worksheet.write(0, col_num, value, header_fmt)
+                if value != img_col_name:
+                    if any(x in value for x in ["Desc", "Name", "Description"]):
+                        worksheet.set_column(col_num, col_num, 45)
+                    elif "Brand" in value:
+                        worksheet.set_column(col_num, col_num, 20)
+                    elif any(x in value for x in ["Size", "Color", "Price", "Cost", "Qty", "Stock", "UPC"]):
+                        worksheet.set_column(col_num, col_num, 13)
                     else:
-                        excel_output = io.BytesIO()
-                        current_writer = pd.ExcelWriter(excel_output, engine='xlsxwriter')
-                        current_sheet_name = sheet_name_val
-                        data_start_row = 8 if chain_selection == "METRO" else (2 if chain_selection == "RDS" else (6 if chain_selection == "KCC" else (3 if chain_selection in ["GGRAND", "ALTURAS"] else 1)))
-
-                    bucket_df[final_cols].to_excel(current_writer, sheet_name=current_sheet_name, index=False, startrow=data_start_row, header=False)
-                    workbook, worksheet = current_writer.book, current_writer.sheets[current_sheet_name]
-                    
-                    if chain_selection == "RDS":
-                        curr_col = 0
-                        for idx, (group, title, color) in enumerate(rds_sections):
-                            page_hdr_fmt = workbook.add_format({'bold': True, 'bg_color': color, 'border': 1, 'align': 'center', 'font_size': 11})
-                            field_hdr_fmt = workbook.add_format({'bold': True, 'bg_color': color, 'border': 1, 'align': 'center', 'font_size': 9})
-                            worksheet.merge_range(0, curr_col, 0, curr_col + len(group) - 1, title, page_hdr_fmt)
-                            for field in group:
-                                display_name = field if field not in ['Size_P8', 'Brand_Maint'] else ('Size' if field=='Size_P8' else 'Brand')
-                                worksheet.write(1, curr_col, display_name, field_hdr_fmt)
-                                worksheet.set_column(curr_col, curr_col, 18 if 'Description' in field else 13)
-                                curr_col += 1
-                            if idx < len(rds_sections) - 1:
-                                worksheet.set_column(curr_col, curr_col, 2)
-                                curr_col += 1
-                                
-                    elif chain_selection == "RUSTANS":
-                        bold_fmt = workbook.add_format({'bold': True})
-                        title_fmt = workbook.add_format({'bold': True, 'font_size': 11})
-                        worksheet.write(0, 0, "RUSTAN COMMERCIAL CORPORATION", title_fmt)
-                        worksheet.write(1, 0, "CONCESSIONAIRE MANAGEMENT DIVISION", bold_fmt)
-                        worksheet.write(2, 0, "NEW PRODUCT INFORMATION SHEET (NPIS)", bold_fmt)
-                        worksheet.write(4, 0, "DATE:", bold_fmt)
-                        worksheet.write(4, 1, datetime.now().strftime("%Y-%m-%d"))
-                        worksheet.write(4, 5, "TARGET DELIVERY TO STORES:", bold_fmt)
-                        worksheet.write(5, 0, "DIVISION:", bold_fmt)
-                        worksheet.write(5, 5, "DELIVERY TO E-COMMERCE WAREHOUSE:", bold_fmt)
-                        worksheet.write(6, 0, "COMPANY NAME:", bold_fmt)
-                        worksheet.write(6, 1, "NEWTRENDS INTERNATIONAL CORPORATION")
-                        worksheet.write(7, 0, "BRAND:", bold_fmt)
-                        worksheet.write(7, 1, brand_name)
-                        instr_fmt = workbook.add_format({'bold': True, 'bg_color': '#FFFF00', 'border': 1, 'align': 'center'})
-                        worksheet.merge_range(10, 0, 10, len(final_cols)-1, "ALL HIGHLIGHTED COLUMNS IN CHART ARE TO BE FILLED UP BY CONCESSIONAIRE", instr_fmt)
-                        rustans_header_fmt = workbook.add_format({'bold': True, 'bg_color': '#F2F2F2', 'border': 1, 'align': 'center', 'text_wrap': True, 'font_size': 9})
-                        for col_num, value in enumerate(final_cols):
-                            worksheet.write(11, col_num, value, rustans_header_fmt)
-                            if value != img_col_name:
-                                if "Description" in value: worksheet.set_column(col_num, col_num, 40)
-                                elif "RCC SKU" in value: worksheet.set_column(col_num, col_num, 15)
-                                elif any(x in value for x in ["Size", "Color", "Price"]): worksheet.set_column(col_num, col_num, 12)
-                                else: worksheet.set_column(col_num, col_num, 18)
-
-                    elif chain_selection == "GCAP":
-                        header_fmt = workbook.add_format({'bold': True, 'bg_color': '#2E75B6', 'font_color': 'white', 'border': 1, 'align': 'center'})
-                        for col_num, value in enumerate(final_cols):
-                            worksheet.write(0, col_num, value, header_fmt)
-                            width = 45 if value == 'description' else 15
-                            worksheet.set_column(col_num, col_num, width)
-
-                    elif chain_selection == "KCC":
-                        title_fmt = workbook.add_format({'bold': True, 'font_size': 11})
-                        header_fmt = workbook.add_format({'bold': True, 'bg_color': '#D9D9D9', 'border': 1, 'align': 'center'})
-                        worksheet.write(0, 0, "KCC MALLS SKU REQUEST FORMAT", title_fmt)
-                        worksheet.write(1, 0, f"Supplier's Name: ")
-                        worksheet.write(2, 0, f"DATE: {datetime.now().strftime('%m/%d/%Y')}")
-                        for col_num, value in enumerate(final_cols):
-                            worksheet.write(5, col_num, value, header_fmt)
-                            if value == 'description': worksheet.set_column(col_num, col_num, 45)
-                            elif value == img_col_name: worksheet.set_column(col_num, col_num, 35)
-                            else: worksheet.set_column(col_num, col_num, 18)
-
-                    elif chain_selection in ["GGRAND", "ALTURAS"]:
-                        title_fmt = workbook.add_format({'bold': True, 'font_size': 12})
-                        header_fmt = workbook.add_format({'bold': True, 'bg_color': '#F2F2F2', 'border': 1, 'align': 'center'})
-                        worksheet.write(0, 0, "SKU REQUEST TEMPLATE", title_fmt)
-                        for col_num, value in enumerate(final_cols):
-                            worksheet.write(2, col_num, value, header_fmt)
-                            if value == 'DESCRIPTION': worksheet.set_column(col_num, col_num, 40)
-                            elif value in ['BRAND', 'PROMO CATEGORY', 'ITEM CATEGORY']: worksheet.set_column(col_num, col_num, 20)
-                            else: worksheet.set_column(col_num, col_num, 15)
-
-                    elif chain_selection == "METRO":
-                        bold_fmt = workbook.add_format({'bold': True})
-                        hdr_fmt = workbook.add_format({'bold': True, 'bg_color': '#D9D9D9', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True, 'font_size': 9})
-                        red_hdr_fmt = workbook.add_format({'bold': True, 'bg_color': '#E6B8B7', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'text_wrap': True, 'font_size': 9})
-                        rotate_hdr_fmt = workbook.add_format({'bold': True, 'bg_color': '#D9D9D9', 'border': 1, 'align': 'center', 'valign': 'vcenter', 'font_size': 9, 'rotation': 90})
-                        worksheet.write(0, 0, "VENDOR NAME :", bold_fmt)
-                        worksheet.write(0, 2, f"[{company_selection}]", bold_fmt)
-                        worksheet.write(0, 10, "ITEM CLASSIFICATION (Please check):", bold_fmt)
-                        worksheet.write(1, 0, "DEPT/CATEGORY :", bold_fmt)
-                        worksheet.write(1, 2, "[Better Accesories]", bold_fmt)
-                        worksheet.write(1, 10, "[  x  ] REGULAR ITEM", bold_fmt)
-                        worksheet.write(2, 0, "BUYING MONTH/YEAR :", bold_fmt)
-                        worksheet.write(2, 2, f"[{time_now.strftime('%m/%Y')}]", bold_fmt)
-                        worksheet.write(2, 10, "[     ] PROMOTIONAL/SEASONAL ITEM  |  DURATION: __________________", bold_fmt)
-                        worksheet.write(4, 0, "To be filled up by Supplier:", bold_fmt)
-                        worksheet.write(4, 15, "Initial Quantity Allocation per Store (for Concession Items Only):", bold_fmt)
-                        worksheet.write(4, 42, "To be filled up by Metro Gaisano:", bold_fmt)
-                        worksheet.write(5, 0, "NEW ITEM DETAILS", bold_fmt)
-                        worksheet.write(5, 9, "PRODUCT ATTRIBUTES", bold_fmt)
-                        worksheet.write(5, 12, "PRICING", bold_fmt)
-                        worksheet.write(5, 14, "REMARKS", bold_fmt)
-                        dept_names = ['Colon', 'Mandaue', 'Ayala', 'Legazpi', 'Lucena', 'Market Market', 'Angeles', 'Alabang', 'Danao', 'Bacolod', 'Tacloban', 'Pasig', 'Baybay', 'Catbalogan', 'Imus']
-                        hyp_names = ['Toledo', 'Maasin', 'Talisay', 'Lapulapu', 'Colon', 'Mambaling', 'Calbayog', 'Carcar', 'Bogo', 'Naga-Camsur', 'Tagaytay', 'Mactan LG']
-                        store_names = dept_names + hyp_names
-                        dept_codes = ['2001', '2002', '2093', '2004', '2005', '2006', '2007', '2009', '2015', '2016', '2017', '2018', '2019', '2020', '2223']
-                        hyp_codes = ['2008', '2010', '6001', '6003', '6004', '6005', '6006', '6009', '6010', '6013', '2015', ''] 
-                        store_codes = dept_codes + hyp_codes
-                        worksheet.merge_range(5, 15, 5, 15 + len(dept_names) - 1, "Department Store", bold_fmt)
-                        worksheet.merge_range(5, 15 + len(dept_names), 5, 15 + len(store_names) - 1, "Hypermarket", bold_fmt)
-                        headers_row6 = ['NO', 'PRODUCT IMAGE', 'HIERARCHY', '', '', '', '', '', '', '', '', '', '', '', '']
-                        end_headers6 = ['Total Qty Allocation', 'APPROVED', 'DISAPPROVED', 'ITEM CODES', '', '']
-                        row6 = headers_row6 + store_codes + end_headers6
-                        headers_row7 = ['', '', 'DEPT', 'CLASS', 'SUBCLASS', 'EAN-13 (if_available)', 'BRAND NAME', 'ITEM DESCRIPTION ', 'STOCK/ PRODUCT CODE', 'COLOR', 'SIZE', 'MATERIAL/FABRIC', 'REGULAR PRICE', 'SALE PRICE (promo item only)', 'STOCK AVAILABILITY']
-                        end_headers7 = ['Qty', '', '', 'SKU', 'UPC', 'MDSG REMARKS']
-                        row7 = headers_row7 + store_names + end_headers7
-                        worksheet.set_row(6, 45)
-                        worksheet.set_row(7, 85)
-                        for col_num in range(len(row6)):
-                            val6 = row6[col_num]
-                            val7 = row7[col_num]
-                            is_store_col = (col_num >= 15 and col_num < 15 + len(store_names))
-                            if val6 == 'ITEM CODES' or val7 in ['SKU', 'UPC', 'MDSG REMARKS']:
-                                worksheet.write(6, col_num, val6, red_hdr_fmt)
-                                worksheet.write(7, col_num, val7, red_hdr_fmt)
-                            elif is_store_col:
-                                worksheet.write(6, col_num, val6, hdr_fmt)
-                                worksheet.write(7, col_num, val7, rotate_hdr_fmt)
-                            else:
-                                worksheet.write(6, col_num, val6, hdr_fmt)
-                                worksheet.write(7, col_num, val7, hdr_fmt)
-                            if col_num == 1: worksheet.set_column(col_num, col_num, 15)
-                            elif col_num == 7: worksheet.set_column(col_num, col_num, 35)
-                            elif col_num == 8: worksheet.set_column(col_num, col_num, 18)
-                            elif is_store_col: worksheet.set_column(col_num, col_num, 5)
-                            else: worksheet.set_column(col_num, col_num, 12)
-                        worksheet.merge_range(6, 2, 6, 4, "HIERARCHY", hdr_fmt)
-                        item_code_start = 15 + len(store_names) + 3 
-                        worksheet.merge_range(6, item_code_start, 6, item_code_start + 2, "ITEM CODES", red_hdr_fmt)
-                    else:
-                        header_fmt = workbook.add_format({'bold': True, 'bg_color': '#BDD7EE', 'border': 1, 'align': 'center'})
-                        for col_num, value in enumerate(final_cols):
-                            worksheet.write(0, col_num, value, header_fmt)
-                            if value != img_col_name:
-                                if any(x in value for x in ["Desc", "Name", "Description"]):
-                                    worksheet.set_column(col_num, col_num, 45)
-                                elif "Brand" in value:
-                                    worksheet.set_column(col_num, col_num, 20)
-                                elif any(x in value for x in ["Size", "Color", "Price", "Cost", "Qty", "Stock", "UPC"]):
-                                    worksheet.set_column(col_num, col_num, 13)
-                                else:
-                                    worksheet.set_column(col_num, col_num, 18)
-                    
-                    if chain_selection not in ["RDS", "GCAP"] and img_col_name in final_cols:
-                        image_cache = build_image_cache(NETWORK_IMAGE_PATH)
-                        img_col_idx = final_cols.index(img_col_name)
-                        worksheet.set_column(img_col_idx, img_col_idx, 18) 
-                        for i, item_no in enumerate(bucket_df['Item No_']):
-                            save_progress(req_id, i, len(bucket_df), f"Inserting Images: {item_no}")
-                            row_idx = i + data_start_row
-                            worksheet.set_row(row_idx, 90)
-                            img_path = find_image_in_cache(image_cache, item_no)
-                            if img_path:
-                                try:
-                                    with Image.open(img_path) as img:
-                                        img_resized = img.resize((120, 120), Image.Resampling.LANCZOS)
-                                        img_byte_arr = io.BytesIO()
-                                        img_resized.save(img_byte_arr, format='PNG')
-                                        img_byte_arr.seek(0)
-                                        worksheet.insert_image(row_idx, img_col_idx, f"{item_no}.png", {'image_data': img_byte_arr, 'object_position': 1})
-                                        images_found_count += 1
-                                except: worksheet.write(row_idx, img_col_idx, "ERR")
-                    
-                    if not is_multisheet_mode:
-                        current_writer.close()
-                        # FIXED: using getvalue() stops the 'I/O operation on closed file' error
-                        zip_file.writestr(filename, excel_output.getvalue())
-
-                except Exception as e: 
-                    logger.error(f"Brand bucket failed: {e}")
-
-        except Exception as outer_e:
-             logger.error(f"Loop Failure: {outer_e}")
-        finally:
-             if is_multisheet_mode and global_writer: global_writer.close()
-             elif zip_file: zip_file.close()
-
-        save_progress(req_id, len(merged_df), len(merged_df), "Finalizing...")
-
-        output_buffer.seek(0)
+                        worksheet.set_column(col_num, col_num, 18)
         
-        if is_multisheet_mode:
-             final_name = f"{filename_base}.xlsx"
-             mimetype_val = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
-        else:
-             mimetype_val = 'application/zip'
-             if chain_selection in ["RDS", "RUSTANS", "GCAP", "KCC", "GGRAND", "ALTURAS", "METRO"]: final_name = f"{filename_base}.zip"
-             elif chain_selection in ["WATSONS", "WATSONS ONLINE"]: final_name = final_zip_name
-             else: final_name = f"SM{datetime.now().strftime('%m%d%Y')}.zip" if not final_zip_name or "SC_TEMP" in final_zip_name else final_zip_name
+        if chain_selection not in ["RDS", "GCAP"] and img_col_name in final_cols:
+            image_cache = build_image_cache(NETWORK_IMAGE_PATH)
+            img_col_idx = final_cols.index(img_col_name)
+            worksheet.set_column(img_col_idx, img_col_idx, 18) 
+            for i, item_no in enumerate(bucket_df['Item No_']):
+                save_progress(req_id, i, len(bucket_df), f"Inserting Images: {item_no}")
+                row_idx = i + data_start_row
+                worksheet.set_row(row_idx, 90)
+                img_path = find_image_in_cache(image_cache, item_no)
+                if img_path:
+                    try:
+                        with Image.open(img_path) as img:
+                            img_resized = img.resize((120, 120), Image.Resampling.LANCZOS)
+                            img_byte_arr = io.BytesIO()
+                            img_resized.save(img_byte_arr, format='PNG')
+                            img_byte_arr.seek(0)
+                            worksheet.insert_image(row_idx, img_col_idx, f"{item_no}.png", {'image_data': img_byte_arr, 'object_position': 1})
+                            images_found_count += 1
+                    except: worksheet.write(row_idx, img_col_idx, "ERR")
+        
+        if not is_multisheet_mode:
+            current_writer.close()
+            # FIXED: using getvalue() stops the 'I/O operation on closed file' error
+            zip_file.writestr(filename, excel_output.getvalue())
 
-        response = make_response(send_file(output_buffer, mimetype=mimetype_val, as_attachment=True, download_name=final_name))
-        response.headers.update({
-            'X-Filename': final_name,
-            'X-Total-Items': str(len(merged_df)),
-            'X-Images-Found': str(images_found_count),
-            'Access-Control-Expose-Headers': 'X-Filename, X-Total-Items, X-Images-Found'
-        })
-        return response
-
-    except Exception as e:
-        logger.error(f"Global Failure: {traceback.format_exc()}")
-        return jsonify({"error": str(e)}), 500
+    except Exception as e: 
+        logger.error(f"Brand bucket failed: {e}")
     finally:
-        if conn: conn.close()
+        if is_multisheet_mode and global_writer: global_writer.close()
+        elif zip_file: zip_file.close()
+
+    save_progress(req_id, len(merged_df), len(merged_df), "Finalizing...")
+
+    output_buffer.seek(0)
+
+    if is_multisheet_mode:
+        final_name = f"{filename_base}.xlsx"
+        mimetype_val = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    else:
+        mimetype_val = 'application/zip'
+        if chain_selection in ["RDS", "RUSTANS", "GCAP", "KCC", "GGRAND", "ALTURAS", "METRO"]: final_name = f"{filename_base}.zip"
+        elif chain_selection in ["WATSONS", "WATSONS ONLINE"]: final_name = final_zip_name
+        else: final_name = f"SM{datetime.now().strftime('%m%d%Y')}.zip" if not final_zip_name or "SC_TEMP" in final_zip_name else final_zip_name
+
+    response = make_response(send_file(output_buffer, mimetype=mimetype_val, as_attachment=True, download_name=final_name))
+    response.headers.update({
+        'X-Filename': final_name,
+        'X-Total-Items': str(len(merged_df)),
+        'X-Images-Found': str(images_found_count),
+        'Access-Control-Expose-Headers': 'X-Filename, X-Total-Items, X-Images-Found'
+    })
+    return response
+
+    if conn: conn.close()
 
 @transactions_bp.route('/transaction-generator')
 def transaction_generator():

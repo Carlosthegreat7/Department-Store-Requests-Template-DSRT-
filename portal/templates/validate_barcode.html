@@ -18,7 +18,6 @@
     <div class="card border-0 shadow-sm mb-4 bento-card" style="background: var(--card-bg); backdrop-filter: blur(25px); border-radius: var(--radius-lg);">
         <div class="card-body p-4 p-md-5">
             <form id="uploadForm">
-                
                 <div class="alert-bento-info mb-4">
                     <i class="fas fa-info-circle"></i>
                     <div>
@@ -28,29 +27,21 @@
                 </div>
 
                 <div class="row align-items-end form-row-spacing">
-                    <div class="col-md-4 mb-3 mb-md-0">
-                        <label class="font-weight-bold text-muted small text-uppercase mb-2">Select Chain</label>
-                        <select name="template_type" id="template_type" class="form-control form-control-bento" required>
-                            <option value="" disabled selected>Choose a department store...</option>
-                            <option value="SM">SM (Index Based)</option>
-                            <option value="RDS">Robinsons (RDS)</option>
-                            <option value="GCAP">GCAP</option>
-                            <option value="ALTURAS">Alturas</option>
-                        </select>
-                    </div>
+                    <input type="hidden" id="detected_template" name="template_type" value="">
                     
-                    <div class="col-md-5 mb-3 mb-md-0">
+                    <div class="col-md-8 mb-3 mb-md-0">
                         <label class="font-weight-bold text-muted small text-uppercase mb-2">Upload Template</label>
                         <div class="custom-file custom-file-bento">
-                            <input type="file" class="custom-file-input" id="skuFile" name="file" accept=".xlsx, .xls" required>
+                            <input type="file" class="custom-file-input" id="skuFile" name="file" accept=".xlsx, .xls, .csv" required>
                             <label class="custom-file-label d-flex align-items-center text-muted" for="skuFile">
-                                <i class="fas fa-cloud-upload-alt mr-2"></i> Choose file...
+                                <i class="fas fa-cloud-upload-alt mr-2 flex-shrink-0"></i> 
+                                <span class="text-truncate flex-grow-1" style="min-width: 0; font-weight: 500;">Choose file...</span>
                             </label>
                         </div>
                     </div>
 
-                    <div class="col-md-3 mt-3 mt-md-0">
-                        <button type="submit" class="btn-bento-primary w-100 shadow-sm" id="processBtn">
+                    <div class="col-md-4 mt-3 mt-md-0">
+                        <button type="submit" class="btn-bento-primary w-100 shadow-sm" id="processBtn" disabled>
                             <i class="fas fa-magic mr-2"></i> Extract Data
                         </button>
                     </div>
@@ -62,30 +53,40 @@
     <div id="resultsContainer" style="display: none;">
         <div class="card border-0 shadow-sm bento-card" style="background: var(--card-bg); backdrop-filter: blur(25px); border-radius: var(--radius-lg); overflow: hidden;">
             
-            <div class="card-header bg-white border-0 py-4 px-4 d-flex justify-content-between align-items-center" style="border-bottom: 1px solid rgba(0,0,0,0.03) !important;">
+            <div class="card-header bg-white border-0 py-4 px-4 d-flex justify-content-between align-items-center flex-wrap" style="border-bottom: 1px solid rgba(0,0,0,0.03) !important; gap: 15px;">
                 <h5 class="font-weight-bold mb-0 d-flex align-items-center">
                     <div class="icon-square-bento mr-3"><i class="fas fa-table text-primary"></i></div>
                     Extracted Data Preview
                 </h5>
-                <span class="badge badge-pill badge-bento-light px-3 py-2" id="rowCountBadge">0 Rows Found</span>
+                
+                <div class="d-flex align-items-center" style="gap: 15px;">
+                    <div class="position-relative">
+                        <i class="fas fa-search position-absolute text-muted" style="left: 15px; top: 50%; transform: translateY(-50%); font-size: 0.9rem;"></i>
+                        <input type="text" id="searchInput" class="form-control" placeholder="Search items..." style="border-radius: 20px; padding-left: 35px; border: 1px solid var(--glass-border); background: #f8f9fa; width: 220px;">
+                    </div>
+                    <span class="badge badge-pill badge-bento-light px-3 py-2" id="rowCountBadge">0 Rows Found</span>
+                </div>
             </div>
             
-            <div class="table-responsive" style="max-height: 500px; overflow-y: auto;">
+            <div class="table-responsive" style="min-height: 400px;">
                 <table class="table table-bento mb-0">
                     <thead>
                         <tr>
                             <th class="px-4">#</th>
                             <th>ITEM CODE</th>
-                            <th>BARCODE (BAR_STDRD)</th>
+                            <th>BARCODE</th>
                             <th>STATUS</th>
                             <th>REASON</th>
-                            <th id="extraHeaders"></th>
+                            <th id="extraHeaders">EXTRA DETAILS</th>
                         </tr>
                     </thead>
                     <tbody id="resultsTableBody">
                         </tbody>
                 </table>
             </div>
+            
+            <div class="px-4 py-3 bg-white" id="paginationControls" style="border-top: 1px solid rgba(0,0,0,0.03);">
+                </div>
             
             <div class="card-footer bg-white border-0 py-4 px-4 d-flex justify-content-between align-items-center" style="border-top: 1px solid rgba(0,0,0,0.03) !important;">
                 <span class="text-warning small font-weight-bold bg-warning-light px-3 py-2 rounded-pill">
@@ -103,10 +104,68 @@
 </div>
 
 <script>
-// --- Custom File Input Label Fix ---
+// --- State Variables for Pagination & Search ---
+let currentPage = 1;
+const rowsPerPage = 15;
+let filteredData = []; 
+
+// --- Custom File Input & Auto-Detect Sniffer ---
 $('.custom-file-input').on('change', function() {
+    let fileInput = this;
     let fileName = $(this).val().split('\\').pop();
-    $(this).next('.custom-file-label').addClass("selected").html('<i class="fas fa-file-excel mr-2 text-success"></i>' + fileName);
+    let label = $(this).next('.custom-file-label');
+    let processBtn = document.getElementById('processBtn');
+    
+    // Reset hidden input and disable button initially
+    document.getElementById('detected_template').value = '';
+    processBtn.disabled = true;
+
+    if (!fileName) {
+        label.html('<i class="fas fa-cloud-upload-alt mr-2 flex-shrink-0"></i><span class="text-truncate flex-grow-1" style="min-width: 0; font-weight: 500;">Choose file...</span>');
+        return;
+    }
+    
+    // Reset label text: Use flexbox, text-truncate for long names, and prevent shrinking
+    label.addClass("selected").html(`
+        <i class="fas fa-file-excel mr-2 text-success flex-shrink-0"></i>
+        <span class="text-truncate flex-grow-1" style="min-width: 0; font-weight: 600;" title="${fileName}">${fileName}</span>
+        <i class="fas fa-spinner fa-spin ml-2 text-muted flex-shrink-0" id="detectSpinner"></i>
+    `);
+
+    // Trigger backend auto-detect
+    if (fileInput.files.length > 0) {
+        const formData = new FormData();
+        formData.append('file', fileInput.files[0]);
+        
+        fetch("{{ url_for('transactions.detect_template') }}", {
+            method: 'POST',
+            body: formData
+        })
+        .then(r => r.json())
+        .then(data => {
+            $('#detectSpinner').remove(); // remove spinner
+            
+            if (data.success && data.template_type !== 'UNKNOWN') {
+                // Save the detected chain in the hidden input
+                document.getElementById('detected_template').value = data.template_type;
+                
+                // Add a compact visual badge that won't wrap to a new line
+                label.append(`<span class="badge badge-success flex-shrink-0 py-1 px-2 shadow-sm ml-2"><i class="fas fa-robot mr-1"></i> ${data.template_type}</span>`);
+                
+                // Unlock the Extract Data button!
+                processBtn.disabled = false;
+            } else {
+                // Unknown format warning
+                label.append(`<span class="badge badge-danger flex-shrink-0 py-1 px-2 shadow-sm ml-2"><i class="fas fa-exclamation-triangle mr-1"></i> Unknown Format</span>`);
+                alert("Could not identify this template. Please make sure you are using a standard department store format.");
+            }
+        })
+        .catch(err => {
+            $('#detectSpinner').remove();
+            console.error("Auto-detect failed:", err);
+            label.append(`<span class="badge badge-danger flex-shrink-0 py-1 px-2 shadow-sm ml-2"><i class="fas fa-times mr-1"></i> Error</span>`);
+        });
+    }
 });
 
 // --- Hide Results Helper ---
@@ -115,18 +174,147 @@ function hideResults() {
     container.classList.remove('animate-fade-in-up');
     container.style.display = 'none';
     document.getElementById('uploadForm').reset();
-    $('.custom-file-label').html('<i class="fas fa-cloud-upload-alt mr-2"></i> Choose file...');
+    document.getElementById('detected_template').value = '';
+    document.getElementById('processBtn').disabled = true;
+    document.getElementById('searchInput').value = '';
+    $('.custom-file-label').html('<i class="fas fa-cloud-upload-alt mr-2 flex-shrink-0"></i><span class="text-truncate flex-grow-1" style="min-width: 0; font-weight: 500;">Choose file...</span>');
+}
+
+// --- Live Search Filter ---
+document.getElementById('searchInput').addEventListener('input', function(e) {
+    const term = e.target.value.toLowerCase();
+    
+    if (!window.lastParsedData) return;
+    
+    filteredData = window.lastParsedData.filter(row => 
+        (row.ITEM_CODE && String(row.ITEM_CODE).toLowerCase().includes(term)) ||
+        (row.BARCODE && String(row.BARCODE).toLowerCase().includes(term)) ||
+        (row.DESC && String(row.DESC).toLowerCase().includes(term)) ||
+        (row.VENDOR && String(row.VENDOR).toLowerCase().includes(term))
+    );
+    
+    currentPage = 1;
+    renderTable();
+});
+
+// --- Main Table Renderer ---
+function renderTable() {
+    const tbody = document.getElementById('resultsTableBody');
+    tbody.innerHTML = '';
+
+    const startIndex = (currentPage - 1) * rowsPerPage;
+    const endIndex = startIndex + rowsPerPage;
+    const paginatedData = filteredData.slice(startIndex, endIndex);
+
+    const statusBadge = {
+        'ok':        '<span class="badge badge-primary px-3 py-2 rounded-pill shadow-sm"><i class="fas fa-database mr-1"></i> EXISTS IN DB</span>',
+        'update':    '<span class="badge badge-success px-3 py-2 rounded-pill shadow-sm"><i class="fas fa-plus-circle mr-1"></i> NEW - READY TO ADD</span>',
+        'conflict':  '<span class="badge badge-danger px-3 py-2 rounded-pill shadow-sm"><i class="fas fa-exclamation-triangle mr-1"></i> CONFLICT</span>',
+        'rejected':  '<span class="badge badge-secondary px-3 py-2 rounded-pill shadow-sm"><i class="fas fa-times mr-1"></i> REJECTED</span>',
+        'duplicate': '<span class="badge badge-warning px-3 py-2 rounded-pill shadow-sm text-dark"><i class="fas fa-copy mr-1"></i> DUPLICATE IN FILE</span>',
+    };
+
+    if (paginatedData.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-5"><i class="fas fa-search mb-2" style="font-size: 2rem; opacity: 0.2;"></i><br>No matching records found.</td></tr>`;
+    }
+
+    paginatedData.forEach((row, index) => {
+        const actualRowNumber = startIndex + index + 1;
+        
+        let details = [];
+        if (row.DESC) details.push(`<span class="text-dark">${row.DESC}</span>`);
+        if (row.BRAND_CODE) details.push(`<span class="badge badge-light border text-primary shadow-sm"><i class="fas fa-tag"></i> ${row.BRAND_CODE}</span>`);
+        if (row.VENDOR) details.push(`<span class="badge badge-light border text-info shadow-sm"><i class="fas fa-building"></i> ${row.VENDOR}</span>`);
+        if (row.DIV) details.push(`<span class="badge badge-light border text-secondary shadow-sm">DIV: ${row.DIV}</span>`);
+        
+        let extraHtml = `<td>${details.length > 0 ? details.join(' <span class="mx-1 text-muted">|</span> ') : '<span class="text-muted">-</span>'}</td>`;
+
+        tbody.innerHTML += `
+            <tr>
+                <td class="text-muted px-4 font-weight-bold">${actualRowNumber}</td>
+                <td class="font-weight-bold text-dark">${row.ITEM_CODE}</td>
+                <td class="text-primary font-weight-bold" style="letter-spacing: 1px;">${row.BARCODE}</td>
+                <td>${statusBadge[row.status] || row.status}</td>
+                <td class="text-muted small"><em>${row.reason || ''}</em></td>
+                ${extraHtml}
+            </tr>
+        `;
+    });
+
+    renderPagination();
+}
+
+// --- Pagination Controls Renderer ---
+function renderPagination() {
+    const container = document.getElementById('paginationControls');
+    const totalPages = Math.ceil(filteredData.length / rowsPerPage);
+    
+    if (filteredData.length === 0) {
+        container.innerHTML = '';
+        return;
+    }
+
+    const startItem = ((currentPage - 1) * rowsPerPage) + 1;
+    const endItem = Math.min(currentPage * rowsPerPage, filteredData.length);
+
+    let html = `
+        <div class="d-flex justify-content-between align-items-center w-100">
+            <span class="text-muted font-weight-500 small">Showing <strong>${startItem}</strong> to <strong>${endItem}</strong> of <strong>${filteredData.length}</strong> entries</span>
+            <div class="pagination-container mt-0">
+                <button class="page-btn" ${currentPage === 1 ? 'disabled' : ''} onclick="changePage(${currentPage - 1})"><i class="fas fa-chevron-left"></i></button>
+    `;
+
+    // Smart logic to show max 5 page buttons
+    let startPage = Math.max(1, currentPage - 2);
+    let endPage = Math.min(totalPages, startPage + 4);
+    if (endPage - startPage < 4) {
+        startPage = Math.max(1, endPage - 4);
+    }
+
+    if (startPage > 1) {
+        html += `<button class="page-btn" onclick="changePage(1)">1</button>`;
+        if (startPage > 2) html += `<span class="mx-1 text-muted">...</span>`;
+    }
+
+    for (let i = startPage; i <= endPage; i++) {
+        html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="changePage(${i})">${i}</button>`;
+    }
+
+    if (endPage < totalPages) {
+        if (endPage < totalPages - 1) html += `<span class="mx-1 text-muted">...</span>`;
+        html += `<button class="page-btn" onclick="changePage(${totalPages})">${totalPages}</button>`;
+    }
+
+    html += `
+                <button class="page-btn" ${currentPage === totalPages ? 'disabled' : ''} onclick="changePage(${currentPage + 1})"><i class="fas fa-chevron-right"></i></button>
+            </div>
+        </div>
+    `;
+    
+    container.innerHTML = html;
+}
+
+// --- Page Change Trigger ---
+window.changePage = function(page) {
+    const totalPages = Math.ceil(filteredData.length / rowsPerPage);
+    if (page < 1 || page > totalPages) return;
+    currentPage = page;
+    renderTable();
 }
 
 // --- Form Submission ---
 document.getElementById('uploadForm').addEventListener('submit', function(e) {
     e.preventDefault();
 
-    const fileInput   = document.getElementById('skuFile');
-    const templateType = document.getElementById('template_type').value;
-    const processBtn  = document.getElementById('processBtn');
+    const fileInput    = document.getElementById('skuFile');
+    const templateType = document.getElementById('detected_template').value;
+    const processBtn   = document.getElementById('processBtn');
 
-    if (!fileInput.files.length || !templateType) return;
+    if (!fileInput.files.length) return;
+    if (!templateType) {
+        alert("Template format not recognized. Cannot extract data.");
+        return;
+    }
 
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
@@ -150,53 +338,25 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
 
         if (data.error) { alert('Error: ' + data.error); return; }
 
-        // Cache for commit step
+        // Cache globally for pagination & commit
         window.lastParsedData  = data.data;
         window.lastTemplateType = templateType;
+        
+        // Reset Search & Pagination States
+        document.getElementById('searchInput').value = '';
+        filteredData = [...window.lastParsedData];
+        currentPage = 1;
 
-        const tbody       = document.getElementById('resultsTableBody');
-        const extraHeaders = document.getElementById('extraHeaders');
-        tbody.innerHTML   = '';
+        // Render Table Data
+        renderTable();
 
-        if (templateType === 'ALTURAS') {
-            extraHeaders.innerHTML = 'DESCRIPTION <span class="mx-1 text-muted">|</span> VENDOR <span class="mx-1 text-muted">|</span> DIV';
-        } else {
-            extraHeaders.innerHTML = '';
-        }
-
-        // Status badge style map
-        const statusBadge = {
-            'ok':        '<span class="badge badge-primary px-3 py-2 rounded-pill shadow-sm"><i class="fas fa-check mr-1"></i> OK</span>',
-            'update':    '<span class="badge badge-success px-3 py-2 rounded-pill shadow-sm"><i class="fas fa-sync-alt mr-1"></i> WILL UPDATE</span>',
-            'conflict':  '<span class="badge badge-danger px-3 py-2 rounded-pill shadow-sm"><i class="fas fa-exclamation-triangle mr-1"></i> CONFLICT</span>',
-            'rejected':  '<span class="badge badge-secondary px-3 py-2 rounded-pill shadow-sm"><i class="fas fa-times mr-1"></i> REJECTED</span>',
-            'duplicate': '<span class="badge badge-warning px-3 py-2 rounded-pill shadow-sm text-dark"><i class="fas fa-copy mr-1"></i> DUPLICATE</span>',
-        };
-
-        data.data.forEach((row, index) => {
-            let extraHtml = templateType === 'ALTURAS'
-                ? `<td><span class="text-dark">${row.DESC || '-'}</span> <span class="mx-1 text-muted">|</span> <span class="text-primary">${row.VENDOR || '-'}</span> <span class="mx-1 text-muted">|</span> <span class="text-info">${row.DIV || '-'}</span></td>`
-                : `<td>-</td>`;
-
-            tbody.innerHTML += `
-                <tr>
-                    <td class="text-muted px-4">${index + 1}</td>
-                    <td class="font-weight-bold text-dark">${row.ITEM_CODE}</td>
-                    <td class="text-primary font-weight-bold" style="letter-spacing: 1px;">${row.BARCODE}</td>
-                    <td>${statusBadge[row.status] || row.status}</td>
-                    <td class="text-muted small"><em>${row.reason || ''}</em></td>
-                    ${extraHtml}
-                </tr>
-            `;
-        });
-
-        // Summary badges
+        // Update Summary Badges
         const s = data.summary;
         document.getElementById('rowCountBadge').innerHTML =
-            `<i class="fas fa-database mr-1"></i> ${data.row_count} Rows &nbsp;|&nbsp;
-             <span class="text-success"><i class="fas fa-sync-alt mr-1"></i> ${s.update} to update</span> &nbsp;|&nbsp;
-             <span class="text-danger"><i class="fas fa-exclamation-triangle mr-1"></i> ${s.conflict} conflicts</span> &nbsp;|&nbsp;
-             <span class="text-secondary"><i class="fas fa-times mr-1"></i> ${s.rejected} rejected</span>`;
+            `<i class="fas fa-table mr-1"></i> ${data.row_count} Total Rows &nbsp;|&nbsp;
+             <span class="text-success"><i class="fas fa-plus-circle mr-1"></i> ${s.update} new</span> &nbsp;|&nbsp;
+             <span class="text-primary"><i class="fas fa-database mr-1"></i> ${s.ok} exist</span> &nbsp;|&nbsp;
+             <span class="text-danger"><i class="fas fa-exclamation-triangle mr-1"></i> ${s.conflict} conflicts</span>`;
 
         // Show and animate
         resultsContainer.style.display = 'block';
@@ -214,14 +374,13 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
 function commitToDatabase() {
     const commitBtn = document.getElementById('commitBtn');
 
-    // Count how many rows will actually be committed
     const toCommit = (window.lastParsedData || []).filter(r => r.status === 'update');
     if (toCommit.length === 0) {
-        alert('Nothing to commit — no rows have status "WILL UPDATE".');
+        alert('Nothing to commit — no rows have status "NEW - READY TO ADD".');
         return;
     }
 
-    if (!confirm(`Commit ${toCommit.length} rows to the database?`)) return;
+    if (!confirm(`Commit ${toCommit.length} new records to the database?`)) return;
 
     commitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Saving...';
     commitBtn.disabled  = true;
@@ -239,7 +398,10 @@ function commitToDatabase() {
         commitBtn.innerHTML = '<i class="fas fa-cloud-upload-alt mr-1"></i> Commit to Database';
         commitBtn.disabled  = false;
         if (data.error) { alert('Error: ' + data.error); return; }
-        alert(`✅ ${data.committed} rows updated.\n⏭️ ${data.skipped} rows skipped.\n${data.message || ''}`);
+        alert(`✅ ${data.committed} new records saved.\n⏭️ ${data.skipped} rows skipped.\n${data.message || ''}`);
+        
+        // Hide the table after successful commit
+        hideResults();
     })
     .catch(() => {
         alert('A network error occurred.');
