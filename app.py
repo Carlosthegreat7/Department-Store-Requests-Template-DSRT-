@@ -15,8 +15,10 @@ from routes.transactions import transactions_bp
 from routes.rds_mng import rds_mng_bp
 
 # --- DATABASE CONFIGURATION ---
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:@localhost/myproject'
+# app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql+pymysql://root:@localhost/myproject'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+# app.config['SQLALCHEMY_DATABASE_URI'] = 'mssql+pyodbc://username:password@MGSVR14/myproject?driver=ODBC+Driver+17+for+SQL+Server'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mssql+pyodbc://MGSVR14/DSRT?driver=ODBC+Driver+18+for+SQL+Server&TrustServerCertificate=yes&Trusted_Connection=yes'
 
 # Initialize DB with App
 db.init_app(app)

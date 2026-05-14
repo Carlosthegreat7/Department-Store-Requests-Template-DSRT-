@@ -2,21 +2,22 @@ from flask import Blueprint, render_template, request, redirect, url_for, flash
 from extensions import db
 from models import Vendor
 from portal import loggedin_required
-import mysql.connector
-
+import pyodbc
 
 vendor_bp = Blueprint('vendor', __name__)
 
-def get_mysql_conn():
+def get_mssql_conn():
     """Helper for raw SQL operations on the mapping table."""
     try:
-        return mysql.connector.connect(
-            host="localhost",
-            user="root",
-            password="",
-            database="myproject"
+        return pyodbc.connect(
+            "Driver={ODBC Driver 18 for SQL Server};"
+            "Server=MGSVR14;"
+            "Database=DSRT;"
+            "TrustServerCertificate=yes;"
+            "Trusted_Connection=yes;"
         )
-    except Exception:
+    except Exception as e:
+        print(f"Connection Error: {e}")
         return None
 
 @vendor_bp.route('/admin/add_vendor', methods=['GET', 'POST'])
@@ -35,16 +36,20 @@ def add_vendor():
             db.session.commit()
 
             # Add to the Bridge Mapping table (Raw SQL)
-            conn = get_mysql_conn()
+            conn = get_mssql_conn()
             if conn:
                 cursor = conn.cursor()
-                map_qry = (
-                    "INSERT INTO vendor_chain_mappings (chain_name, company_selection, vendor_code) "
-                    "VALUES (%s, %s, %s) "
-                    "ON DUPLICATE KEY UPDATE vendor_code=%s"
-                )
+                # T-SQL translation of ON DUPLICATE KEY
+                map_qry = """
+                    IF EXISTS (SELECT 1 FROM vendor_chain_mappings WHERE vendor_code = ?)
+                        UPDATE vendor_chain_mappings SET vendor_code = ? WHERE vendor_code = ?
+                    ELSE
+                        INSERT INTO vendor_chain_mappings (chain_name, company_selection, vendor_code) 
+                        VALUES (?, ?, ?)
+                """
                 company_slug = name.replace(" ", "_")[:15]
-                cursor.execute(map_qry, (chain, company_slug, code, code))
+                # Note the parameter mapping aligns with the IF/ELSE block above
+                cursor.execute(map_qry, (code, code, code, chain, company_slug, code))
                 conn.commit()
                 conn.close()
 
@@ -69,10 +74,10 @@ def edit_vendor(code):
         
         try:
             # 1. Update Mapping Table First (if code is changed)
-            conn = get_mysql_conn()
+            conn = get_mssql_conn()
             if conn:
                 cursor = conn.cursor()
-                update_map = "UPDATE vendor_chain_mappings SET vendor_code = %s WHERE vendor_code = %s"
+                update_map = "UPDATE vendor_chain_mappings SET vendor_code = ? WHERE vendor_code = ?"
                 cursor.execute(update_map, (new_code, code))
                 conn.commit()
                 conn.close()
@@ -98,10 +103,10 @@ def delete_vendor(code):
     if vendor:
         try:
             # 1. Remove from Mapping Table
-            conn = get_mysql_conn()
+            conn = get_mssql_conn()
             if conn:
                 cursor = conn.cursor()
-                cursor.execute("DELETE FROM vendor_chain_mappings WHERE vendor_code = %s", (code,))
+                cursor.execute("DELETE FROM vendor_chain_mappings WHERE vendor_code = ?", (code,))
                 conn.commit()
                 conn.close()
 
