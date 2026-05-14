@@ -28,13 +28,16 @@ except ImportError:
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Import SQLconnect from the portal package
+# Import SQLconnect from portal package
 try:
-    from portal.SQLconnection import SQLconnect
+    # Package-style import
+    from ..portal.SQLconnection import SQLconnect
 except ImportError:
     try:
-        from SQLconnection import SQLconnect
-    except ImportError:
+        # Direct import fallback
+        from portal.SQLconnection import SQLconnect
+    except ImportError as e:
+        print(f"Failed to import SQLconnect: {e}")
         SQLconnect = None
 
 transactions_bp = Blueprint('transactions', __name__)
