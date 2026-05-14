@@ -1,7 +1,7 @@
 from flask import session, jsonify, request, render_template, redirect, url_for, flash
 from portal import app, loggedin_required
 from extensions import db
-from models import Vendor, Brand, SubClass, VendorRDS, HierarchyRDS, PricePointRDS, AgeCodeRDS, AuditLog
+from models import Vendor, Brand, SubClass, VendorRDS, HierarchyRDS, PricePointRDS, AgeCodeRDS
 from datetime import datetime, timedelta, date
 import ldap
 import pymysql
@@ -37,9 +37,6 @@ def generate_earliest_missing_date(days):
 def log_user_action(action_description):
     """Helper function to record an action to the AuditLog."""
     username = session.get('sdr_curr_user_username', 'Unknown/System')
-    new_log = AuditLog(user=username, action=action_description, timestamp=datetime.now())
-    db.session.add(new_log)
-    db.session.commit()
 
 # --- CORE ROUTES (LDAP & AUTH) ---
 
@@ -128,17 +125,9 @@ def audit_tab():
     # 2. Get the current page from the URL query string (default is page 1)
     page = request.args.get('page', 1, type=int)
     
-    # 3. Paginate the query instead of fetching .all()
-    # Adjust per_page to whatever fits your UI best
-    pagination = AuditLog.query.order_by(AuditLog.timestamp.desc()).paginate(
-        page=page, per_page=50, error_out=False
-    )
-    
-    # 4. Pass the items and the pagination object to the template
+    # 3. Pass the items and the pagination object to the template
     return render_template(
-        'audit_log.html', 
-        logs=pagination.items, 
-        pagination=pagination
+        'audit_log.html',
     )
 
 if __name__ == '__main__':

@@ -313,6 +313,22 @@ body {
     transform: translateY(-2px);
 }
 
+.filter-badge { 
+    cursor: pointer; 
+    transition: all 0.2s ease; 
+    user-select: none;
+    opacity: 0.6;
+}
+.filter-badge:hover { 
+    opacity: 1; 
+    transform: scale(1.05);
+}
+.filter-active { 
+    opacity: 1 !important; 
+    font-weight: bold; 
+    border-bottom: 2px solid currentColor;
+}
+
 .search-input {
     border: none; outline: none; flex-grow: 1; font-size: 1rem; color: var(--dark-text);
 }

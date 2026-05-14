@@ -1,6 +1,7 @@
 {% extends "base.html" %}
 
 {% block content %}
+
 <div class="bg-blob blob-purple"></div>
 <div class="bg-blob blob-blue"></div>
 
@@ -81,12 +82,12 @@
                         </tr>
                     </thead>
                     <tbody id="resultsTableBody">
-                        </tbody>
+                    </tbody>
                 </table>
             </div>
             
             <div class="px-4 py-3 bg-white" id="paginationControls" style="border-top: 1px solid rgba(0,0,0,0.03);">
-                </div>
+            </div>
             
             <div class="card-footer bg-white border-0 py-4 px-4 d-flex justify-content-between align-items-center" style="border-top: 1px solid rgba(0,0,0,0.03) !important;">
                 <span class="text-warning small font-weight-bold bg-warning-light px-3 py-2 rounded-pill">
@@ -108,6 +109,7 @@
 let currentPage = 1;
 const rowsPerPage = 15;
 let filteredData = []; 
+let currentFilter = 'all'; // NEW: Tracks which badge is clicked
 
 // --- Custom File Input & Auto-Detect Sniffer ---
 $('.custom-file-input').on('change', function() {
@@ -182,20 +184,48 @@ function hideResults() {
 
 // --- Live Search Filter ---
 document.getElementById('searchInput').addEventListener('input', function(e) {
-    const term = e.target.value.toLowerCase();
-    
-    if (!window.lastParsedData) return;
-    
-    filteredData = window.lastParsedData.filter(row => 
-        (row.ITEM_CODE && String(row.ITEM_CODE).toLowerCase().includes(term)) ||
-        (row.BARCODE && String(row.BARCODE).toLowerCase().includes(term)) ||
-        (row.DESC && String(row.DESC).toLowerCase().includes(term)) ||
-        (row.VENDOR && String(row.VENDOR).toLowerCase().includes(term))
-    );
-    
-    currentPage = 1;
-    renderTable();
+    // Just re-trigger the filter, which will grab the search text automatically
+    filterByStatus(currentFilter);
 });
+
+// --- Clickable Badge Filter ---
+window.filterByStatus = function(status) {
+    if (!window.lastParsedData) return;
+    currentFilter = status;
+    
+    // 1. Filter by Status
+    let tempData = window.lastParsedData;
+    if (status !== 'all') {
+        tempData = tempData.filter(row => row.status === status);
+    }
+    
+    // 2. Apply Search Term (if any)
+    const term = document.getElementById('searchInput').value.toLowerCase();
+    if (term) {
+        tempData = tempData.filter(row => 
+            (row.ITEM_CODE && String(row.ITEM_CODE).toLowerCase().includes(term)) ||
+            (row.BARCODE && String(row.BARCODE).toLowerCase().includes(term)) ||
+            (row.DESC && String(row.DESC).toLowerCase().includes(term)) ||
+            (row.VENDOR && String(row.VENDOR).toLowerCase().includes(term))
+        );
+    }
+    
+    filteredData = tempData;
+    currentPage = 1; // Always go back to page 1 when changing filters
+    
+    // 3. Update Badge Visuals
+    document.querySelectorAll('.filter-badge').forEach(el => {
+        el.classList.remove('filter-active');
+        el.style.opacity = '0.6';
+    });
+    const activeBadge = document.getElementById('filter-' + status);
+    if (activeBadge) {
+        activeBadge.classList.add('filter-active');
+        activeBadge.style.opacity = '1';
+    }
+    
+    renderTable();
+};
 
 // --- Main Table Renderer ---
 function renderTable() {
@@ -344,19 +374,28 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
         
         // Reset Search & Pagination States
         document.getElementById('searchInput').value = '';
+        currentFilter = 'all';
         filteredData = [...window.lastParsedData];
         currentPage = 1;
 
         // Render Table Data
         renderTable();
 
-        // Update Summary Badges
+        // Update Summary Badges (Now Clickable!)
         const s = data.summary;
         document.getElementById('rowCountBadge').innerHTML =
-            `<i class="fas fa-table mr-1"></i> ${data.row_count} Total Rows &nbsp;|&nbsp;
-             <span class="text-success"><i class="fas fa-plus-circle mr-1"></i> ${s.update} new</span> &nbsp;|&nbsp;
-             <span class="text-primary"><i class="fas fa-database mr-1"></i> ${s.ok} exist</span> &nbsp;|&nbsp;
-             <span class="text-danger"><i class="fas fa-exclamation-triangle mr-1"></i> ${s.conflict} conflicts</span>`;
+            `<span class="filter-badge filter-active text-dark" id="filter-all" onclick="filterByStatus('all')">
+                <i class="fas fa-table mr-1"></i> ${data.row_count} Total Rows
+             </span> &nbsp;|&nbsp;
+             <span class="text-success filter-badge" id="filter-update" onclick="filterByStatus('update')">
+                <i class="fas fa-plus-circle mr-1"></i> ${s.update} new
+             </span> &nbsp;|&nbsp;
+             <span class="text-primary filter-badge" id="filter-ok" onclick="filterByStatus('ok')">
+                <i class="fas fa-database mr-1"></i> ${s.ok} exist
+             </span> &nbsp;|&nbsp;
+             <span class="text-danger filter-badge" id="filter-conflict" onclick="filterByStatus('conflict')">
+                <i class="fas fa-exclamation-triangle mr-1"></i> ${s.conflict} conflicts
+             </span>`;
 
         // Show and animate
         resultsContainer.style.display = 'block';

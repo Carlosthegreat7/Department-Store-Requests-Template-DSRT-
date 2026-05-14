@@ -185,3 +185,10 @@ test.py
 myproject (1).sql
 Get Sales and Items NIC ATC TPC.py
 test_server.py
+clear_barcodes.py
+delete_logs_auditlogs.py
+list_databases.py
+list_tables.py
+peek_dsrt.py
+view_barcodes.py
+fix_duplicate.py

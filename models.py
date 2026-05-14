@@ -24,15 +24,15 @@ class Brand(db.Model):
         return f'<Brand {self.brand_name} ({self.product_group})>'
 
 
-class AuditLog(db.Model):
-    __tablename__ = 'audit_logs'
-    id = db.Column(db.Integer, primary_key=True)
-    user = db.Column(db.String(100), nullable=False)
-    action = db.Column(db.String(255), nullable=False)
-    timestamp = db.Column(db.DateTime, default=datetime.utcnow)
+# class AuditLog(db.Model):
+#     __tablename__ = 'audit_logs'
+#     id = db.Column(db.Integer, primary_key=True)
+#     user = db.Column(db.String(100), nullable=False)
+#     action = db.Column(db.String(255), nullable=False)
+#     timestamp = db.Column(db.DateTime, default=datetime.utcnow)
 
-    def __repr__(self):
-        return f"<AuditLog {self.user} - {self.action}>"
+#     def __repr__(self):
+#         return f"<AuditLog {self.user} - {self.action}>"
 
 class SubClass(db.Model):
     """Model for the 'sub_classes' table for SM."""
