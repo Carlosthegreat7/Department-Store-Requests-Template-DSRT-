@@ -320,76 +320,316 @@ def _read_all_str(file_path: str) -> pd.DataFrame:
 
 
 def parse_sku_template(file_path: str, template_type: str) -> list:
-    """Parse the uploaded file and return a list of row dicts."""
-    extracted_data = []
+    """Parse the uploaded file and return a list of row dicts.
 
+    Dispatches to a template-specific deep parser when available,
+    otherwise falls back to the generic column-mapping path.
+    """
     try:
-        if template_type not in CHAIN_MAPPINGS:
-            if template_type == 'SM':
-                df = _read_all_str(file_path)
-                for _, row in df.iterrows():
-                    extracted_data.append({
-                        'ITEM_CODE': str(row.iloc[0]).strip() if len(row) > 0 else '',
-                        'BARCODE':   str(row.iloc[81]).strip() if len(row) > 81 else '',
-                    })
-            return extracted_data
-
-        mapping = CHAIN_MAPPINGS[template_type]
-        df_full = _read_all_str(file_path)
-
-        # Find the header row (up to row 50)
-        header_idx, max_matches = -1, 0
-        for idx in range(min(50, len(df_full))):
-            row_vals = [str(v).strip().upper() for v in df_full.iloc[idx].values if pd.notna(v)]
-            row_no_spaces = [v.replace(' ', '') for v in row_vals]
-            matches = sum(
-                1 for expected in mapping
-                if (expected.upper() in row_vals
-                    or expected.upper().replace(' ', '') in row_no_spaces)
-            )
-            if matches > max_matches:
-                max_matches = matches
-                header_idx = idx
-
-        if header_idx == -1 or max_matches == 0:
-            return extracted_data
-
-        raw_columns = [
-            str(c).strip().upper() if pd.notna(c) else f'UNNAMED_{i}'
-            for i, c in enumerate(df_full.iloc[header_idx].values)
-        ]
-        df_full.columns = raw_columns
-        df_data = df_full.iloc[header_idx + 1:].copy()
-
-        col_map = {}
-        for source_key, target_key in mapping.items():
-            expected = source_key.upper()
-            for col in df_data.columns:
-                if expected == col or expected.replace(' ', '') == col.replace(' ', ''):
-                    col_map[col] = target_key
-                    break
-
-        for _, row in df_data.iterrows():
-            row_dict = {'ITEM_CODE': '', 'BARCODE': ''}
-            has_data = False
-
-            for file_col, target_key in col_map.items():
-                val = str(row[file_col]).strip()
-                if val.lower() not in ('nan', 'none', ''):
-                    row_dict[target_key] = val
-                    has_data = True
-
-            # SKU can serve as a fallback ITEM_CODE
-            if not row_dict.get('ITEM_CODE') and row_dict.get('SKU'):
-                row_dict['ITEM_CODE'] = row_dict['SKU']
-
-            if has_data:
-                extracted_data.append(row_dict)
-
+        if template_type == 'SM':
+            return _parse_sm(file_path)
+        if template_type == 'RDS':
+            return _parse_rds(file_path)
+        if template_type == 'RUSTANS':
+            return _parse_rustans(file_path)
+        if template_type == 'GCAP':
+            return _parse_gcap(file_path)
+        # All other chains (GGRAND, ALTURAS, KCC, …) use the generic path
+        return _parse_generic(file_path, template_type)
     except Exception as exc:
         logger.error('parse_sku_template error [%s]: %s', template_type, exc)
+        return []
+
+
+# ------------------------------------------------------------------
+# Deep parser: GCAP
+# Direct column mapping: ITEM CODE → ITEM_CODE, GCAP BARCODE → BARCODE
+# Also captures BRAND → BRAND_CODE, DESCRIPTION → DESC
+# ------------------------------------------------------------------
+def _parse_gcap(file_path: str) -> list:
+    """GCAP template — direct named-column extraction."""
+    extracted_data = []
+    mapping = CHAIN_MAPPINGS['GCAP']
+    df_full = _read_all_str(file_path)
+
+    header_idx = _find_header_row(df_full, mapping)
+    if header_idx == -1:
+        logger.warning('GCAP: header row not found')
+        return extracted_data
+
+    df_full.columns = [
+        str(c).strip().upper() if pd.notna(c) else f'UNNAMED_{i}'
+        for i, c in enumerate(df_full.iloc[header_idx].values)
+    ]
+    df_data = df_full.iloc[header_idx + 1:].reset_index(drop=True)
+    col_map = _build_col_map(df_data.columns, mapping)
+
+    for _, row in df_data.iterrows():
+        item_code = _get_col(row, col_map, 'ITEM_CODE')
+        barcode   = _get_col(row, col_map, 'BARCODE')
+
+        # Skip rows with no useful data
+        if _is_blank(item_code.lower()) and _is_blank(barcode.lower()):
+            continue
+
+        extracted_data.append({
+            'ITEM_CODE':  item_code,
+            'BARCODE':    barcode,
+            'DESC':       _get_col(row, col_map, 'DESC'),
+            'BRAND_CODE': _get_col(row, col_map, 'BRAND_CODE'),
+        })
+
+    logger.info('GCAP: extracted %d rows', len(extracted_data))
+    return extracted_data
+
+
+# ------------------------------------------------------------------
+# Deep parser: SM
+# Index-based — no reliable column headers.
+# Item code: col 0 (description field contains the SKU)
+# Barcode:   col 81 (far-right UPC column)
+# Skip rows where both values are empty or look like metadata.
+# ------------------------------------------------------------------
+def _parse_sm(file_path: str) -> list:
+    """SM template — fixed column-index extraction."""
+    extracted_data = []
+    df = _read_all_str(file_path)
+
+    # SM files may have a multi-row header block; skip rows until we hit real data.
+    # A real data row has a numeric-looking item code in col 0.
+    ITEM_COL   = 0
+    BARCODE_COL = 81
+
+    for _, row in df.iterrows():
+        if len(row) <= BARCODE_COL:
+            continue
+
+        raw_item = str(row.iloc[ITEM_COL]).strip()
+        raw_bar  = str(row.iloc[BARCODE_COL]).strip()
+
+        # Skip header/metadata rows: item code must look like an alphanumeric SKU
+        if raw_item.lower() in ('nan', 'none', '', 'item', 'item code', 'sku'):
+            continue
+        if raw_bar.lower() in ('nan', 'none', '', 'sm upc', 'barcode', 'upc'):
+            continue
+        # Skip rows that are purely non-alphanumeric (section dividers, etc.)
+        if not any(c.isalnum() for c in raw_item):
+            continue
+
+        extracted_data.append({
+            'ITEM_CODE': raw_item,
+            'BARCODE':   raw_bar,
+        })
+
+    logger.info('SM: extracted %d rows', len(extracted_data))
+    return extracted_data
+
+
+# ------------------------------------------------------------------
+# Deep parser: RDS
+# Multi-row headers must be skipped.
+# SKU NO.       → BARCODE   (RDS's own SKU is stored as the barcode)
+# VENDOR PART # → ITEM_CODE (our internal item code)
+# ITEM DESCRIPTION → DESC
+# BRAND → BRAND_CODE
+# ------------------------------------------------------------------
+def _parse_rds(file_path: str) -> list:
+    """RDS template — skips multi-row headers, maps SKU NO. to BARCODE."""
+    extracted_data = []
+    mapping = CHAIN_MAPPINGS['RDS']
+    df_full = _read_all_str(file_path)
+
+    # RDS files often have 2–3 merged header rows before the real column row.
+    # _find_header_row scans up to row 50 and picks the best match.
+    header_idx = _find_header_row(df_full, mapping)
+    if header_idx == -1:
+        logger.warning('RDS: header row not found')
+        return extracted_data
+
+    df_full.columns = [
+        str(c).strip().upper() if pd.notna(c) else f'UNNAMED_{i}'
+        for i, c in enumerate(df_full.iloc[header_idx].values)
+    ]
+    df_data = df_full.iloc[header_idx + 1:].reset_index(drop=True)
+    col_map = _build_col_map(df_data.columns, mapping)
+
+    for _, row in df_data.iterrows():
+        # RDS mapping: SKU NO. → BARCODE, VENDOR PART # → ITEM_CODE
+        barcode   = _get_col(row, col_map, 'BARCODE')    # sourced from SKU NO.
+        item_code = _get_col(row, col_map, 'ITEM_CODE')  # sourced from VENDOR PART #
+
+        if _is_blank(barcode.lower()) and _is_blank(item_code.lower()):
+            continue
+        # Skip rows that appear to be sub-headers (non-numeric SKU when barcode expected)
+        if not any(c.isdigit() for c in barcode) and barcode:
+            continue
+
+        extracted_data.append({
+            'ITEM_CODE':  item_code,
+            'BARCODE':    barcode,
+            'DESC':       _get_col(row, col_map, 'DESC'),
+            'BRAND_CODE': _get_col(row, col_map, 'BRAND_CODE'),
+        })
+
+    logger.info('RDS: extracted %d rows', len(extracted_data))
+    return extracted_data
+
+
+# ------------------------------------------------------------------
+# Deep parser: RUSTANS
+# Form-based extraction using fixed cell positions.
+# The file is structured with labeled cells rather than a flat table.
+# Multiple consecutive rows may represent a single item.
+# Key cells: RCC SKU → BARCODE, VENDOR ITEM CODE → ITEM_CODE
+# ------------------------------------------------------------------
+def _parse_rustans(file_path: str) -> list:
+    """RUSTANS template — form-based fixed-cell extraction with multi-row grouping."""
+    extracted_data = []
+    mapping = CHAIN_MAPPINGS['RUSTANS']
+    df_full = _read_all_str(file_path)
+
+    # Locate the header row to understand column positions
+    header_idx = _find_header_row(df_full, mapping)
+    if header_idx == -1:
+        logger.warning('RUSTANS: header row not found, attempting raw scan')
+        # Fallback: scan every cell pair for known labels
+        return _parse_rustans_raw_scan(df_full)
+
+    df_full.columns = [
+        str(c).strip().upper() if pd.notna(c) else f'UNNAMED_{i}'
+        for i, c in enumerate(df_full.iloc[header_idx].values)
+    ]
+    df_data = df_full.iloc[header_idx + 1:].reset_index(drop=True)
+    col_map = _build_col_map(df_data.columns, mapping)
+
+    # Group rows: accumulate values and emit a record when BARCODE is found
+    current: dict = {'ITEM_CODE': '', 'BARCODE': ''}
+    for _, row in df_data.iterrows():
+        barcode   = _get_col(row, col_map, 'BARCODE')
+        item_code = _get_col(row, col_map, 'ITEM_CODE')
+
+        if not _is_blank(item_code.lower()):
+            current['ITEM_CODE'] = item_code
+        if not _is_blank(barcode.lower()):
+            current['BARCODE'] = barcode
+
+        # Emit when we have both fields
+        if current['ITEM_CODE'] and current['BARCODE']:
+            extracted_data.append(dict(current))
+            current = {'ITEM_CODE': '', 'BARCODE': ''}
+
+    logger.info('RUSTANS: extracted %d rows', len(extracted_data))
+    return extracted_data
+
+
+def _parse_rustans_raw_scan(df: pd.DataFrame) -> list:
+    """Fallback: walk every cell looking for RUSTANS label/value pairs."""
+    extracted_data = []
+    rcc_col = vendor_col = None
+
+    for row_idx, row in df.iterrows():
+        vals = [str(v).strip().upper() for v in row.values]
+        # Find columns by scanning for known header labels
+        for col_idx, val in enumerate(vals):
+            if 'RCC SKU' in val:
+                rcc_col = col_idx
+            if 'VENDOR ITEM CODE' in val:
+                vendor_col = col_idx
+
+        if rcc_col is not None and vendor_col is not None:
+            barcode   = str(row.iloc[rcc_col]).strip()   if len(row) > rcc_col    else ''
+            item_code = str(row.iloc[vendor_col]).strip() if len(row) > vendor_col else ''
+            if not _is_blank(barcode.lower()) and not _is_blank(item_code.lower()):
+                extracted_data.append({'ITEM_CODE': item_code, 'BARCODE': barcode})
 
     return extracted_data
+
+
+# ------------------------------------------------------------------
+# Generic fallback parser (GGRAND, ALTURAS, KCC, …)
+# ------------------------------------------------------------------
+def _parse_generic(file_path: str, template_type: str) -> list:
+    """Generic column-mapping parser for chains without a custom deep parser."""
+    extracted_data = []
+
+    if template_type not in CHAIN_MAPPINGS:
+        logger.warning('No mapping found for template: %s', template_type)
+        return extracted_data
+
+    mapping = CHAIN_MAPPINGS[template_type]
+    df_full = _read_all_str(file_path)
+
+    header_idx = _find_header_row(df_full, mapping)
+    if header_idx == -1:
+        return extracted_data
+
+    df_full.columns = [
+        str(c).strip().upper() if pd.notna(c) else f'UNNAMED_{i}'
+        for i, c in enumerate(df_full.iloc[header_idx].values)
+    ]
+    df_data = df_full.iloc[header_idx + 1:].copy()
+    col_map = _build_col_map(df_data.columns, mapping)
+
+    for _, row in df_data.iterrows():
+        row_dict = {'ITEM_CODE': '', 'BARCODE': ''}
+        has_data = False
+
+        for file_col, target_key in col_map.items():
+            val = str(row[file_col]).strip()
+            if val.lower() not in ('nan', 'none', ''):
+                row_dict[target_key] = val
+                has_data = True
+
+        # SKU can serve as a fallback ITEM_CODE
+        if not row_dict.get('ITEM_CODE') and row_dict.get('SKU'):
+            row_dict['ITEM_CODE'] = row_dict['SKU']
+
+        if has_data:
+            extracted_data.append(row_dict)
+
+    return extracted_data
+
+
+# ------------------------------------------------------------------
+# Shared helpers for the deep parsers
+# ------------------------------------------------------------------
+
+def _find_header_row(df: pd.DataFrame, mapping: dict, scan_rows: int = 50) -> int:
+    """Scan up to scan_rows rows and return the index of the best header match."""
+    header_idx, max_matches = -1, 0
+    for idx in range(min(scan_rows, len(df))):
+        row_vals      = [str(v).strip().upper() for v in df.iloc[idx].values if pd.notna(v)]
+        row_no_spaces = [v.replace(' ', '') for v in row_vals]
+        matches = sum(
+            1 for expected in mapping
+            if (expected.upper() in row_vals
+                or expected.upper().replace(' ', '') in row_no_spaces)
+        )
+        if matches > max_matches:
+            max_matches = matches
+            header_idx  = idx
+    return header_idx if max_matches > 0 else -1
+
+
+def _build_col_map(columns, mapping: dict) -> dict:
+    """Return {actual_col_name: target_db_key} by fuzzy-matching against mapping keys."""
+    col_map = {}
+    for source_key, target_key in mapping.items():
+        expected = source_key.upper()
+        for col in columns:
+            if expected == col or expected.replace(' ', '') == col.replace(' ', ''):
+                col_map[col] = target_key
+                break
+    return col_map
+
+
+def _get_col(row, col_map: dict, target_key: str) -> str:
+    """Safely extract the value for a target_key from a row using col_map."""
+    for col, key in col_map.items():
+        if key == target_key:
+            val = str(row[col]).strip()
+            return '' if val.lower() in ('nan', 'none') else val
+    return ''
 
 
 # ==============================================================
