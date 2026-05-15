@@ -6,43 +6,47 @@
 <div class="bg-blob blob-blue"></div>
 
 <div class="container pb-5">
-    <div class="d-flex align-items-center mb-4 mt-3">
-        <a href="{{ url_for('index') }}" class="btn btn-light rounded-circle shadow-sm mr-3 back-btn-bento" style="width: 48px; height: 48px; display: inline-flex; align-items: center; justify-content: center; transition: all 0.3s ease;">
-            <i class="fas fa-arrow-left text-primary" style="font-size: 1.2rem;"></i>
-        </a>
-        <div>
-            <h2 style="font-weight: 900; letter-spacing: -1px; color: var(--dark-text); margin-bottom: 2px;">Validate Barcode</h2>
-            <p class="text-muted mb-0 font-weight-500">Upload chain templates to extract and verify SKUs.</p>
-        </div>
-    </div>
 
-    <div class="card border-0 shadow-sm mb-4 bento-card" style="background: var(--card-bg); backdrop-filter: blur(25px); border-radius: var(--radius-lg);">
-        <div class="card-body p-4 p-md-5">
-            <form id="uploadForm">
-                <div class="alert-bento-info mb-4">
-                    <i class="fas fa-info-circle"></i>
-                    <div>
-                        <strong>Important:</strong> Please ensure your Excel file only contains <strong>one sheet</strong> before uploading.<br>
-                        <span class="text-muted small"><em>(In Excel: Right-click the tab > Move or Copy > To book: (new book) > Save As)</em></span>
-                    </div>
+    <div class="card border-0 shadow-sm mb-4 bento-card mt-3"
+        style="background:var(--card-bg);backdrop-filter:blur(25px);border-radius:var(--radius-lg);overflow:hidden;">
+
+        <div class="card-header bg-white border-0 px-4 py-3 d-flex align-items-center justify-content-between"
+            style="border-bottom:1px solid rgba(0,0,0,0.04)!important;">
+            <div class="d-flex align-items-center">
+                <a href="{{ url_for('index') }}" class="btn btn-light rounded-circle shadow-sm mr-3 back-btn-bento flex-shrink-0"
+                    style="width:42px;height:42px;display:inline-flex;align-items:center;justify-content:center;transition:all 0.3s ease;">
+                    <i class="fas fa-arrow-left text-primary" style="font-size:1rem;"></i>
+                </a>
+                <div>
+                    <h5 class="mb-0" style="font-weight:900;letter-spacing:-0.5px;color:var(--dark-text);line-height:1.2;">Validate Barcode</h5>
+                    <p class="text-muted mb-0" style="font-size:0.8rem;font-weight:500;">Upload chain templates to extract and verify SKUs.</p>
                 </div>
+            </div>
+            <div class="d-none d-md-flex align-items-center px-3 py-2 rounded-pill"
+                style="background:#f0f4ff;border:1px solid #dce4ff;gap:8px;">
+                <i class="fas fa-info-circle text-primary" style="font-size:0.85rem;"></i>
+                <span style="font-size:0.78rem;color:#4a5568;font-weight:500;">
+                    Ensure your Excel file has <strong>one sheet only</strong> before uploading.
+                </span>
+            </div>
+        </div>
 
-                <div class="row align-items-end form-row-spacing">
-                    <input type="hidden" id="detected_template" name="template_type" value="">
-                    
-                    <div class="col-md-8 mb-3 mb-md-0">
-                        <label class="font-weight-bold text-muted small text-uppercase mb-2">Upload Template</label>
+        <div class="card-body px-4 py-4">
+            <form id="uploadForm">
+                <input type="hidden" id="detected_template" name="template_type" value="">
+                <div class="d-flex flex-column flex-md-row align-items-md-end" style="gap:15px;">
+                    <div class="flex-grow-1 w-100">
+                        <label class="font-weight-bold text-muted small text-uppercase mb-2" style="font-size:0.7rem;letter-spacing:0.5px;">1. Upload Template</label>
                         <div class="custom-file custom-file-bento">
-                            <input type="file" class="custom-file-input" id="skuFile" name="file" accept=".xlsx, .xls, .csv" required>
-                            <label class="custom-file-label d-flex align-items-center text-muted" for="skuFile">
-                                <i class="fas fa-cloud-upload-alt mr-2 flex-shrink-0"></i> 
-                                <span class="text-truncate flex-grow-1" style="min-width: 0; font-weight: 500;">Choose file...</span>
+                            <input type="file" class="custom-file-input" id="skuFile" name="file" accept=".xlsx,.xls,.csv" required>
+                            <label class="custom-file-label d-flex align-items-center text-muted" for="skuFile" style="height: 48px; border-radius: 12px;">
+                                <i class="fas fa-cloud-upload-alt mr-2 flex-shrink-0" style="font-size: 1.2rem;"></i>
+                                <span class="text-truncate flex-grow-1" style="min-width:0;font-weight:500;font-size:0.95rem;">Choose file to validate...</span>
                             </label>
                         </div>
                     </div>
-
-                    <div class="col-md-4 mt-3 mt-md-0">
-                        <button type="submit" class="btn-bento-primary w-100 shadow-sm" id="processBtn" disabled>
+                    <div id="processBtnWrapper" style="flex-shrink:0;">
+                        <button type="submit" class="btn-bento-primary shadow-sm px-4" id="processBtn" disabled style="display:none; height: 48px; border-radius: 12px;">
                             <i class="fas fa-magic mr-2"></i> Extract Data
                         </button>
                     </div>
@@ -51,52 +55,63 @@
         </div>
     </div>
 
-    <div id="resultsContainer" style="display: none;">
-        <div class="card border-0 shadow-sm bento-card" style="background: var(--card-bg); backdrop-filter: blur(25px); border-radius: var(--radius-lg); overflow: hidden;">
-            
-            <div class="card-header bg-white border-0 py-4 px-4 d-flex justify-content-between align-items-center flex-wrap" style="border-bottom: 1px solid rgba(0,0,0,0.03) !important; gap: 15px;">
-                <h5 class="font-weight-bold mb-0 d-flex align-items-center">
-                    <div class="icon-square-bento mr-3"><i class="fas fa-table text-primary"></i></div>
-                    Extracted Data Preview
-                </h5>
+    <div id="resultsContainer" style="display:none;">
+        <div class="card border-0 shadow-sm bento-card"
+            style="background:var(--card-bg);backdrop-filter:blur(25px);border-radius:var(--radius-lg);overflow:hidden;">
+
+            <div class="card-header bg-white border-0 py-4 px-4 d-flex justify-content-between align-items-center flex-wrap"
+                style="border-bottom:1px solid rgba(0,0,0,0.04)!important; gap:20px;">
                 
-                <div class="d-flex align-items-center" style="gap: 15px;">
-                    <div class="position-relative">
-                        <i class="fas fa-search position-absolute text-muted" style="left: 15px; top: 50%; transform: translateY(-50%); font-size: 0.9rem;"></i>
-                        <input type="text" id="searchInput" class="form-control" placeholder="Search items..." style="border-radius: 20px; padding-left: 35px; border: 1px solid var(--glass-border); background: #f8f9fa; width: 220px;">
-                    </div>
-                    <span class="badge badge-pill badge-bento-light px-3 py-2" id="rowCountBadge">0 Rows Found</span>
+                <div class="position-relative">
+                    <i class="fas fa-search position-absolute text-muted" style="left:15px;top:50%;transform:translateY(-50%);font-size:0.9rem;"></i>
+                    <input type="text" id="searchInput" class="form-control shadow-sm" placeholder="Search items, codes..."
+                        style="border-radius:50px;padding-left:40px;border:1px solid #edf2f7;background:#f8f9fa;width:240px; height: 42px; font-size: 0.9rem;">
                 </div>
+                
+                <div class="d-flex align-items-center flex-wrap" style="gap: 15px;">
+                    <div id="rowCountBadge" class="d-flex align-items-center" style="font-size: 0.9rem;">
+                        </div>
+
+                    <button id="overwriteAllBtn" type="button" 
+                        class="btn btn-outline-danger rounded-pill px-3 py-1 font-weight-bold shadow-sm" 
+                        onclick="toggleAllOverwrites()" style="display:none; align-items: center; transition: all 0.2s; font-size: 0.85rem;">
+                        <i class="fas fa-exclamation-circle mr-1"></i> Overwrite All
+                    </button>
+                </div>
+                
             </div>
-            
-            <div class="table-responsive" style="min-height: 400px;">
+
+            <div class="table-responsive" style="min-height:450px;">
                 <table class="table table-bento mb-0">
-                    <thead>
+                    <thead style="background-color: #f8f9fa;">
                         <tr>
-                            <th class="px-4" style="width: 60px;">#</th>
-                            <th style="width: 15%;">ITEM CODE</th>
-                            <th style="width: 15%;">BARCODE</th>
-                            <th style="width: 15%;">STATUS</th>
-                            <th style="width: 25%;">REASON</th>
-                            <th id="extraHeaders">EXTRA DETAILS</th>
+                            <th class="px-4 py-3 text-muted" style="width:50px; font-size: 0.75rem; letter-spacing: 1px;">#</th>
+                            <th class="py-3 text-muted" style="width:14%; font-size: 0.75rem; letter-spacing: 1px;">ITEM CODE</th>
+                            <th class="py-3 text-muted" style="width:16%; font-size: 0.75rem; letter-spacing: 1px;">BARCODE</th>
+                            <th class="py-3 text-muted" style="width:18%; font-size: 0.75rem; letter-spacing: 1px;">STATUS</th>
+                            <th class="py-3 text-muted" style="width:25%; font-size: 0.75rem; letter-spacing: 1px;">REASON</th>
+                            <th class="py-3 text-muted" style="font-size: 0.75rem; letter-spacing: 1px;">EXTRA DETAILS</th>
                         </tr>
                     </thead>
-                    <tbody id="resultsTableBody">
-                    </tbody>
+                    <tbody id="resultsTableBody"></tbody>
                 </table>
             </div>
-            
-            <div class="px-4 py-3 bg-white" id="paginationControls" style="border-top: 1px solid rgba(0,0,0,0.03);">
-            </div>
-            
-            <div class="card-footer bg-white border-0 py-4 px-4 d-flex justify-content-between align-items-center" style="border-top: 1px solid rgba(0,0,0,0.03) !important;">
-                <span class="text-warning small font-weight-bold bg-warning-light px-3 py-2 rounded-pill">
-                    <i class="fas fa-shield-alt mr-1"></i> "Ready to Add" items save automatically. Check boxes to force overwrite conflicts.
-                </span>
-                <div>
-                    <button class="btn btn-light rounded-pill px-4 mr-2 font-weight-bold shadow-sm" onclick="hideResults()">Clear</button>
-                    <button id="commitBtn" type="button" class="btn btn-success rounded-pill px-4 shadow-sm font-weight-bold" onclick="commitToDatabase()">
-                        <i class="fas fa-cloud-upload-alt mr-1"></i> Commit to Database
+
+            <div class="px-4 py-3 bg-white" id="paginationControls" style="border-top:1px solid rgba(0,0,0,0.04);"></div>
+
+            <div class="card-footer bg-white border-0 py-4 px-4 d-flex flex-column flex-xl-row justify-content-between align-items-center"
+                style="border-top:1px solid rgba(0,0,0,0.04)!important; gap: 15px;">
+                
+                <div class="d-flex align-items-center text-muted small font-weight-500 bg-light px-3 py-2 rounded-pill">
+                    <i class="fas fa-info-circle text-primary mr-2"></i>
+                    <span>"Ready to Add" items save automatically. Tick <strong class="text-danger">Force Overwrite</strong> to replace conflicts.</span>
+                </div>
+                
+                <div class="d-flex flex-wrap justify-content-center align-items-center" style="gap: 12px;">
+                    <button class="btn btn-light rounded-pill px-4 font-weight-bold shadow-sm" style="height: 42px;" onclick="hideResults()">Clear</button>
+
+                    <button id="commitBtn" type="button" class="btn btn-success rounded-pill px-4 shadow-sm font-weight-bold" style="height: 42px;" onclick="commitToDatabase()">
+                        <i class="fas fa-cloud-upload-alt mr-2"></i> Commit Database
                     </button>
                 </div>
             </div>
@@ -105,317 +120,342 @@
 </div>
 
 <div class="modal fade" id="bentoModal" tabindex="-1" role="dialog" aria-hidden="true">
-  <div class="modal-dialog modal-dialog-centered modal-sm" role="document">
-    <div class="modal-content border-0 shadow-lg text-center p-4" style="border-radius: 24px; background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(10px);">
-      
-      <div id="bentoModalIcon" class="mb-3"></div>
-
-      <h4 class="modal-title font-weight-bold mb-2" id="bentoModalTitle" style="color: #2d3748; letter-spacing: -0.5px;">Alert</h4>
-      
-      <div class="modal-body p-0 mb-4" id="bentoModalBody" style="color: #6c757d; font-size: 0.95rem; line-height: 1.5;">
+    <div class="modal-dialog modal-dialog-centered modal-sm" role="document">
+        <div class="modal-content border-0 shadow-lg text-center p-4"
+            style="border-radius:24px;background:rgba(255,255,255,0.98);backdrop-filter:blur(10px);">
+            <div id="bentoModalIcon" class="mb-3"></div>
+            <h4 class="modal-title font-weight-bold mb-2" id="bentoModalTitle"
+                style="color:#2d3748;letter-spacing:-0.5px;">Alert</h4>
+            <div class="modal-body p-0 mb-4" id="bentoModalBody"
+                style="color:#6c757d;font-size:0.95rem;line-height:1.5;"></div>
+            <div class="d-flex justify-content-center" id="bentoModalFooter" style="gap:12px;"></div>
         </div>
-      
-      <div class="d-flex justify-content-center" id="bentoModalFooter" style="gap: 12px;">
-        </div>
-
     </div>
-  </div>
 </div>
 
 <script>
-// --- Global Modal Function (UX Upgraded) ---
-window.showModal = function(title, message, type = 'alert', onConfirm = null, onClose = null) {
+// ================================================================
+// MODAL HELPER
+// ================================================================
+window.showModal = function (title, message, type = 'alert', onConfirm = null, onClose = null) {
     document.getElementById('bentoModalTitle').innerHTML = title;
-    
-    // Format newlines into HTML breaks for clean messages
-    document.getElementById('bentoModalBody').innerHTML = message.replace(/\n/g, '<br>');
+    document.getElementById('bentoModalBody').innerHTML  = message.replace(/\n/g, '<br>');
 
-    const footer = document.getElementById('bentoModalFooter');
+    const footer        = document.getElementById('bentoModalFooter');
     const iconContainer = document.getElementById('bentoModalIcon');
-    
-    // Unbind any previous events to prevent double firing
     $('#bentoModal').off('hidden.bs.modal');
-    
-    // --- Auto-Theming Logic based on Context ---
-    let iconHtml = '';
-    let t = title.toLowerCase();
-    
+
+    const t = title.toLowerCase();
+    let iconHtml;
     if (t.includes('success')) {
-        // Soft Green Checkmark
-        iconHtml = `<div style="width: 65px; height: 65px; background: #d1e7dd; color: #0f5132; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto; font-size: 1.8rem; box-shadow: 0 4px 15px rgba(25, 135, 84, 0.15);"><i class="fas fa-check"></i></div>`;
+        iconHtml = `<div style="width:65px;height:65px;background:#d1e7dd;color:#0f5132;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto;font-size:1.8rem;box-shadow:0 4px 15px rgba(25,135,84,.15);"><i class="fas fa-check"></i></div>`;
     } else if (t.includes('error') || t.includes('warning') || t.includes('not recognized')) {
-        // Soft Red Warning
-        iconHtml = `<div style="width: 65px; height: 65px; background: #f8d7da; color: #842029; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto; font-size: 1.8rem; box-shadow: 0 4px 15px rgba(220, 53, 69, 0.15);"><i class="fas fa-exclamation-triangle"></i></div>`;
+        iconHtml = `<div style="width:65px;height:65px;background:#f8d7da;color:#842029;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto;font-size:1.8rem;box-shadow:0 4px 15px rgba(220,53,69,.15);"><i class="fas fa-exclamation-triangle"></i></div>`;
     } else if (type === 'confirm') {
-        // Soft Blue Question
-        iconHtml = `<div style="width: 65px; height: 65px; background: #cff4fc; color: #055160; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto; font-size: 1.8rem; box-shadow: 0 4px 15px rgba(13, 202, 240, 0.15);"><i class="fas fa-question"></i></div>`;
+        iconHtml = `<div style="width:65px;height:65px;background:#cff4fc;color:#055160;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto;font-size:1.8rem;box-shadow:0 4px 15px rgba(13,202,240,.15);"><i class="fas fa-question"></i></div>`;
     } else {
-        // Neutral Info
-        iconHtml = `<div style="width: 65px; height: 65px; background: #e2e3e5; color: #41464b; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto; font-size: 1.8rem;"><i class="fas fa-info"></i></div>`;
+        iconHtml = `<div style="width:65px;height:65px;background:#e2e3e5;color:#41464b;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto;font-size:1.8rem;"><i class="fas fa-info"></i></div>`;
     }
     iconContainer.innerHTML = iconHtml;
 
-    // --- Dynamic Button Rendering ---
     if (type === 'alert') {
-        // Single "Got it" button for standard alerts
         footer.innerHTML = `<button type="button" class="btn btn-dark rounded-pill px-5 font-weight-bold shadow-sm" data-dismiss="modal">Got it</button>`;
-        if (onClose) {
-            $('#bentoModal').on('hidden.bs.modal', onClose);
-        }
+        if (onClose) $('#bentoModal').on('hidden.bs.modal', onClose);
     } else if (type === 'confirm') {
-        // Cancel / Confirm split layout
         footer.innerHTML = `
-            <button type="button" class="btn btn-light rounded-pill px-4 font-weight-bold text-muted" data-dismiss="modal" style="background: #f1f3f5; border: none;">Cancel</button>
-            <button type="button" class="btn btn-primary rounded-pill px-4 font-weight-bold shadow-sm" id="bentoModalConfirmBtn">Yes, Confirm</button>
-        `;
+            <button type="button" class="btn btn-light rounded-pill px-4 font-weight-bold text-muted" data-dismiss="modal" style="background:#f1f3f5;border:none;">Cancel</button>
+            <button type="button" class="btn btn-primary rounded-pill px-4 font-weight-bold shadow-sm" id="bentoModalConfirmBtn">Yes, Confirm</button>`;
         
-        $('#bentoModalConfirmBtn').off('click').on('click', function() {
+        $('#bentoModalConfirmBtn').off('click').on('click', function () {
             $('#bentoModal').modal('hide');
-            if (onConfirm) onConfirm();
+            setTimeout(() => { if (onConfirm) onConfirm(); }, 350);
         });
     }
-
-    // Show with animation
     $('#bentoModal').modal('show');
 };
 
-// --- State Variables for Pagination & Search ---
-let currentPage = 1;
+// ================================================================
+// STATE
+// ================================================================
+let currentPage   = 1;
 const rowsPerPage = 15;
-let filteredData = []; 
-let currentFilter = 'all'; 
+let filteredData  = [];
+let currentFilter = 'all';
 
-// --- Custom File Input & Auto-Detect Sniffer ---
-$('.custom-file-input').on('change', function() {
-    let fileInput = this;
-    let fileName = $(this).val().split('\\').pop();
-    let label = $(this).next('.custom-file-label');
-    let processBtn = document.getElementById('processBtn');
-    
+const STATUS_BADGE = {
+    ok:         `<span class="badge badge-primary px-3 py-2 rounded-pill shadow-sm"><i class="fas fa-database mr-1"></i> EXISTS</span>`,
+    update:     `<span class="badge badge-success px-3 py-2 rounded-pill shadow-sm"><i class="fas fa-plus-circle mr-1"></i> NEW</span>`,
+    conflict:   `<span class="badge badge-danger px-3 py-2 rounded-pill shadow-sm"><i class="fas fa-exclamation-triangle mr-1"></i> CONFLICT</span>`,
+    rejected:   `<span class="badge badge-secondary px-3 py-2 rounded-pill shadow-sm"><i class="fas fa-times mr-1"></i> REJECTED</span>`,
+    duplicate:  `<span class="badge badge-warning px-3 py-2 rounded-pill shadow-sm text-dark"><i class="fas fa-copy mr-1"></i> DUPLICATE</span>`,
+};
+
+// ================================================================
+// FILE INPUT
+// ================================================================
+$('.custom-file-input').on('change', function () {
+    const fileInput  = this;
+    const fileName   = $(this).val().split('\\').pop();
+    const label      = $(this).next('.custom-file-label');
+    const processBtn = document.getElementById('processBtn');
+
     document.getElementById('detected_template').value = '';
     processBtn.disabled = true;
 
     if (!fileName) {
-        label.html('<i class="fas fa-cloud-upload-alt mr-2 flex-shrink-0"></i><span class="text-truncate flex-grow-1" style="min-width: 0; font-weight: 500;">Choose file...</span>');
+        label.html('<i class="fas fa-cloud-upload-alt mr-2 flex-shrink-0" style="font-size: 1.2rem;"></i><span class="text-truncate flex-grow-1" style="min-width:0;font-weight:500;font-size:0.95rem;">Choose file to validate...</span>');
         return;
     }
-    
-    label.addClass("selected").html(`
-        <i class="fas fa-file-excel mr-2 text-success flex-shrink-0"></i>
-        <span class="text-truncate flex-grow-1" style="min-width: 0; font-weight: 600;" title="${fileName}">${fileName}</span>
-        <i class="fas fa-spinner fa-spin ml-2 text-muted flex-shrink-0" id="detectSpinner"></i>
+
+    label.addClass('selected').html(`
+        <i class="fas fa-file-excel mr-2 text-success flex-shrink-0" style="font-size: 1.2rem;"></i>
+        <span class="text-truncate flex-grow-1 text-dark" style="min-width:0;font-weight:700;" title="${fileName}">${fileName}</span>
+        <i class="fas fa-spinner fa-spin ml-2 text-primary flex-shrink-0" id="detectSpinner"></i>
     `);
 
-    if (fileInput.files.length > 0) {
-        const formData = new FormData();
-        formData.append('file', fileInput.files[0]);
-        
-        fetch("{{ url_for('transactions.detect_template') }}", {
-            method: 'POST',
-            body: formData
-        })
+    if (!fileInput.files.length) return;
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+
+    fetch("{{ url_for('transactions.detect_template') }}", { method: 'POST', body: formData })
         .then(r => r.json())
         .then(data => {
             $('#detectSpinner').remove();
             if (data.success && data.template_type !== 'UNKNOWN') {
                 document.getElementById('detected_template').value = data.template_type;
-                label.append(`<span class="badge badge-success flex-shrink-0 py-1 px-2 shadow-sm ml-2"><i class="fas fa-robot mr-1"></i> ${data.template_type}</span>`);
+                label.append(`<span class="badge badge-success flex-shrink-0 py-1 px-2 shadow-sm ml-2" style="font-size:0.75rem;"><i class="fas fa-robot mr-1"></i> ${data.template_type}</span>`);
                 processBtn.disabled = false;
+                document.getElementById('uploadForm').dispatchEvent(new Event('submit'));
             } else {
                 label.append(`<span class="badge badge-danger flex-shrink-0 py-1 px-2 shadow-sm ml-2"><i class="fas fa-exclamation-triangle mr-1"></i> Unknown Format</span>`);
-                showModal("Format Not Recognized", "Could not identify this template. Please make sure you are using a standard department store format.", "alert");
+                showModal('Format Not Recognized', 'Could not identify this template. Please make sure you are using a standard department store format.', 'alert');
             }
         })
-        .catch(err => {
+        .catch(() => {
             $('#detectSpinner').remove();
-            console.error("Auto-detect failed:", err);
             label.append(`<span class="badge badge-danger flex-shrink-0 py-1 px-2 shadow-sm ml-2"><i class="fas fa-times mr-1"></i> Error</span>`);
         });
-    }
 });
 
+// ================================================================
+// HIDE / RESET RESULTS
+// ================================================================
 function hideResults() {
     const container = document.getElementById('resultsContainer');
     container.classList.remove('animate-fade-in-up');
     container.style.display = 'none';
     document.getElementById('uploadForm').reset();
     document.getElementById('detected_template').value = '';
-    document.getElementById('processBtn').disabled = true;
-    document.getElementById('searchInput').value = '';
-    $('.custom-file-label').html('<i class="fas fa-cloud-upload-alt mr-2 flex-shrink-0"></i><span class="text-truncate flex-grow-1" style="min-width: 0; font-weight: 500;">Choose file...</span>');
+    document.getElementById('processBtn').disabled     = true;
+    document.getElementById('searchInput').value       = '';
+    window.lastParsedData = [];
+    filteredData = [];
+    $('.custom-file-label').html('<i class="fas fa-cloud-upload-alt mr-2 flex-shrink-0" style="font-size: 1.2rem;"></i><span class="text-truncate flex-grow-1" style="min-width:0;font-weight:500;font-size:0.95rem;">Choose file to validate...</span>');
+    
+    const owBtn = document.getElementById('overwriteAllBtn');
+    owBtn.style.display = 'none';
+    owBtn.innerHTML = '<i class="fas fa-exclamation-circle mr-1"></i> Overwrite All';
+    owBtn.className = 'btn btn-outline-danger rounded-pill px-3 py-1 font-weight-bold shadow-sm';
 }
 
-// --- Checkbox Logic for Force Overwrite ONLY ---
-window.toggleOverwrite = function(item, bar, isChecked) {
-    let row = window.lastParsedData.find(r => r.ITEM_CODE === item && r.BARCODE === bar);
-    if(row) {
-        row.force_overwrite = isChecked;
+// ================================================================
+// FORCE-OVERWRITE TOGGLES
+// ================================================================
+window.toggleOverwrite = function (globalIndex, isChecked) {
+    if (window.lastParsedData && window.lastParsedData[globalIndex]) {
+        window.lastParsedData[globalIndex].force_overwrite = isChecked;
+        updateBulkOverwriteButtonUI();
+        renderTable(); 
     }
 };
 
-// --- Search & Filters ---
-document.getElementById('searchInput').addEventListener('input', function() {
-    filterByStatus(currentFilter);
-});
+window.toggleAllOverwrites = function() {
+    if (!window.lastParsedData) return;
+    const conflicts = window.lastParsedData.filter(r => r.status === 'conflict');
+    if (conflicts.length === 0) return;
 
-window.filterByStatus = function(status) {
+    const allChecked = conflicts.every(r => r.force_overwrite);
+    conflicts.forEach(r => r.force_overwrite = !allChecked);
+    
+    updateBulkOverwriteButtonUI();
+    renderTable(); 
+};
+
+function updateBulkOverwriteButtonUI() {
+    if (!window.lastParsedData) return;
+    const conflicts = window.lastParsedData.filter(r => r.status === 'conflict');
+    if (conflicts.length === 0) return;
+
+    const allChecked = conflicts.every(r => r.force_overwrite);
+    const btn = document.getElementById('overwriteAllBtn');
+    
+    if (allChecked) {
+        btn.innerHTML = '<i class="fas fa-times-circle mr-1"></i> Deselect All';
+        btn.className = 'btn btn-danger rounded-pill px-3 py-1 font-weight-bold shadow-sm';
+    } else {
+        btn.innerHTML = '<i class="fas fa-exclamation-circle mr-1"></i> Overwrite All';
+        btn.className = 'btn btn-outline-danger rounded-pill px-3 py-1 font-weight-bold shadow-sm';
+    }
+}
+
+// ================================================================
+// SEARCH & FILTERS
+// ================================================================
+document.getElementById('searchInput').addEventListener('input', function () { filterByStatus(currentFilter); });
+
+window.filterByStatus = function (status) {
     if (!window.lastParsedData) return;
     currentFilter = status;
-    
-    let tempData = window.lastParsedData;
-    if (status !== 'all') {
-        tempData = tempData.filter(row => row.status === status);
-    }
-    
+
+    let data = window.lastParsedData;
+    if (status !== 'all') data = data.filter(row => row.status === status);
+
     const term = document.getElementById('searchInput').value.toLowerCase();
     if (term) {
-        tempData = tempData.filter(row => 
+        data = data.filter(row =>
             (row.ITEM_CODE && String(row.ITEM_CODE).toLowerCase().includes(term)) ||
-            (row.BARCODE && String(row.BARCODE).toLowerCase().includes(term)) ||
-            (row.DESC && String(row.DESC).toLowerCase().includes(term)) ||
-            (row.VENDOR && String(row.VENDOR).toLowerCase().includes(term))
+            (row.BARCODE   && String(row.BARCODE).toLowerCase().includes(term))   ||
+            (row.DESC      && String(row.DESC).toLowerCase().includes(term))      ||
+            (row.VENDOR    && String(row.VENDOR).toLowerCase().includes(term))
         );
     }
-    
-    filteredData = tempData;
-    currentPage = 1; 
-    
-    document.querySelectorAll('.filter-badge').forEach(el => {
-        el.classList.remove('filter-active');
-        el.style.opacity = '0.6';
-    });
-    const activeBadge = document.getElementById('filter-' + status);
-    if (activeBadge) {
-        activeBadge.classList.add('filter-active');
-        activeBadge.style.opacity = '1';
+
+    filteredData = data;
+    currentPage  = 1;
+
+    // --- VISIBILITY LOGIC FOR THE "OVERWRITE ALL" BUTTON ---
+    const owBtn = document.getElementById('overwriteAllBtn');
+    if (status === 'conflict' && data.length > 0) {
+        owBtn.style.display = 'inline-flex';
+        updateBulkOverwriteButtonUI();
+    } else {
+        owBtn.style.display = 'none';
     }
-    
+
+    document.querySelectorAll('.filter-badge').forEach(el => el.classList.remove('filter-active'));
+    const activeBadge = document.getElementById('filter-' + status);
+    if (activeBadge) activeBadge.classList.add('filter-active');
+
     renderTable();
 };
 
-// --- Table Rendering ---
+// ================================================================
+// RENDER TABLE
+// ================================================================
 function renderTable() {
-    const tbody = document.getElementById('resultsTableBody');
-    tbody.innerHTML = '';
+    const tbody      = document.getElementById('resultsTableBody');
+    tbody.innerHTML  = '';
 
-    const startIndex = (currentPage - 1) * rowsPerPage;
-    const endIndex = startIndex + rowsPerPage;
-    const paginatedData = filteredData.slice(startIndex, endIndex);
-
-    const statusBadge = {
-        'ok':        '<span class="badge badge-primary px-3 py-2 rounded-pill shadow-sm"><i class="fas fa-database mr-1"></i> EXISTS IN DB</span>',
-        'update':    '<span class="badge badge-success px-3 py-2 rounded-pill shadow-sm"><i class="fas fa-plus-circle mr-1"></i> NEW - READY TO ADD</span>',
-        'conflict':  '<span class="badge badge-danger px-3 py-2 rounded-pill shadow-sm"><i class="fas fa-exclamation-triangle mr-1"></i> CONFLICT</span>',
-        'rejected':  '<span class="badge badge-secondary px-3 py-2 rounded-pill shadow-sm"><i class="fas fa-times mr-1"></i> REJECTED</span>',
-        'duplicate': '<span class="badge badge-warning px-3 py-2 rounded-pill shadow-sm text-dark"><i class="fas fa-copy mr-1"></i> DUPLICATE IN FILE</span>',
-    };
+    const startIndex    = (currentPage - 1) * rowsPerPage;
+    const paginatedData = filteredData.slice(startIndex, startIndex + rowsPerPage);
 
     if (paginatedData.length === 0) {
-        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-5"><i class="fas fa-search mb-2" style="font-size: 2rem; opacity: 0.2;"></i><br>No matching records found.</td></tr>`;
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-5"><i class="fas fa-search mb-2" style="font-size:2rem;opacity:0.2;"></i><br>No matching records found.</td></tr>`;
+        renderPagination();
+        return;
     }
 
-    paginatedData.forEach((row, index) => {
-        const actualRowNumber = startIndex + index + 1;
-        
-        let details = [];
-        if (row.DESC) details.push(`<span class="text-dark">${row.DESC}</span>`);
-        if (row.BRAND_CODE) details.push(`<span class="badge badge-light border text-primary shadow-sm"><i class="fas fa-tag"></i> ${row.BRAND_CODE}</span>`);
-        if (row.VENDOR) details.push(`<span class="badge badge-light border text-info shadow-sm"><i class="fas fa-building"></i> ${row.VENDOR}</span>`);
-        if (row.DIV) details.push(`<span class="badge badge-light border text-secondary shadow-sm">DIV: ${row.DIV}</span>`);
-        let extraHtml = `<td class="text-muted" style="font-size: 0.9rem;">${details.length > 0 ? details.join(' <span class="mx-1 text-muted opacity-50">|</span> ') : '<span class="text-muted">-</span>'}</td>`;
+    paginatedData.forEach((row, pageIdx) => {
+        const globalIndex = (window.lastParsedData || []).indexOf(row);
+        const rowNumber   = startIndex + pageIdx + 1;
+        const badge       = STATUS_BADGE[row.status] || `<span class="badge badge-light border">${row.status}</span>`;
 
-        let safeItem = String(row.ITEM_CODE).replace(/'/g, "\\'");
-        let safeBar = String(row.BARCODE).replace(/'/g, "\\'");
+        const details = [];
+        if (row.BRAND_CODE) details.push(`<span class="extra-details-badge border rounded bg-white text-primary"><i class="fas fa-tag mr-1"></i>${row.BRAND_CODE}</span>`);
+        if (row.VENDOR)     details.push(`<span class="extra-details-badge border rounded bg-white text-info"><i class="fas fa-building mr-1"></i>${row.VENDOR}</span>`);
+        if (row.DIV)        details.push(`<span class="extra-details-badge border rounded bg-white text-secondary">DIV: ${row.DIV}</span>`);
         
-        let statusDisplay = statusBadge[row.status] || row.status;
+        let descHtml = row.DESC ? `<div class="text-dark font-weight-500 mb-1" style="font-size:0.85rem; line-height: 1.2;">${row.DESC}</div>` : '';
+        const extraHtml = descHtml + (details.length ? details.join('') : '<span class="text-muted">—</span>');
+
         let reasonHtml = `<div class="reason-text">${row.reason || ''}</div>`;
+        let trClass = '';
         
         if (row.status === 'conflict') {
-            let isOwChecked = row.force_overwrite ? 'checked' : '';
+            const checked = row.force_overwrite ? 'checked' : '';
+            if (row.force_overwrite) trClass = 'row-overwrite-active';
             reasonHtml += `
-                <div class="d-inline-block bg-white border border-danger rounded px-2 py-1 shadow-sm mt-2">
-                    <div class="custom-control custom-checkbox">
-                        <input type="checkbox" class="custom-control-input" id="ow_${actualRowNumber}" onchange="toggleOverwrite('${safeItem}', '${safeBar}', this.checked)" ${isOwChecked}>
-                        <label class="custom-control-label text-danger font-weight-bold mb-0" for="ow_${actualRowNumber}" style="cursor:pointer; font-size: 0.8rem; padding-top: 2px;">
-                            <i class="fas fa-exclamation-circle mr-1"></i> Force Overwrite
-                        </label>
+                <div class="mt-2">
+                    <div class="overwrite-box shadow-sm">
+                        <div class="custom-control custom-checkbox mb-0 d-flex align-items-center">
+                            <input type="checkbox" class="custom-control-input" id="ow_${globalIndex}" ${checked} onchange="toggleOverwrite(${globalIndex}, this.checked)">
+                            <label class="custom-control-label text-danger font-weight-bold mb-0 ml-1" for="ow_${globalIndex}" style="cursor:pointer;font-size:0.8rem;padding-top:1px;">
+                                Force Overwrite
+                            </label>
+                        </div>
                     </div>
                 </div>`;
         }
 
         tbody.innerHTML += `
-            <tr>
-                <td class="text-muted px-4 font-weight-bold">${actualRowNumber}</td>
-                <td class="font-weight-bold text-dark">${row.ITEM_CODE}</td>
-                <td class="text-primary font-weight-bold" style="letter-spacing: 1px;">${row.BARCODE}</td>
-                <td>${statusDisplay}</td>
-                <td>${reasonHtml}</td>
-                ${extraHtml}
-            </tr>
-        `;
+            <tr class="${trClass}">
+                <td class="text-muted px-4 font-weight-bold align-middle">${rowNumber}</td>
+                <td class="font-weight-bold text-dark align-middle">${row.ITEM_CODE || '—'}</td>
+                <td class="text-primary font-weight-bold align-middle" style="letter-spacing:0.5px;">${row.BARCODE || '—'}</td>
+                <td class="align-middle">${badge}</td>
+                <td class="align-middle">${reasonHtml}</td>
+                <td class="align-middle">${extraHtml}</td>
+            </tr>`;
     });
 
     renderPagination();
 }
 
-// --- Pagination Controls Renderer ---
+// ================================================================
+// PAGINATION
+// ================================================================
 function renderPagination() {
-    const container = document.getElementById('paginationControls');
+    const container  = document.getElementById('paginationControls');
     const totalPages = Math.ceil(filteredData.length / rowsPerPage);
-    
-    if (filteredData.length === 0) {
-        container.innerHTML = '';
-        return;
-    }
 
-    const startItem = ((currentPage - 1) * rowsPerPage) + 1;
-    const endItem = Math.min(currentPage * rowsPerPage, filteredData.length);
+    if (filteredData.length === 0) { container.innerHTML = ''; return; }
+
+    const startItem = (currentPage - 1) * rowsPerPage + 1;
+    const endItem   = Math.min(currentPage * rowsPerPage, filteredData.length);
 
     let html = `
         <div class="d-flex justify-content-between align-items-center w-100">
-            <span class="text-muted font-weight-500 small">Showing <strong>${startItem}</strong> to <strong>${endItem}</strong> of <strong>${filteredData.length}</strong> entries</span>
+            <span class="text-muted font-weight-500 small">
+                Showing <strong>${startItem}</strong> to <strong>${endItem}</strong> of <strong>${filteredData.length}</strong> entries
+            </span>
             <div class="pagination-container mt-0">
-                <button class="page-btn" ${currentPage === 1 ? 'disabled' : ''} onclick="changePage(${currentPage - 1})"><i class="fas fa-chevron-left"></i></button>
-    `;
+                <button class="page-btn" ${currentPage === 1 ? 'disabled' : ''} onclick="changePage(${currentPage - 1})"><i class="fas fa-chevron-left"></i></button>`;
 
     let startPage = Math.max(1, currentPage - 2);
-    let endPage = Math.min(totalPages, startPage + 4);
-    if (endPage - startPage < 4) {
-        startPage = Math.max(1, endPage - 4);
-    }
+    let endPage   = Math.min(totalPages, startPage + 4);
+    if (endPage - startPage < 4) startPage = Math.max(1, endPage - 4);
 
     if (startPage > 1) {
         html += `<button class="page-btn" onclick="changePage(1)">1</button>`;
         if (startPage > 2) html += `<span class="mx-1 text-muted">...</span>`;
     }
-
     for (let i = startPage; i <= endPage; i++) {
         html += `<button class="page-btn ${i === currentPage ? 'active' : ''}" onclick="changePage(${i})">${i}</button>`;
     }
-
     if (endPage < totalPages) {
         if (endPage < totalPages - 1) html += `<span class="mx-1 text-muted">...</span>`;
         html += `<button class="page-btn" onclick="changePage(${totalPages})">${totalPages}</button>`;
     }
 
-    html += `
-                <button class="page-btn" ${currentPage === totalPages ? 'disabled' : ''} onclick="changePage(${currentPage + 1})"><i class="fas fa-chevron-right"></i></button>
+    html += `<button class="page-btn" ${currentPage === totalPages ? 'disabled' : ''} onclick="changePage(${currentPage + 1})"><i class="fas fa-chevron-right"></i></button>
             </div>
-        </div>
-    `;
-    
+        </div>`;
+
     container.innerHTML = html;
 }
 
-window.changePage = function(page) {
+window.changePage = function (page) {
     const totalPages = Math.ceil(filteredData.length / rowsPerPage);
     if (page < 1 || page > totalPages) return;
     currentPage = page;
     renderTable();
-}
+};
 
-// --- Form Submission ---
-document.getElementById('uploadForm').addEventListener('submit', function(e) {
+// ================================================================
+// FORM SUBMIT — extract & validate
+// ================================================================
+document.getElementById('uploadForm').addEventListener('submit', function (e) {
     e.preventDefault();
 
     const fileInput    = document.getElementById('skuFile');
@@ -423,10 +463,7 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
     const processBtn   = document.getElementById('processBtn');
 
     if (!fileInput.files.length) return;
-    if (!templateType) {
-        showModal("Format Warning", "Template format not recognized.", "alert");
-        return;
-    }
+    if (!templateType) { showModal('Format Warning', 'Template format not recognized.', 'alert'); return; }
 
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
@@ -434,124 +471,124 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
 
     processBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Processing...';
     processBtn.disabled  = true;
-    
-    const resultsContainer = document.getElementById('resultsContainer');
-    resultsContainer.style.display = 'none';
+    document.getElementById('resultsContainer').style.display = 'none';
 
-    fetch("{{ url_for('transactions.parse_sku_file') }}", {
-        method: 'POST',
-        body: formData
-    })
-    .then(r => r.json())
-    .then(data => {
-        processBtn.innerHTML = '<i class="fas fa-magic mr-2"></i> Extract Data';
-        processBtn.disabled  = false;
+    fetch("{{ url_for('transactions.parse_sku_file') }}", { method: 'POST', body: formData })
+        .then(r => r.json())
+        .then(data => {
+            processBtn.innerHTML = '<i class="fas fa-magic mr-2"></i> Extract Data';
+            processBtn.disabled  = false;
 
-        if (data.error) { 
-            showModal("Extraction Error", data.error, "alert"); 
-            return; 
-        }
+            if (data.error) { showModal('Extraction Error', data.error, 'alert'); return; }
 
-        window.lastParsedData = data.data.map(row => ({
-            ...row,
-            force_overwrite: false
-        }));
+            window.lastParsedData   = data.data.map(row => ({ ...row, force_overwrite: false }));
+            window.lastTemplateType = templateType;
 
-        window.lastTemplateType = templateType;
-        
-        document.getElementById('searchInput').value = '';
-        currentFilter = 'all';
-        filteredData = [...window.lastParsedData];
-        currentPage = 1;
+            document.getElementById('searchInput').value = '';
+            
+            // Revert back to the classic pipe-separated format
+            const s = data.summary;
+            document.getElementById('rowCountBadge').innerHTML = `
+                <span class="filter-badge filter-active text-dark" id="filter-all" onclick="filterByStatus('all')">
+                    <i class="fas fa-table mr-1"></i> ${data.row_count} Total
+                 </span> &nbsp;<span class="text-muted opacity-50">|</span>&nbsp;
+                 <span class="text-success filter-badge" id="filter-update" onclick="filterByStatus('update')">
+                    <i class="fas fa-plus-circle mr-1"></i> ${s.update || 0} New
+                 </span> &nbsp;<span class="text-muted opacity-50">|</span>&nbsp;
+                 <span class="text-primary filter-badge" id="filter-ok" onclick="filterByStatus('ok')">
+                    <i class="fas fa-database mr-1"></i> ${s.ok || 0} Exist
+                 </span> &nbsp;<span class="text-muted opacity-50">|</span>&nbsp;
+                 <span class="text-danger filter-badge" id="filter-conflict" onclick="filterByStatus('conflict')">
+                    <i class="fas fa-exclamation-triangle mr-1"></i> ${s.conflict || 0} Conflicts
+                 </span>`;
 
-        renderTable();
+            filterByStatus('all');
 
-        const s = data.summary;
-        document.getElementById('rowCountBadge').innerHTML =
-            `<span class="filter-badge filter-active text-dark" id="filter-all" onclick="filterByStatus('all')">
-                <i class="fas fa-table mr-1"></i> ${data.row_count} Total Rows
-             </span> &nbsp;|&nbsp;
-             <span class="text-success filter-badge" id="filter-update" onclick="filterByStatus('update')">
-                <i class="fas fa-plus-circle mr-1"></i> ${s.update} new
-             </span> &nbsp;|&nbsp;
-             <span class="text-primary filter-badge" id="filter-ok" onclick="filterByStatus('ok')">
-                <i class="fas fa-database mr-1"></i> ${s.ok} exist
-             </span> &nbsp;|&nbsp;
-             <span class="text-danger filter-badge" id="filter-conflict" onclick="filterByStatus('conflict')">
-                <i class="fas fa-exclamation-triangle mr-1"></i> ${s.conflict} conflicts
-             </span>`;
-
-        resultsContainer.style.display = 'block';
-        resultsContainer.classList.add('animate-fade-in-up');
-    })
-    .catch(error => {
-        showModal("Network Error", "A network or server error occurred.", "alert");
-        processBtn.innerHTML = '<i class="fas fa-magic mr-2"></i> Extract Data';
-        processBtn.disabled  = false;
-    });
+            const container = document.getElementById('resultsContainer');
+            container.style.display = 'block';
+            container.classList.add('animate-fade-in-up');
+        })
+        .catch(() => {
+            showModal('Network Error', 'A network or server error occurred.', 'alert');
+            processBtn.innerHTML = '<i class="fas fa-magic mr-2"></i> Extract Data';
+            processBtn.disabled  = false;
+        });
 });
 
-// --- Commit to DB ---
+// ================================================================
+// COMMIT TO DATABASE
+// ================================================================
 function commitToDatabase() {
-    const payloadData = (window.lastParsedData || []).map(row => {
-        if (row.status === 'conflict' && row.force_overwrite) {
-            return { ...row, status: 'force_overwrite' };
-        }
-        return row;
-    });
+    const allRows = window.lastParsedData || [];
 
-    const validCommits = payloadData.filter(r => r.status === 'update' || r.status === 'force_overwrite');
-    
-    if (validCommits.length === 0) {
-        showModal('Nothing to Commit', 'There are no "NEW" records, and no conflicts marked for overwrite.', 'alert');
+    const payload = allRows
+        .filter(r => r.status === 'update' || (r.status === 'conflict' && r.force_overwrite))
+        .map(r => r.status === 'conflict' ? { ...r, status: 'force_overwrite' } : r);
+
+    if (payload.length === 0) {
+        showModal('Nothing to Commit', 'There are no <strong>NEW</strong> records, and no conflicts have been marked for overwrite.', 'alert');
         return;
     }
 
-    // Trigger the confirmation modal
-    showModal(
-        'Confirm Commit', 
-        `Are you sure you want to commit <strong>${validCommits.length}</strong> records to the database?`, 
-        'confirm', 
-        function() {
-            // This runs ONLY if the user clicks "Confirm" in the modal
-            const commitBtn = document.getElementById('commitBtn');
-            commitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Saving...';
-            commitBtn.disabled  = true;
+    const newCount       = payload.filter(r => r.status === 'update').length;
+    const overwriteCount = payload.filter(r => r.status === 'force_overwrite').length;
+    const summary        = [
+        newCount       ? `<strong>${newCount}</strong> new barcode(s)` : '',
+        overwriteCount ? `<strong>${overwriteCount}</strong> forced overwrite(s)` : '',
+    ].filter(Boolean).join(' + ');
 
-            fetch("{{ url_for('transactions.commit_barcodes') }}", {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    data:          payloadData,
-                    template_type: window.lastTemplateType
-                })
-            })
+    function doCommit() {
+        const commitBtn = document.getElementById('commitBtn');
+        commitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Saving...';
+        commitBtn.disabled  = true;
+
+        fetch("{{ url_for('transactions.commit_barcodes') }}", {
+            method:  'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify({ data: payload, template_type: window.lastTemplateType }),
+        })
             .then(r => r.json())
             .then(data => {
-                commitBtn.innerHTML = '<i class="fas fa-cloud-upload-alt mr-1"></i> Commit to Database';
+                commitBtn.innerHTML = '<i class="fas fa-cloud-upload-alt mr-2"></i> Commit Database';
                 commitBtn.disabled  = false;
-                
-                if (data.error) { 
-                    showModal('Error', data.error, 'alert'); 
-                    return; 
-                }
-                
-                // Show success modal, and clear the table when closed
-                showModal(
-                    'Success!', 
-                    `✅ ${data.committed} records saved successfully.\n⏭️ ${data.skipped} rows skipped.\n${data.message || ''}`, 
-                    'alert', 
-                    null, 
-                    hideResults // This function runs when the user clicks OK on the success message
-                );
+
+                if (data.error) { showModal('Error', data.error, 'alert'); return; }
+
+                showModal('Success!', `✅ ${data.committed} record(s) saved.\n⏭️ ${data.skipped} row(s) skipped.\n${data.message || ''}`, 'alert', null, hideResults);
             })
             .catch(() => {
                 showModal('Network Error', 'A network error occurred while saving.', 'alert');
-                commitBtn.innerHTML = '<i class="fas fa-cloud-upload-alt mr-1"></i> Commit to Database';
+                commitBtn.innerHTML = '<i class="fas fa-cloud-upload-alt mr-2"></i> Commit Database';
                 commitBtn.disabled  = false;
             });
-        }
-    );
+    }
+
+    showModal('Confirm Commit', `Commit ${summary} to the database?`, 'confirm', function () {
+        setTimeout(() => {
+            if (overwriteCount > 0) {
+                const overwriteList = payload
+                    .filter(r => r.status === 'force_overwrite')
+                    .map(r => `<li class="text-left" style="margin-bottom:6px; padding-bottom: 6px; border-bottom: 1px solid #f1f3f5;"><strong>${r.ITEM_CODE}</strong> &rarr; <span class="text-danger font-weight-bold">${r.BARCODE}</span></li>`)
+                    .join('');
+
+                const listContainer = `
+                    <div style="max-height: 160px; overflow-y: auto; background: #fff; border-radius: 12px; padding: 12px; margin-bottom: 15px; border: 1px solid #e2e8f0; box-shadow: inset 0 2px 4px rgba(0,0,0,0.02);">
+                        <ul class="mb-0 pl-0" style="font-size:0.85rem; list-style: none;">${overwriteList}</ul>
+                    </div>`;
+
+                showModal(
+                    '⚠️ Overwrite Warning',
+                    `This will <strong class="text-danger">permanently replace</strong> existing barcode mappings:<br><br>
+                    ${listContainer}
+                    <span class="text-danger font-weight-bold">This cannot be undone.</span> Are you absolutely sure?`,
+                    'confirm',
+                    doCommit
+                );
+            } else {
+                doCommit();
+            }
+        }, 350);
+    });
 }
 </script>
 {% endblock %}

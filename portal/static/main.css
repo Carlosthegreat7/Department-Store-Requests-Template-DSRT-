@@ -313,6 +313,7 @@ body {
     transform: translateY(-2px);
 }
 
+/* --- Classic Filter Badges --- */
 .filter-badge { 
     cursor: pointer; 
     transition: all 0.2s ease; 
@@ -321,12 +322,13 @@ body {
 }
 .filter-badge:hover { 
     opacity: 1; 
-    transform: scale(1.05);
+    transform: scale(1.02);
 }
 .filter-active { 
     opacity: 1 !important; 
     font-weight: bold; 
     border-bottom: 2px solid currentColor;
+    padding-bottom: 2px;
 }
 
 .reason-text {
@@ -334,6 +336,27 @@ body {
         font-size: 0.85rem;
         line-height: 1.4;
 }
+
+/* Sleek container for the overwrite checkbox */
+.overwrite-box {
+    background-color: #fff0f2;
+    border: 1px solid #ffcdd2;
+    border-radius: 8px;
+    padding: 6px 12px;
+    display: inline-flex;
+    align-items: center;
+    transition: all 0.2s;
+}
+.overwrite-box:hover {
+    background-color: #ffe6e9;
+}
+
+.row-overwrite-active td {
+        background-color: #fff5f5 !important;
+        transition: background-color 0.3s ease;
+    }
+    
+.table-bento tbody tr td { transition: background-color 0.3s ease; }
 
 .search-input {
     border: none; outline: none; flex-grow: 1; font-size: 1rem; color: var(--dark-text);
