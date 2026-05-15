@@ -520,7 +520,7 @@ def validate_rows(parsed_data: list, template_type: str) -> tuple:
 # ==============================================================
 
 def commit_rows_to_db(rows: list, committed_by: str) -> dict:
-    """Write rows with status='update' to the Barcodes database."""
+    """Write rows with status='update' or 'force_overwrite' to the Barcodes database."""
     conn, cursor = _get_barcodes_conn()
     if conn is None:
         return {
@@ -534,7 +534,8 @@ def commit_rows_to_db(rows: list, committed_by: str) -> dict:
 
     try:
         for row in rows:
-            if row.get('status') != 'update':
+            status = row.get('status')
+            if status not in ('update', 'force_overwrite'):
                 skipped += 1
                 continue
 
@@ -546,18 +547,35 @@ def commit_rows_to_db(rows: list, committed_by: str) -> dict:
             sku       = row.get('SKU',         '').strip()
 
             try:
-                cursor.execute(
-                    """
-                    IF NOT EXISTS (SELECT 1 FROM dbo.barcodes WHERE BARCODE = ? OR ITEM_CODE = ?)
-                    BEGIN
+                if status == 'update':
+                    # Standard Insert for brand new items
+                    cursor.execute(
+                        """
+                        IF NOT EXISTS (SELECT 1 FROM dbo.barcodes WHERE BARCODE = ? OR ITEM_CODE = ?)
+                        BEGIN
+                            INSERT INTO dbo.barcodes
+                                (ITEM_CODE, BARCODE, [DESC], VENDOR, BRAND_CODE, SKU, DATEADDED)
+                            VALUES (?, ?, ?, ?, ?, ?, GETDATE())
+                        END
+                        """,
+                        (barcode, item_code, item_code, barcode, desc, vendor, brand, sku),
+                    )
+                    committed += 1
+                    
+                elif status == 'force_overwrite':
+                    # 1. Wipe out any old conflicting mappings for this specific Item or Barcode
+                    cursor.execute("DELETE FROM dbo.barcodes WHERE BARCODE = ? OR ITEM_CODE = ?", (barcode, item_code))
+                    # 2. Force the new 1:1 mapping into the database
+                    cursor.execute(
+                        """
                         INSERT INTO dbo.barcodes
                             (ITEM_CODE, BARCODE, [DESC], VENDOR, BRAND_CODE, SKU, DATEADDED)
                         VALUES (?, ?, ?, ?, ?, ?, GETDATE())
-                    END
-                    """,
-                    (barcode, item_code, item_code, barcode, desc, vendor, brand, sku),
-                )
-                committed += 1
+                        """,
+                        (item_code, barcode, desc, vendor, brand, sku),
+                    )
+                    committed += 1
+
             except Exception as exc:
                 errors.append({'BARCODE': barcode, 'error': str(exc)})
 
@@ -597,16 +615,21 @@ def _write_audit_log(rows: list, committed_by: str, committed_count: int, errors
     try:
         now = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         for row in rows:
-            if row.get('status') != 'update':
+            status = row.get('status')
+            if status not in ('update', 'force_overwrite'):
                 continue
+                
             item = row.get('ITEM_CODE')
             bar  = row.get('BARCODE')
             had_error = any(e.get('ITEM_CODE') == item for e in errors)
-            action = (
-                f'Failed to commit barcode {bar} for item {item} (Validation Error)'
-                if had_error
-                else f'Committed new barcode {bar} for item {item}'
-            )
+            
+            if had_error:
+                action = f'Failed to commit barcode {bar} for item {item} (Validation Error)'
+            elif status == 'force_overwrite':
+                action = f'OVERWROTE existing conflict with new barcode {bar} for item {item}'
+            else:
+                action = f'Committed new barcode {bar} for item {item}'
+                
             cursor.execute(
                 'INSERT INTO dbo.audit_logs ([user], [action], [timestamp]) VALUES (?, ?, ?)',
                 (committed_by, action, now),
@@ -736,12 +759,14 @@ def commit_barcodes():
         return jsonify({'error': 'No data to commit'}), 400
 
     committed_by = session.get('sdr_curr_user_username', 'unknown')
-    updateable   = [r for r in rows if r.get('status') == 'update']
+    
+    # Check for both 'update' and 'force_overwrite' statuses
+    updateable = [r for r in rows if r.get('status') in ('update', 'force_overwrite')]
 
     if not updateable:
         return jsonify({
             'success': True, 'committed': 0, 'skipped': len(rows),
-            'errors': [], 'message': 'No rows with status=update — nothing to commit',
+            'errors': [], 'message': 'No rows with status=update or force_overwrite — nothing to commit',
         }), 200
 
     result = commit_rows_to_db(rows, committed_by)

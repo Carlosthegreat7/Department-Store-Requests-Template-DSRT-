@@ -329,6 +329,12 @@ body {
     border-bottom: 2px solid currentColor;
 }
 
+.reason-text {
+        color: #6c757d;
+        font-size: 0.85rem;
+        line-height: 1.4;
+}
+
 .search-input {
     border: none; outline: none; flex-grow: 1; font-size: 1rem; color: var(--dark-text);
 }

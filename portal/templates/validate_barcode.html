@@ -73,11 +73,11 @@
                 <table class="table table-bento mb-0">
                     <thead>
                         <tr>
-                            <th class="px-4">#</th>
-                            <th>ITEM CODE</th>
-                            <th>BARCODE</th>
-                            <th>STATUS</th>
-                            <th>REASON</th>
+                            <th class="px-4" style="width: 60px;">#</th>
+                            <th style="width: 15%;">ITEM CODE</th>
+                            <th style="width: 15%;">BARCODE</th>
+                            <th style="width: 15%;">STATUS</th>
+                            <th style="width: 25%;">REASON</th>
                             <th id="extraHeaders">EXTRA DETAILS</th>
                         </tr>
                     </thead>
@@ -91,7 +91,7 @@
             
             <div class="card-footer bg-white border-0 py-4 px-4 d-flex justify-content-between align-items-center" style="border-top: 1px solid rgba(0,0,0,0.03) !important;">
                 <span class="text-warning small font-weight-bold bg-warning-light px-3 py-2 rounded-pill">
-                    <i class="fas fa-shield-alt mr-1"></i> Read-only mode: Updates disabled.
+                    <i class="fas fa-shield-alt mr-1"></i> "Ready to Add" items save automatically. Check boxes to force overwrite conflicts.
                 </span>
                 <div>
                     <button class="btn btn-light rounded-pill px-4 mr-2 font-weight-bold shadow-sm" onclick="hideResults()">Clear</button>
@@ -104,12 +104,86 @@
     </div>
 </div>
 
+<div class="modal fade" id="bentoModal" tabindex="-1" role="dialog" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered modal-sm" role="document">
+    <div class="modal-content border-0 shadow-lg text-center p-4" style="border-radius: 24px; background: rgba(255, 255, 255, 0.98); backdrop-filter: blur(10px);">
+      
+      <div id="bentoModalIcon" class="mb-3"></div>
+
+      <h4 class="modal-title font-weight-bold mb-2" id="bentoModalTitle" style="color: #2d3748; letter-spacing: -0.5px;">Alert</h4>
+      
+      <div class="modal-body p-0 mb-4" id="bentoModalBody" style="color: #6c757d; font-size: 0.95rem; line-height: 1.5;">
+        </div>
+      
+      <div class="d-flex justify-content-center" id="bentoModalFooter" style="gap: 12px;">
+        </div>
+
+    </div>
+  </div>
+</div>
+
 <script>
+// --- Global Modal Function (UX Upgraded) ---
+window.showModal = function(title, message, type = 'alert', onConfirm = null, onClose = null) {
+    document.getElementById('bentoModalTitle').innerHTML = title;
+    
+    // Format newlines into HTML breaks for clean messages
+    document.getElementById('bentoModalBody').innerHTML = message.replace(/\n/g, '<br>');
+
+    const footer = document.getElementById('bentoModalFooter');
+    const iconContainer = document.getElementById('bentoModalIcon');
+    
+    // Unbind any previous events to prevent double firing
+    $('#bentoModal').off('hidden.bs.modal');
+    
+    // --- Auto-Theming Logic based on Context ---
+    let iconHtml = '';
+    let t = title.toLowerCase();
+    
+    if (t.includes('success')) {
+        // Soft Green Checkmark
+        iconHtml = `<div style="width: 65px; height: 65px; background: #d1e7dd; color: #0f5132; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto; font-size: 1.8rem; box-shadow: 0 4px 15px rgba(25, 135, 84, 0.15);"><i class="fas fa-check"></i></div>`;
+    } else if (t.includes('error') || t.includes('warning') || t.includes('not recognized')) {
+        // Soft Red Warning
+        iconHtml = `<div style="width: 65px; height: 65px; background: #f8d7da; color: #842029; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto; font-size: 1.8rem; box-shadow: 0 4px 15px rgba(220, 53, 69, 0.15);"><i class="fas fa-exclamation-triangle"></i></div>`;
+    } else if (type === 'confirm') {
+        // Soft Blue Question
+        iconHtml = `<div style="width: 65px; height: 65px; background: #cff4fc; color: #055160; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto; font-size: 1.8rem; box-shadow: 0 4px 15px rgba(13, 202, 240, 0.15);"><i class="fas fa-question"></i></div>`;
+    } else {
+        // Neutral Info
+        iconHtml = `<div style="width: 65px; height: 65px; background: #e2e3e5; color: #41464b; border-radius: 50%; display: flex; align-items: center; justify-content: center; margin: 0 auto; font-size: 1.8rem;"><i class="fas fa-info"></i></div>`;
+    }
+    iconContainer.innerHTML = iconHtml;
+
+    // --- Dynamic Button Rendering ---
+    if (type === 'alert') {
+        // Single "Got it" button for standard alerts
+        footer.innerHTML = `<button type="button" class="btn btn-dark rounded-pill px-5 font-weight-bold shadow-sm" data-dismiss="modal">Got it</button>`;
+        if (onClose) {
+            $('#bentoModal').on('hidden.bs.modal', onClose);
+        }
+    } else if (type === 'confirm') {
+        // Cancel / Confirm split layout
+        footer.innerHTML = `
+            <button type="button" class="btn btn-light rounded-pill px-4 font-weight-bold text-muted" data-dismiss="modal" style="background: #f1f3f5; border: none;">Cancel</button>
+            <button type="button" class="btn btn-primary rounded-pill px-4 font-weight-bold shadow-sm" id="bentoModalConfirmBtn">Yes, Confirm</button>
+        `;
+        
+        $('#bentoModalConfirmBtn').off('click').on('click', function() {
+            $('#bentoModal').modal('hide');
+            if (onConfirm) onConfirm();
+        });
+    }
+
+    // Show with animation
+    $('#bentoModal').modal('show');
+};
+
 // --- State Variables for Pagination & Search ---
 let currentPage = 1;
 const rowsPerPage = 15;
 let filteredData = []; 
-let currentFilter = 'all'; // NEW: Tracks which badge is clicked
+let currentFilter = 'all'; 
 
 // --- Custom File Input & Auto-Detect Sniffer ---
 $('.custom-file-input').on('change', function() {
@@ -118,7 +192,6 @@ $('.custom-file-input').on('change', function() {
     let label = $(this).next('.custom-file-label');
     let processBtn = document.getElementById('processBtn');
     
-    // Reset hidden input and disable button initially
     document.getElementById('detected_template').value = '';
     processBtn.disabled = true;
 
@@ -127,14 +200,12 @@ $('.custom-file-input').on('change', function() {
         return;
     }
     
-    // Reset label text: Use flexbox, text-truncate for long names, and prevent shrinking
     label.addClass("selected").html(`
         <i class="fas fa-file-excel mr-2 text-success flex-shrink-0"></i>
         <span class="text-truncate flex-grow-1" style="min-width: 0; font-weight: 600;" title="${fileName}">${fileName}</span>
         <i class="fas fa-spinner fa-spin ml-2 text-muted flex-shrink-0" id="detectSpinner"></i>
     `);
 
-    // Trigger backend auto-detect
     if (fileInput.files.length > 0) {
         const formData = new FormData();
         formData.append('file', fileInput.files[0]);
@@ -145,21 +216,14 @@ $('.custom-file-input').on('change', function() {
         })
         .then(r => r.json())
         .then(data => {
-            $('#detectSpinner').remove(); // remove spinner
-            
+            $('#detectSpinner').remove();
             if (data.success && data.template_type !== 'UNKNOWN') {
-                // Save the detected chain in the hidden input
                 document.getElementById('detected_template').value = data.template_type;
-                
-                // Add a compact visual badge that won't wrap to a new line
                 label.append(`<span class="badge badge-success flex-shrink-0 py-1 px-2 shadow-sm ml-2"><i class="fas fa-robot mr-1"></i> ${data.template_type}</span>`);
-                
-                // Unlock the Extract Data button!
                 processBtn.disabled = false;
             } else {
-                // Unknown format warning
                 label.append(`<span class="badge badge-danger flex-shrink-0 py-1 px-2 shadow-sm ml-2"><i class="fas fa-exclamation-triangle mr-1"></i> Unknown Format</span>`);
-                alert("Could not identify this template. Please make sure you are using a standard department store format.");
+                showModal("Format Not Recognized", "Could not identify this template. Please make sure you are using a standard department store format.", "alert");
             }
         })
         .catch(err => {
@@ -170,7 +234,6 @@ $('.custom-file-input').on('change', function() {
     }
 });
 
-// --- Hide Results Helper ---
 function hideResults() {
     const container = document.getElementById('resultsContainer');
     container.classList.remove('animate-fade-in-up');
@@ -182,24 +245,28 @@ function hideResults() {
     $('.custom-file-label').html('<i class="fas fa-cloud-upload-alt mr-2 flex-shrink-0"></i><span class="text-truncate flex-grow-1" style="min-width: 0; font-weight: 500;">Choose file...</span>');
 }
 
-// --- Live Search Filter ---
-document.getElementById('searchInput').addEventListener('input', function(e) {
-    // Just re-trigger the filter, which will grab the search text automatically
+// --- Checkbox Logic for Force Overwrite ONLY ---
+window.toggleOverwrite = function(item, bar, isChecked) {
+    let row = window.lastParsedData.find(r => r.ITEM_CODE === item && r.BARCODE === bar);
+    if(row) {
+        row.force_overwrite = isChecked;
+    }
+};
+
+// --- Search & Filters ---
+document.getElementById('searchInput').addEventListener('input', function() {
     filterByStatus(currentFilter);
 });
 
-// --- Clickable Badge Filter ---
 window.filterByStatus = function(status) {
     if (!window.lastParsedData) return;
     currentFilter = status;
     
-    // 1. Filter by Status
     let tempData = window.lastParsedData;
     if (status !== 'all') {
         tempData = tempData.filter(row => row.status === status);
     }
     
-    // 2. Apply Search Term (if any)
     const term = document.getElementById('searchInput').value.toLowerCase();
     if (term) {
         tempData = tempData.filter(row => 
@@ -211,9 +278,8 @@ window.filterByStatus = function(status) {
     }
     
     filteredData = tempData;
-    currentPage = 1; // Always go back to page 1 when changing filters
+    currentPage = 1; 
     
-    // 3. Update Badge Visuals
     document.querySelectorAll('.filter-badge').forEach(el => {
         el.classList.remove('filter-active');
         el.style.opacity = '0.6';
@@ -227,7 +293,7 @@ window.filterByStatus = function(status) {
     renderTable();
 };
 
-// --- Main Table Renderer ---
+// --- Table Rendering ---
 function renderTable() {
     const tbody = document.getElementById('resultsTableBody');
     tbody.innerHTML = '';
@@ -256,16 +322,34 @@ function renderTable() {
         if (row.BRAND_CODE) details.push(`<span class="badge badge-light border text-primary shadow-sm"><i class="fas fa-tag"></i> ${row.BRAND_CODE}</span>`);
         if (row.VENDOR) details.push(`<span class="badge badge-light border text-info shadow-sm"><i class="fas fa-building"></i> ${row.VENDOR}</span>`);
         if (row.DIV) details.push(`<span class="badge badge-light border text-secondary shadow-sm">DIV: ${row.DIV}</span>`);
+        let extraHtml = `<td class="text-muted" style="font-size: 0.9rem;">${details.length > 0 ? details.join(' <span class="mx-1 text-muted opacity-50">|</span> ') : '<span class="text-muted">-</span>'}</td>`;
+
+        let safeItem = String(row.ITEM_CODE).replace(/'/g, "\\'");
+        let safeBar = String(row.BARCODE).replace(/'/g, "\\'");
         
-        let extraHtml = `<td>${details.length > 0 ? details.join(' <span class="mx-1 text-muted">|</span> ') : '<span class="text-muted">-</span>'}</td>`;
+        let statusDisplay = statusBadge[row.status] || row.status;
+        let reasonHtml = `<div class="reason-text">${row.reason || ''}</div>`;
+        
+        if (row.status === 'conflict') {
+            let isOwChecked = row.force_overwrite ? 'checked' : '';
+            reasonHtml += `
+                <div class="d-inline-block bg-white border border-danger rounded px-2 py-1 shadow-sm mt-2">
+                    <div class="custom-control custom-checkbox">
+                        <input type="checkbox" class="custom-control-input" id="ow_${actualRowNumber}" onchange="toggleOverwrite('${safeItem}', '${safeBar}', this.checked)" ${isOwChecked}>
+                        <label class="custom-control-label text-danger font-weight-bold mb-0" for="ow_${actualRowNumber}" style="cursor:pointer; font-size: 0.8rem; padding-top: 2px;">
+                            <i class="fas fa-exclamation-circle mr-1"></i> Force Overwrite
+                        </label>
+                    </div>
+                </div>`;
+        }
 
         tbody.innerHTML += `
             <tr>
                 <td class="text-muted px-4 font-weight-bold">${actualRowNumber}</td>
                 <td class="font-weight-bold text-dark">${row.ITEM_CODE}</td>
                 <td class="text-primary font-weight-bold" style="letter-spacing: 1px;">${row.BARCODE}</td>
-                <td>${statusBadge[row.status] || row.status}</td>
-                <td class="text-muted small"><em>${row.reason || ''}</em></td>
+                <td>${statusDisplay}</td>
+                <td>${reasonHtml}</td>
                 ${extraHtml}
             </tr>
         `;
@@ -294,7 +378,6 @@ function renderPagination() {
                 <button class="page-btn" ${currentPage === 1 ? 'disabled' : ''} onclick="changePage(${currentPage - 1})"><i class="fas fa-chevron-left"></i></button>
     `;
 
-    // Smart logic to show max 5 page buttons
     let startPage = Math.max(1, currentPage - 2);
     let endPage = Math.min(totalPages, startPage + 4);
     if (endPage - startPage < 4) {
@@ -324,7 +407,6 @@ function renderPagination() {
     container.innerHTML = html;
 }
 
-// --- Page Change Trigger ---
 window.changePage = function(page) {
     const totalPages = Math.ceil(filteredData.length / rowsPerPage);
     if (page < 1 || page > totalPages) return;
@@ -342,7 +424,7 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
 
     if (!fileInput.files.length) return;
     if (!templateType) {
-        alert("Template format not recognized. Cannot extract data.");
+        showModal("Format Warning", "Template format not recognized.", "alert");
         return;
     }
 
@@ -355,7 +437,6 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
     
     const resultsContainer = document.getElementById('resultsContainer');
     resultsContainer.style.display = 'none';
-    resultsContainer.classList.remove('animate-fade-in-up');
 
     fetch("{{ url_for('transactions.parse_sku_file') }}", {
         method: 'POST',
@@ -366,22 +447,25 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
         processBtn.innerHTML = '<i class="fas fa-magic mr-2"></i> Extract Data';
         processBtn.disabled  = false;
 
-        if (data.error) { alert('Error: ' + data.error); return; }
+        if (data.error) { 
+            showModal("Extraction Error", data.error, "alert"); 
+            return; 
+        }
 
-        // Cache globally for pagination & commit
-        window.lastParsedData  = data.data;
+        window.lastParsedData = data.data.map(row => ({
+            ...row,
+            force_overwrite: false
+        }));
+
         window.lastTemplateType = templateType;
         
-        // Reset Search & Pagination States
         document.getElementById('searchInput').value = '';
         currentFilter = 'all';
         filteredData = [...window.lastParsedData];
         currentPage = 1;
 
-        // Render Table Data
         renderTable();
 
-        // Update Summary Badges (Now Clickable!)
         const s = data.summary;
         document.getElementById('rowCountBadge').innerHTML =
             `<span class="filter-badge filter-active text-dark" id="filter-all" onclick="filterByStatus('all')">
@@ -397,13 +481,11 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
                 <i class="fas fa-exclamation-triangle mr-1"></i> ${s.conflict} conflicts
              </span>`;
 
-        // Show and animate
         resultsContainer.style.display = 'block';
         resultsContainer.classList.add('animate-fade-in-up');
     })
     .catch(error => {
-        console.error('Error:', error);
-        alert('A network or server error occurred.');
+        showModal("Network Error", "A network or server error occurred.", "alert");
         processBtn.innerHTML = '<i class="fas fa-magic mr-2"></i> Extract Data';
         processBtn.disabled  = false;
     });
@@ -411,42 +493,65 @@ document.getElementById('uploadForm').addEventListener('submit', function(e) {
 
 // --- Commit to DB ---
 function commitToDatabase() {
-    const commitBtn = document.getElementById('commitBtn');
+    const payloadData = (window.lastParsedData || []).map(row => {
+        if (row.status === 'conflict' && row.force_overwrite) {
+            return { ...row, status: 'force_overwrite' };
+        }
+        return row;
+    });
 
-    const toCommit = (window.lastParsedData || []).filter(r => r.status === 'update');
-    if (toCommit.length === 0) {
-        alert('Nothing to commit — no rows have status "NEW - READY TO ADD".');
+    const validCommits = payloadData.filter(r => r.status === 'update' || r.status === 'force_overwrite');
+    
+    if (validCommits.length === 0) {
+        showModal('Nothing to Commit', 'There are no "NEW" records, and no conflicts marked for overwrite.', 'alert');
         return;
     }
 
-    if (!confirm(`Commit ${toCommit.length} new records to the database?`)) return;
+    // Trigger the confirmation modal
+    showModal(
+        'Confirm Commit', 
+        `Are you sure you want to commit <strong>${validCommits.length}</strong> records to the database?`, 
+        'confirm', 
+        function() {
+            // This runs ONLY if the user clicks "Confirm" in the modal
+            const commitBtn = document.getElementById('commitBtn');
+            commitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Saving...';
+            commitBtn.disabled  = true;
 
-    commitBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-1"></i> Saving...';
-    commitBtn.disabled  = true;
-
-    fetch("{{ url_for('transactions.commit_barcodes') }}", {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-            data:          window.lastParsedData,
-            template_type: window.lastTemplateType
-        })
-    })
-    .then(r => r.json())
-    .then(data => {
-        commitBtn.innerHTML = '<i class="fas fa-cloud-upload-alt mr-1"></i> Commit to Database';
-        commitBtn.disabled  = false;
-        if (data.error) { alert('Error: ' + data.error); return; }
-        alert(`✅ ${data.committed} new records saved.\n⏭️ ${data.skipped} rows skipped.\n${data.message || ''}`);
-        
-        // Hide the table after successful commit
-        hideResults();
-    })
-    .catch(() => {
-        alert('A network error occurred.');
-        commitBtn.innerHTML = '<i class="fas fa-cloud-upload-alt mr-1"></i> Commit to Database';
-        commitBtn.disabled  = false;
-    });
+            fetch("{{ url_for('transactions.commit_barcodes') }}", {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                    data:          payloadData,
+                    template_type: window.lastTemplateType
+                })
+            })
+            .then(r => r.json())
+            .then(data => {
+                commitBtn.innerHTML = '<i class="fas fa-cloud-upload-alt mr-1"></i> Commit to Database';
+                commitBtn.disabled  = false;
+                
+                if (data.error) { 
+                    showModal('Error', data.error, 'alert'); 
+                    return; 
+                }
+                
+                // Show success modal, and clear the table when closed
+                showModal(
+                    'Success!', 
+                    `✅ ${data.committed} records saved successfully.\n⏭️ ${data.skipped} rows skipped.\n${data.message || ''}`, 
+                    'alert', 
+                    null, 
+                    hideResults // This function runs when the user clicks OK on the success message
+                );
+            })
+            .catch(() => {
+                showModal('Network Error', 'A network error occurred while saving.', 'alert');
+                commitBtn.innerHTML = '<i class="fas fa-cloud-upload-alt mr-1"></i> Commit to Database';
+                commitBtn.disabled  = false;
+            });
+        }
+    );
 }
 </script>
 {% endblock %}
