@@ -65,7 +65,7 @@ CHAIN_MAPPINGS = {
         'BARCODE':   'BARCODE',
         'DESCRIPTION': 'DESC',
         'SKU':       'SKU',
-        'ITEM CODE': 'ITEM_CODE',
+        'ITEM CODE/STOCK#': 'ITEM_CODE',
         'BRAND':     'BRAND_CODE',
     },
     'RDS': {
