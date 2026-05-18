@@ -26,7 +26,7 @@
                 style="background:#f0f4ff;border:1px solid #dce4ff;gap:8px;">
                 <i class="fas fa-info-circle text-primary" style="font-size:0.85rem;"></i>
                 <span style="font-size:0.78rem;color:#4a5568;font-weight:500;">
-                    Ensure your Excel file has <strong>one sheet only</strong> before uploading.
+                    Multi-sheet Excel files are supported. You'll be prompted to pick a sheet.
                 </span>
             </div>
         </div>
@@ -34,6 +34,7 @@
         <div class="card-body px-4 py-4">
             <form id="uploadForm">
                 <input type="hidden" id="detected_template" name="template_type" value="">
+                <input type="hidden" id="selected_sheet_index" name="sheet_index" value="0">
                 <div class="d-flex flex-column flex-md-row align-items-md-end" style="gap:15px;">
                     <div class="flex-grow-1 w-100">
                         <label class="font-weight-bold text-muted small text-uppercase mb-2" style="font-size:0.7rem;letter-spacing:0.5px;">1. Upload Template</label>
@@ -119,6 +120,28 @@
     </div>
 </div>
 
+<div class="modal fade" id="sheetPickerModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document" style="max-width:420px;">
+        <div class="modal-content border-0 shadow-lg p-4"
+            style="border-radius:24px;background:rgba(255,255,255,0.98);backdrop-filter:blur(10px);">
+            <div class="text-center mb-3">
+                <div style="width:65px;height:65px;background:#e8f4fd;color:#0d6efd;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto;font-size:1.8rem;box-shadow:0 4px 15px rgba(13,110,253,.15);">
+                    <i class="fas fa-layer-group"></i>
+                </div>
+            </div>
+            <h5 class="text-center font-weight-bold mb-1" style="color:#2d3748;letter-spacing:-0.5px;">Multiple Sheets Found</h5>
+            <p class="text-center text-muted mb-3" style="font-size:0.88rem;">Select which sheet contains the barcode data.</p>
+            <div id="sheetPickerList" class="mb-4" style="display:flex;flex-direction:column;gap:8px;max-height:260px;overflow-y:auto;"></div>
+            <div class="d-flex justify-content-center" style="gap:10px;">
+                <button type="button" class="btn btn-light rounded-pill px-4 font-weight-bold text-muted" data-dismiss="modal" style="background:#f1f3f5;border:none;">Cancel</button>
+                <button type="button" class="btn btn-primary rounded-pill px-4 font-weight-bold shadow-sm" id="sheetPickerConfirmBtn">
+                    <i class="fas fa-check mr-1"></i> Use This Sheet
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="bentoModal" tabindex="-1" role="dialog" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered modal-sm" role="document">
         <div class="modal-content border-0 shadow-lg text-center p-4"
@@ -191,6 +214,93 @@ const STATUS_BADGE = {
 };
 
 // ================================================================
+// SHEET PICKER STATE
+// ================================================================
+let pendingSheets      = [];
+let selectedSheetIndex = 0;
+
+function renderSheetPicker(sheets) {
+    const list = document.getElementById('sheetPickerList');
+    list.innerHTML = '';
+    sheets.forEach((name, idx) => {
+        const btn = document.createElement('button');
+        btn.type      = 'button';
+        btn.className = 'sheet-picker-option btn text-left font-weight-600 shadow-sm';
+        btn.style     = [
+            'border-radius:12px', 'padding:10px 16px', 'border:2px solid #e2e8f0',
+            'background:#f8f9fa', 'color:#2d3748', 'transition:all 0.15s', 'font-size:0.9rem',
+        ].join(';');
+        btn.innerHTML = `<i class="fas fa-table mr-2 text-primary" style="font-size:0.85rem;"></i>${name}`;
+        btn.dataset.sheetIdx = idx;
+
+        btn.addEventListener('click', () => {
+            list.querySelectorAll('.sheet-picker-option').forEach(b => {
+                b.style.background   = '#f8f9fa';
+                b.style.borderColor  = '#e2e8f0';
+                b.style.color        = '#2d3748';
+            });
+            btn.style.background  = '#e8f0fe';
+            btn.style.borderColor = '#4285f4';
+            btn.style.color       = '#1a56db';
+            selectedSheetIndex    = idx;
+        });
+
+        if (idx === 0) {
+            btn.style.background  = '#e8f0fe';
+            btn.style.borderColor = '#4285f4';
+            btn.style.color       = '#1a56db';
+        }
+        list.appendChild(btn);
+    });
+}
+
+document.getElementById('sheetPickerConfirmBtn').addEventListener('click', function () {
+    $('#sheetPickerModal').modal('hide');
+    document.getElementById('selected_sheet_index').value = selectedSheetIndex;
+    setTimeout(() => runDetectTemplate(), 300);
+});
+
+// ================================================================
+// DETECT TEMPLATE (shared helper — called after sheet is chosen)
+// ================================================================
+function runDetectTemplate() {
+    const fileInput    = document.getElementById('skuFile');
+    const processBtn   = document.getElementById('processBtn');
+    const label        = $('.custom-file-label');
+    const sheetIndex   = parseInt(document.getElementById('selected_sheet_index').value) || 0;
+    const sheetSuffix  = pendingSheets.length > 1
+        ? ` <span class="badge badge-info flex-shrink-0 py-1 px-2 shadow-sm ml-1" style="font-size:0.72rem;"><i class="fas fa-layer-group mr-1"></i>${pendingSheets[sheetIndex]}</span>`
+        : '';
+
+    // Re-add spinner
+    label.find('#detectSpinner').remove();
+    label.append('<i class="fas fa-spinner fa-spin ml-2 text-primary flex-shrink-0" id="detectSpinner"></i>');
+
+    const formData = new FormData();
+    formData.append('file', fileInput.files[0]);
+    formData.append('sheet_index', sheetIndex);
+
+    fetch("{{ url_for('transactions.detect_template') }}", { method: 'POST', body: formData })
+        .then(r => r.json())
+        .then(data => {
+            $('#detectSpinner').remove();
+            if (data.success && data.template_type !== 'UNKNOWN') {
+                document.getElementById('detected_template').value = data.template_type;
+                label.append(`<span class="badge badge-success flex-shrink-0 py-1 px-2 shadow-sm ml-2" style="font-size:0.75rem;"><i class="fas fa-robot mr-1"></i> ${data.template_type}</span>${sheetSuffix}`);
+                processBtn.disabled = false;
+                document.getElementById('uploadForm').dispatchEvent(new Event('submit'));
+            } else {
+                label.append(`<span class="badge badge-danger flex-shrink-0 py-1 px-2 shadow-sm ml-2"><i class="fas fa-exclamation-triangle mr-1"></i> Unknown Format</span>`);
+                showModal('Format Not Recognized', 'Could not identify this template. Please make sure you are using a standard department store format.', 'alert');
+            }
+        })
+        .catch(() => {
+            $('#detectSpinner').remove();
+            label.append(`<span class="badge badge-danger flex-shrink-0 py-1 px-2 shadow-sm ml-2"><i class="fas fa-times mr-1\"></i> Error</span>`);
+        });
+}
+
+// ================================================================
 // FILE INPUT
 // ================================================================
 $('.custom-file-input').on('change', function () {
@@ -199,7 +309,10 @@ $('.custom-file-input').on('change', function () {
     const label      = $(this).next('.custom-file-label');
     const processBtn = document.getElementById('processBtn');
 
-    document.getElementById('detected_template').value = '';
+    document.getElementById('detected_template').value    = '';
+    document.getElementById('selected_sheet_index').value = '0';
+    selectedSheetIndex = 0;
+    pendingSheets      = [];
     processBtn.disabled = true;
 
     if (!fileName) {
@@ -215,26 +328,28 @@ $('.custom-file-input').on('change', function () {
 
     if (!fileInput.files.length) return;
 
-    const formData = new FormData();
-    formData.append('file', fileInput.files[0]);
+    // Step 1: check for multiple sheets
+    const sheetFormData = new FormData();
+    sheetFormData.append('file', fileInput.files[0]);
 
-    fetch("{{ url_for('transactions.detect_template') }}", { method: 'POST', body: formData })
+    fetch("{{ url_for('transactions.get_sheets') }}", { method: 'POST', body: sheetFormData })
         .then(r => r.json())
         .then(data => {
-            $('#detectSpinner').remove();
-            if (data.success && data.template_type !== 'UNKNOWN') {
-                document.getElementById('detected_template').value = data.template_type;
-                label.append(`<span class="badge badge-success flex-shrink-0 py-1 px-2 shadow-sm ml-2" style="font-size:0.75rem;"><i class="fas fa-robot mr-1"></i> ${data.template_type}</span>`);
-                processBtn.disabled = false;
-                document.getElementById('uploadForm').dispatchEvent(new Event('submit'));
+            if (data.success && !data.is_csv && data.sheets && data.sheets.length > 1) {
+                // Multiple sheets — show picker first
+                $('#detectSpinner').remove();
+                pendingSheets      = data.sheets;
+                selectedSheetIndex = 0;
+                renderSheetPicker(data.sheets);
+                $('#sheetPickerModal').modal('show');
             } else {
-                label.append(`<span class="badge badge-danger flex-shrink-0 py-1 px-2 shadow-sm ml-2"><i class="fas fa-exclamation-triangle mr-1"></i> Unknown Format</span>`);
-                showModal('Format Not Recognized', 'Could not identify this template. Please make sure you are using a standard department store format.', 'alert');
+                // Single sheet or CSV — go straight to detection
+                runDetectTemplate();
             }
         })
         .catch(() => {
-            $('#detectSpinner').remove();
-            label.append(`<span class="badge badge-danger flex-shrink-0 py-1 px-2 shadow-sm ml-2"><i class="fas fa-times mr-1"></i> Error</span>`);
+            // If sheet check fails, fall through to direct detection
+            runDetectTemplate();
         });
 });
 
@@ -246,9 +361,12 @@ function hideResults() {
     container.classList.remove('animate-fade-in-up');
     container.style.display = 'none';
     document.getElementById('uploadForm').reset();
-    document.getElementById('detected_template').value = '';
-    document.getElementById('processBtn').disabled     = true;
-    document.getElementById('searchInput').value       = '';
+    document.getElementById('detected_template').value    = '';
+    document.getElementById('selected_sheet_index').value = '0';
+    document.getElementById('processBtn').disabled        = true;
+    document.getElementById('searchInput').value          = '';
+    selectedSheetIndex = 0;
+    pendingSheets      = [];
     window.lastParsedData = [];
     filteredData = [];
     $('.custom-file-label').html('<i class="fas fa-cloud-upload-alt mr-2 flex-shrink-0" style="font-size: 1.2rem;"></i><span class="text-truncate flex-grow-1" style="min-width:0;font-weight:500;font-size:0.95rem;">Choose file to validate...</span>');
@@ -468,6 +586,7 @@ document.getElementById('uploadForm').addEventListener('submit', function (e) {
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
     formData.append('template_type', templateType);
+    formData.append('sheet_index', document.getElementById('selected_sheet_index').value || '0');
 
     processBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Processing...';
     processBtn.disabled  = true;

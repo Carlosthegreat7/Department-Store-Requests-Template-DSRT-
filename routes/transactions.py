@@ -91,8 +91,9 @@ CHAIN_MAPPINGS = {
         'GCAP BARCODE': 'BARCODE',
     },
     'SM': {
-        'ITEM':   'ITEM_CODE',
-        'SM UPC': 'BARCODE',
+    'ITEM': 'ITEM_CODE',
+    'ITEM DESCRIPTION': 'ITEM_CODE',
+    'SM UPC': 'BARCODE',
     },
 }
 
@@ -255,19 +256,19 @@ def find_image_in_cache(cache: dict, item_no: str) -> Optional[str]:
 # STAGE 1 — TEMPLATE DETECTION
 # ==============================================================
 
-def _read_head(file_path: str, nrows: int = 30, header=None) -> pd.DataFrame:
+def _read_head(file_path: str, nrows: int = 30, header=None, sheet_index: int = 0) -> pd.DataFrame:
     """Read the first nrows of a CSV or Excel file without a header."""
     is_csv = file_path.lower().endswith('.csv')
     common = dict(nrows=nrows, header=header)
     if is_csv:
         return pd.read_csv(file_path, encoding='utf-8', encoding_errors='ignore', **common)
-    return pd.read_excel(file_path, sheet_name=0, **common)
+    return pd.read_excel(file_path, sheet_name=sheet_index, **common)
 
 
-def detect_template_type(file_path: str) -> str:
+def detect_template_type(file_path: str, sheet_index: int = 0) -> str:
     """Sniff the file and return the best-matching CHAIN_MAPPINGS key, or 'UNKNOWN'."""
     try:
-        df_head = _read_head(file_path, nrows=30)
+        df_head = _read_head(file_path, nrows=30, sheet_index=sheet_index)
         best_match = 'UNKNOWN'
         max_matches = 0
 
@@ -276,11 +277,16 @@ def detect_template_type(file_path: str) -> str:
             row_vals_no_spaces = [v.replace(' ', '') for v in row_vals]
 
             for chain, mapping in CHAIN_MAPPINGS.items():
-                matches = sum(
-                    1 for expected in mapping
-                    if (expected.upper() in row_vals
-                        or expected.upper().replace(' ', '') in row_vals_no_spaces)
-                )
+                matches = 0
+                for expected in mapping:
+                    expected_clean = expected.upper().replace(' ', '')
+
+                    for val in row_vals:
+                        val_clean = val.replace(' ', '')
+
+                        if expected_clean in val_clean or val_clean in expected_clean:
+                            matches += 1
+                            break
                 match_pct = matches / len(mapping) if mapping else 0
 
                 if matches >= 2 and matches > max_matches:
@@ -293,7 +299,7 @@ def detect_template_type(file_path: str) -> str:
 
         # Fallback for legacy SM template (82 columns, no headers)
         if best_match == 'UNKNOWN':
-            df_full = _read_head(file_path, nrows=1)
+            df_full = _read_head(file_path, nrows=1, sheet_index=sheet_index)
             if len(df_full.columns) >= 82:
                 return 'SM'
 
@@ -308,7 +314,7 @@ def detect_template_type(file_path: str) -> str:
 # STAGE 2 — PARSE ROWS
 # ==============================================================
 
-def _read_all_str(file_path: str) -> pd.DataFrame:
+def _read_all_str(file_path: str, sheet_index: int = 0) -> pd.DataFrame:
     """Read the entire file as strings to preserve leading zeros."""
     is_csv = file_path.lower().endswith('.csv')
     if is_csv:
@@ -316,10 +322,10 @@ def _read_all_str(file_path: str) -> pd.DataFrame:
             file_path, header=None, dtype=str,
             encoding='utf-8', encoding_errors='ignore',
         )
-    return pd.read_excel(file_path, sheet_name=0, header=None, dtype=str)
+    return pd.read_excel(file_path, sheet_name=sheet_index, header=None, dtype=str)
 
 
-def parse_sku_template(file_path: str, template_type: str) -> list:
+def parse_sku_template(file_path: str, template_type: str, sheet_index: int = 0) -> list:
     """Parse the uploaded file and return a list of row dicts.
 
     Dispatches to a template-specific deep parser when available,
@@ -327,15 +333,15 @@ def parse_sku_template(file_path: str, template_type: str) -> list:
     """
     try:
         if template_type == 'SM':
-            return _parse_sm(file_path)
+            return _parse_sm(file_path, sheet_index)
         if template_type == 'RDS':
-            return _parse_rds(file_path)
+            return _parse_rds(file_path, sheet_index)
         if template_type == 'RUSTANS':
-            return _parse_rustans(file_path)
+            return _parse_rustans(file_path, sheet_index)
         if template_type == 'GCAP':
-            return _parse_gcap(file_path)
+            return _parse_gcap(file_path, sheet_index)
         # All other chains (GGRAND, ALTURAS, KCC, …) use the generic path
-        return _parse_generic(file_path, template_type)
+        return _parse_generic(file_path, template_type, sheet_index)
     except Exception as exc:
         logger.error('parse_sku_template error [%s]: %s', template_type, exc)
         return []
@@ -346,11 +352,11 @@ def parse_sku_template(file_path: str, template_type: str) -> list:
 # Direct column mapping: ITEM CODE → ITEM_CODE, GCAP BARCODE → BARCODE
 # Also captures BRAND → BRAND_CODE, DESCRIPTION → DESC
 # ------------------------------------------------------------------
-def _parse_gcap(file_path: str) -> list:
+def _parse_gcap(file_path: str, sheet_index: int = 0) -> list:
     """GCAP template — direct named-column extraction."""
     extracted_data = []
     mapping = CHAIN_MAPPINGS['GCAP']
-    df_full = _read_all_str(file_path)
+    df_full = _read_all_str(file_path, sheet_index)
 
     header_idx = _find_header_row(df_full, mapping)
     if header_idx == -1:
@@ -385,45 +391,85 @@ def _parse_gcap(file_path: str) -> list:
 
 # ------------------------------------------------------------------
 # Deep parser: SM
-# Index-based — no reliable column headers.
-# Item code: col 0 (description field contains the SKU)
-# Barcode:   col 81 (far-right UPC column)
-# Skip rows where both values are empty or look like metadata.
+# Extracts ITEM_CODE from the last token of the description column.
+# Dynamically hunts for the Barcode column to prevent out-of-bounds errors.
 # ------------------------------------------------------------------
-def _parse_sm(file_path: str) -> list:
-    """SM template — fixed column-index extraction."""
+def _parse_sm(file_path: str, sheet_name=0) -> list:
+    """SM template — extracts ITEM_CODE from the last token of the description column."""
     extracted_data = []
-    df = _read_all_str(file_path)
+    df = _read_all_str(file_path, sheet_name)
 
-    # SM files may have a multi-row header block; skip rows until we hit real data.
-    # A real data row has a numeric-looking item code in col 0.
-    ITEM_COL   = 0
-    BARCODE_COL = 81
+    # Defaults for legacy files
+    DESC_COL    = 0
+    BARCODE_COL = 81  
+
+    # 1. SMART COLUMN FINDER (Protects against layout changes)
+    # Scans the first 50 rows looking for header keywords
+    for row_idx in range(min(50, len(df))):
+        row_vals = [str(v).strip().upper() for v in df.iloc[row_idx].values]
+        
+        if 'SM UPC' in row_vals:
+            BARCODE_COL = row_vals.index('SM UPC')
+
+            if 'ITEM DESCRIPTION' in row_vals:
+                DESC_COL = row_vals.index('ITEM DESCRIPTION')
+            elif 'ITEM' in row_vals:
+                DESC_COL = row_vals.index('ITEM')
+            elif 'DESCRIPTION' in row_vals:
+                DESC_COL = row_vals.index('DESCRIPTION')
+
+                print("DESC_COL:", DESC_COL)
+                print("BARCODE_COL:", BARCODE_COL)
+                print("HEADERS:", row_vals)
+
+            break
+
+        elif 'BARCODE' in row_vals:
+            BARCODE_COL = row_vals.index('BARCODE')
+
+            if 'ITEM DESCRIPTION' in row_vals:
+                DESC_COL = row_vals.index('ITEM DESCRIPTION')
+            elif 'ITEM' in row_vals:
+                DESC_COL = row_vals.index('ITEM')
+            elif 'DESCRIPTION' in row_vals:
+                DESC_COL = row_vals.index('DESCRIPTION')
+
+            break
+
+    _SKIP_DESC = {'nan', 'none', '', 'item', 'item description', 'item desc', 'description'}
+    _SKIP_BAR  = {'nan', 'none', '', 'sm upc', 'barcode', 'upc'}
 
     for _, row in df.iterrows():
-        if len(row) <= BARCODE_COL:
+        # 2. SAFE ROW LENGTH CHECK
+        # Only skips if the row physically isn't wide enough to contain our target columns
+        max_needed_index = max(DESC_COL, BARCODE_COL)
+        if len(row) <= max_needed_index:
             continue
 
-        raw_item = str(row.iloc[ITEM_COL]).strip()
+        raw_desc = str(row.iloc[DESC_COL]).strip()
         raw_bar  = str(row.iloc[BARCODE_COL]).strip()
 
-        # Skip header/metadata rows: item code must look like an alphanumeric SKU
-        if raw_item.lower() in ('nan', 'none', '', 'item', 'item code', 'sku'):
+        if raw_desc.lower() in _SKIP_DESC:
             continue
-        if raw_bar.lower() in ('nan', 'none', '', 'sm upc', 'barcode', 'upc'):
+        if raw_bar.lower() in _SKIP_BAR:
             continue
-        # Skip rows that are purely non-alphanumeric (section dividers, etc.)
-        if not any(c.isalnum() for c in raw_item):
+        if not any(c.isalnum() for c in raw_desc):
             continue
 
+        # 3. YOUR TOKEN LOGIC (Extract Item Code from Description)
+        # e.g. "GUESS NEWTRENDS GUESS 0001018 GW0997L3" → "GW0997L3"
+        tokens    = raw_desc.split()
+        item_code = tokens[-1] if tokens else raw_desc
+        desc      = ' '.join(tokens[:-1]) if len(tokens) > 1 else raw_desc
+
         extracted_data.append({
-            'ITEM_CODE': raw_item,
+            'ITEM_CODE': item_code,
             'BARCODE':   raw_bar,
+            'DESC':      desc,
         })
 
     logger.info('SM: extracted %d rows', len(extracted_data))
     return extracted_data
-
 
 # ------------------------------------------------------------------
 # Deep parser: RDS
@@ -433,11 +479,11 @@ def _parse_sm(file_path: str) -> list:
 # ITEM DESCRIPTION → DESC
 # BRAND → BRAND_CODE
 # ------------------------------------------------------------------
-def _parse_rds(file_path: str) -> list:
+def _parse_rds(file_path: str, sheet_index: int = 0) -> list:
     """RDS template — skips multi-row headers, maps SKU NO. to BARCODE."""
     extracted_data = []
     mapping = CHAIN_MAPPINGS['RDS']
-    df_full = _read_all_str(file_path)
+    df_full = _read_all_str(file_path, sheet_index)
 
     # RDS files often have 2–3 merged header rows before the real column row.
     # _find_header_row scans up to row 50 and picks the best match.
@@ -482,11 +528,11 @@ def _parse_rds(file_path: str) -> list:
 # Multiple consecutive rows may represent a single item.
 # Key cells: RCC SKU → BARCODE, VENDOR ITEM CODE → ITEM_CODE
 # ------------------------------------------------------------------
-def _parse_rustans(file_path: str) -> list:
+def _parse_rustans(file_path: str, sheet_index: int = 0) -> list:
     """RUSTANS template — form-based fixed-cell extraction with multi-row grouping."""
     extracted_data = []
     mapping = CHAIN_MAPPINGS['RUSTANS']
-    df_full = _read_all_str(file_path)
+    df_full = _read_all_str(file_path, sheet_index)
 
     # Locate the header row to understand column positions
     header_idx = _find_header_row(df_full, mapping)
@@ -548,7 +594,7 @@ def _parse_rustans_raw_scan(df: pd.DataFrame) -> list:
 # ------------------------------------------------------------------
 # Generic fallback parser (GGRAND, ALTURAS, KCC, …)
 # ------------------------------------------------------------------
-def _parse_generic(file_path: str, template_type: str) -> list:
+def _parse_generic(file_path: str, template_type: str, sheet_index: int = 0) -> list:
     """Generic column-mapping parser for chains without a custom deep parser."""
     extracted_data = []
 
@@ -557,7 +603,7 @@ def _parse_generic(file_path: str, template_type: str) -> list:
         return extracted_data
 
     mapping = CHAIN_MAPPINGS[template_type]
-    df_full = _read_all_str(file_path)
+    df_full = _read_all_str(file_path, sheet_index)
 
     header_idx = _find_header_row(df_full, mapping)
     if header_idx == -1:
@@ -904,6 +950,37 @@ def _save_temp_file(file) -> tuple:
     return filename, temp_filepath
 
 
+@transactions_bp.route('/api/get_sheets', methods=['POST'])
+def get_sheets():
+    """Return the list of sheet names for a multi-sheet Excel file."""
+    if not session.get('sdr_loggedin'):
+        return jsonify({'error': 'Not authenticated'}), 401
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file uploaded'}), 400
+
+    file = request.files['file']
+    if not file.filename:
+        return jsonify({'error': 'Empty filename'}), 400
+
+    temp_filepath = None
+    try:
+        filename, temp_filepath = _save_temp_file(file)
+        is_csv = filename.lower().endswith('.csv')
+        if is_csv:
+            return jsonify({'success': True, 'sheets': [], 'is_csv': True}), 200
+
+        import openpyxl
+        wb = openpyxl.load_workbook(temp_filepath, read_only=True, data_only=True)
+        sheet_names = wb.sheetnames
+        wb.close()
+        return jsonify({'success': True, 'sheets': sheet_names, 'is_csv': False}), 200
+    except Exception as exc:
+        return jsonify({'error': str(exc)}), 500
+    finally:
+        if temp_filepath and os.path.exists(temp_filepath):
+            os.remove(temp_filepath)
+
+
 @transactions_bp.route('/api/detect_template', methods=['POST'])
 def detect_template():
     """Stage 1: Accept a file and return the auto-detected template type."""
@@ -919,7 +996,8 @@ def detect_template():
     temp_filepath = None
     try:
         filename, temp_filepath = _save_temp_file(file)
-        detected = detect_template_type(temp_filepath)
+        sheet_index = int(request.form.get('sheet_index', 0))
+        detected = detect_template_type(temp_filepath, sheet_index)
         return jsonify({'success': True, 'template_type': detected, 'filename': filename}), 200
     except Exception as exc:
         return jsonify({'error': str(exc)}), 500
@@ -938,6 +1016,7 @@ def parse_sku_file():
 
     file          = request.files['file']
     template_type = request.form.get('template_type', '').upper().strip()
+    sheet_index   = int(request.form.get('sheet_index', 0))
 
     if not file.filename:
         return jsonify({'error': 'Empty filename'}), 400
@@ -950,7 +1029,7 @@ def parse_sku_file():
         if not filename:
             return jsonify({'error': 'Invalid filename'}), 400
 
-        parsed_data = parse_sku_template(temp_filepath, template_type)
+        parsed_data = parse_sku_template(temp_filepath, template_type, sheet_index)
         if not parsed_data:
             return jsonify({
                 'error': f'No data extracted using template [{template_type}]. Check the file format.'
