@@ -11,6 +11,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 import mysql.connector
+import openpyxl
 import pandas as pd
 import pyodbc
 from flask import Blueprint, Response, jsonify, make_response, render_template, request, send_file, session
@@ -91,9 +92,9 @@ CHAIN_MAPPINGS = {
         'GCAP BARCODE': 'BARCODE',
     },
     'SM': {
-    'ITEM': 'ITEM_CODE',
-    'ITEM DESCRIPTION': 'ITEM_CODE',
-    'SM UPC': 'BARCODE',
+        'ITEM':             'ITEM_CODE',
+        'ITEM DESCRIPTION': 'DESC',
+        'SM UPC':           'BARCODE',
     },
 }
 
@@ -102,9 +103,17 @@ CHAIN_MAPPINGS = {
 # SHARED HELPERS
 # ==============================================================
 
-def _is_blank(val: str) -> bool:
-    """Return True if a string value represents an empty/missing cell."""
-    return val.lower() in ('', 'nan', 'none')
+_BLANK_VALUES: frozenset = frozenset(('', 'nan', 'none'))
+
+
+def _is_blank(val) -> bool:
+    """Return True if a value represents an empty/missing cell.
+
+    Accepts any type; converts to lowercase string before checking so callers
+    do not have to do `.lower()` themselves (and cannot accidentally pass a
+    non-string and get an AttributeError).
+    """
+    return str(val).strip().lower() in _BLANK_VALUES
 
 
 def _best_odbc_driver() -> Optional[str]:
@@ -297,7 +306,6 @@ def detect_template_type(file_path: str, sheet_index: int = 0) -> str:
                     if match_pct > current_pct:
                         best_match = chain
 
-        # Fallback for legacy SM template (82 columns, no headers)
         if best_match == 'UNKNOWN':
             df_full = _read_head(file_path, nrows=1, sheet_index=sheet_index)
             if len(df_full.columns) >= 82:
@@ -401,7 +409,7 @@ def _parse_sm(file_path: str, sheet_name=0) -> list:
 
     # Defaults for legacy files
     DESC_COL    = 0
-    BARCODE_COL = 81  
+    BARCODE_COL = 81
 
     # 1. SMART COLUMN FINDER (Protects against layout changes)
     # Scans the first 50 rows looking for header keywords
@@ -417,10 +425,6 @@ def _parse_sm(file_path: str, sheet_name=0) -> list:
                 DESC_COL = row_vals.index('ITEM')
             elif 'DESCRIPTION' in row_vals:
                 DESC_COL = row_vals.index('DESCRIPTION')
-
-                print("DESC_COL:", DESC_COL)
-                print("BARCODE_COL:", BARCODE_COL)
-                print("HEADERS:", row_vals)
 
             break
 
@@ -504,7 +508,7 @@ def _parse_rds(file_path: str, sheet_index: int = 0) -> list:
         barcode   = _get_col(row, col_map, 'BARCODE')    # sourced from SKU NO.
         item_code = _get_col(row, col_map, 'ITEM_CODE')  # sourced from VENDOR PART #
 
-        if _is_blank(barcode.lower()) and _is_blank(item_code.lower()):
+        if _is_blank(barcode) and _is_blank(item_code):
             continue
         # Skip rows that appear to be sub-headers (non-numeric SKU when barcode expected)
         if not any(c.isdigit() for c in barcode) and barcode:
@@ -554,9 +558,9 @@ def _parse_rustans(file_path: str, sheet_index: int = 0) -> list:
         barcode   = _get_col(row, col_map, 'BARCODE')
         item_code = _get_col(row, col_map, 'ITEM_CODE')
 
-        if not _is_blank(item_code.lower()):
+        if not _is_blank(item_code):
             current['ITEM_CODE'] = item_code
-        if not _is_blank(barcode.lower()):
+        if not _is_blank(barcode):
             current['BARCODE'] = barcode
 
         # Emit when we have both fields
@@ -585,7 +589,7 @@ def _parse_rustans_raw_scan(df: pd.DataFrame) -> list:
         if rcc_col is not None and vendor_col is not None:
             barcode   = str(row.iloc[rcc_col]).strip()   if len(row) > rcc_col    else ''
             item_code = str(row.iloc[vendor_col]).strip() if len(row) > vendor_col else ''
-            if not _is_blank(barcode.lower()) and not _is_blank(item_code.lower()):
+            if not _is_blank(barcode) and not _is_blank(item_code):
                 extracted_data.append({'ITEM_CODE': item_code, 'BARCODE': barcode})
 
     return extracted_data
@@ -622,7 +626,7 @@ def _parse_generic(file_path: str, template_type: str, sheet_index: int = 0) -> 
 
         for file_col, target_key in col_map.items():
             val = str(row[file_col]).strip()
-            if val.lower() not in ('nan', 'none', ''):
+            if not _is_blank(val):
                 row_dict[target_key] = val
                 has_data = True
 
@@ -674,7 +678,7 @@ def _get_col(row, col_map: dict, target_key: str) -> str:
     for col, key in col_map.items():
         if key == target_key:
             val = str(row[col]).strip()
-            return '' if val.lower() in ('nan', 'none') else val
+            return '' if _is_blank(val) else val
     return ''
 
 
@@ -689,7 +693,7 @@ def normalize_rows(parsed_data: list) -> list:
         item_raw = re.sub(r'\.0+$', '', str(row.get('ITEM_CODE', '')).strip())
         bar_raw  = re.sub(r'\.0+$', '', str(row.get('BARCODE',   '')).strip())
 
-        if _is_blank(item_raw.lower()) and _is_blank(bar_raw.lower()):
+        if _is_blank(item_raw) and _is_blank(bar_raw):
             continue
 
         normalized_row = dict(row)
@@ -725,13 +729,13 @@ def validate_rows(parsed_data: list, template_type: str) -> tuple:
         barcode   = row.get('BARCODE',   '').strip()
         result    = dict(row)
 
-        if not barcode or _is_blank(barcode.lower()):
+        if not barcode or _is_blank(barcode):
             result.update({'status': 'rejected', 'reason': 'VR-002: Barcode is empty'})
             results.append(result)
             continue
 
-        if not item_code or _is_blank(item_code.lower()):
-            result.update({'status': 'rejected', 'reason': 'VR-002: Item Code is empty'})
+        if not item_code or _is_blank(item_code):
+            result.update({'status': 'rejected', 'reason': 'VR-003: Item Code is empty'})
             results.append(result)
             continue
 
@@ -907,7 +911,7 @@ def _write_audit_log(rows: list, committed_by: str, committed_count: int, errors
                 
             item = row.get('ITEM_CODE')
             bar  = row.get('BARCODE')
-            had_error = any(e.get('ITEM_CODE') == item for e in errors)
+            had_error = any(e.get('BARCODE') == bar for e in errors)
             
             if had_error:
                 action = f'Failed to commit barcode {bar} for item {item} (Validation Error)'
@@ -969,7 +973,6 @@ def get_sheets():
         if is_csv:
             return jsonify({'success': True, 'sheets': [], 'is_csv': True}), 200
 
-        import openpyxl
         wb = openpyxl.load_workbook(temp_filepath, read_only=True, data_only=True)
         sheet_names = wb.sheetnames
         wb.close()
@@ -1138,7 +1141,8 @@ def progress():
     req_id = request.args.get('id', 'default')
 
     def generate():
-        while True:
+        max_polls = 600  # ~5 minutes at 0.5 s intervals before giving up
+        for _ in range(max_polls):
             data = get_progress_data(req_id)
             yield f'data: {json.dumps(data)}\n\n'
             if data['status'] == 'Finalizing...' or (data['total'] > 0 and data['current'] >= data['total']):
