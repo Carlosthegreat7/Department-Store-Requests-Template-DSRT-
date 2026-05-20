@@ -9,8 +9,6 @@ import traceback
 import zipfile
 from datetime import datetime, timedelta
 from typing import Optional
-
-import mysql.connector
 import openpyxl
 import pandas as pd
 import pyodbc
@@ -715,102 +713,157 @@ def normalize_rows(parsed_data: list) -> list:
 # ==============================================================
 # STAGE 4 — VALIDATE ROWS (LOCAL DB AUDIT)
 # ==============================================================
-
+ 
 def validate_rows(parsed_data: list, template_type: str) -> tuple:
     """Validate normalized rows against the Barcodes database. Returns (results, db_online, db_error)."""
     parsed_data = normalize_rows(parsed_data)
     results: list = []
     db_error: Optional[str] = None
-
+ 
     conn, cursor = _get_barcodes_conn()
     if conn is None:
         db_error = 'Could not connect to Barcodes Database'
         logger.error(db_error)
-
+ 
     seen_barcodes: dict = {}
     seen_items: dict = {}
-
+ 
     for row in parsed_data:
         item_code = row.get('ITEM_CODE', '').strip()
-        barcode   = row.get('BARCODE',   '').strip()
-        result    = dict(row)
-
+        barcode = row.get('BARCODE', '').strip()
+        result = dict(row)
+ 
         if not barcode or _is_blank(barcode):
             result.update({'status': 'rejected', 'reason': 'VR-002: Barcode is empty'})
             results.append(result)
             continue
-
+ 
         if not item_code or _is_blank(item_code):
             result.update({'status': 'rejected', 'reason': 'VR-003: Item Code is empty'})
             results.append(result)
             continue
-
+ 
         if barcode in seen_barcodes:
             result.update({'status': 'duplicate', 'reason': 'VR-004: Duplicate Barcode in this file'})
             results.append(result)
             continue
         seen_barcodes[barcode] = True
-
+ 
         if item_code in seen_items:
             result.update({'status': 'duplicate', 'reason': 'VR-005: Duplicate Item Code in this file'})
             results.append(result)
             continue
         seen_items[item_code] = True
-
+ 
         if conn and cursor:
             try:
                 cursor.execute(
-                    'SELECT ITEM_CODE, BARCODE FROM dbo.barcodes WHERE BARCODE = ? OR ITEM_CODE = ?',
+                    """
+                    SELECT ITEM_CODE, BARCODE
+                    FROM dbo.barcodes
+                    WHERE BARCODE = ? OR ITEM_CODE = ?
+                    """,
                     (barcode, item_code),
                 )
+ 
                 db_rows = cursor.fetchall()
-
+ 
                 if not db_rows:
-                    result.update({'status': 'update', 'reason': 'New Item & Barcode - Ready to Add'})
+                    result.update({
+                        'status': 'update',
+                        'reason': 'VR-001: New Item & Barcode - Ready to Add'
+                    })
+ 
                 else:
                     conflict_found = False
-                    ok_found = False
-
+                    exact_match_found = False
+                    exact_match_count = 0
+ 
                     for db_row in db_rows:
                         db_item = str(db_row[0]).strip().upper()
-                        db_bar  = str(db_row[1]).strip().upper()
-
-                        if db_bar == barcode.upper() and db_item == item_code.upper():
-                            ok_found = True
-                        elif db_bar == barcode.upper():
+                        db_bar = str(db_row[1]).strip().upper()
+ 
+                        item_match = db_item == item_code.upper()
+                        barcode_match = db_bar == barcode.upper()
+ 
+                        # Exact match
+                        if item_match and barcode_match:
+                            exact_match_found = True
+                            exact_match_count += 1
+                            continue
+ 
+                        # Barcode already belongs to another item
+                        if barcode_match and not item_match:
                             result.update({
                                 'status': 'conflict',
-                                'reason': f'Conflict: Barcode belongs to Item [{db_item}]',
+                                'reason': (
+                                    f'VR-006: Barcode [{barcode}] already belongs '
+                                    f'to Item Code [{db_item}]'
+                                )
                             })
                             conflict_found = True
                             break
-                        elif db_item == item_code.upper():
+ 
+                        # Item Code already belongs to another barcode
+                        if item_match and not barcode_match:
                             result.update({
                                 'status': 'conflict',
-                                'reason': f'Conflict: Item already has Barcode [{db_bar}]',
+                                'reason': (
+                                    f'VR-007: Item Code [{item_code}] already belongs '
+                                    f'to Barcode [{db_bar}]'
+                                )
                             })
                             conflict_found = True
                             break
-
-                    if not conflict_found and ok_found:
-                        result.update({'status': 'ok', 'reason': 'Exists in Database - Already Validated'})
-
+ 
+                    # Multiple identical rows found in DB
+                    if not conflict_found and exact_match_count > 1:
+                        result.update({
+                            'status': 'conflict',
+                            'reason': (
+                                f'VR-008: Duplicate records found in database '
+                                f'({exact_match_count} identical records)'
+                            )
+                        })
+                        conflict_found = True
+ 
+                    # Valid existing mapping
+                    if not conflict_found and exact_match_found:
+                        result.update({
+                            'status': 'ok',
+                            'reason': 'VR-009: Exists in Database - Already Validated'
+                        })
+ 
+                    # Unexpected conflict fallback
+                    if not conflict_found and not exact_match_found:
+                        result.update({
+                            'status': 'conflict',
+                            'reason': (
+                                'VR-010: Database contains conflicting mappings '
+                                'for this Item Code or Barcode'
+                            )
+                        })
+ 
             except Exception as exc:
-                result.update({'status': 'rejected', 'reason': f'DB Error: {exc}'})
+                result.update({
+                    'status': 'rejected',
+                    'reason': f'DB Error: {exc}'
+                })
+ 
         else:
             result.update({
                 'status': 'db_offline',
                 'reason': 'Validation Offline — Cannot reach Database',
             })
-
+ 
         results.append(result)
-
+ 
     if conn:
         conn.close()
-
+ 
     return results, conn is not None and db_error is None, db_error
-
-
+ 
+ 
 # ==============================================================
 # STAGE 5 — COMMIT (WRITE NEW BARCODES TO DB)
 # ==============================================================
