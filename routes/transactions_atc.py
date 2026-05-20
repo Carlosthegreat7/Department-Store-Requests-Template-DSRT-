@@ -6,7 +6,6 @@ import zipfile
 import calendar
 import traceback
 import logging
-import mysql.connector
 from datetime import datetime, timedelta
 from PIL import Image
 from flask import send_file, make_response, jsonify
@@ -126,11 +125,11 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
         if mysql_conn:
             try:
                 v_cursor = mysql_conn.cursor()
-                v_cursor.execute("SELECT vendor_code FROM vendor_chain_mappings WHERE chain_name = %s AND company_selection = %s", (chain_selection, company_selection))
+                v_cursor.execute("SELECT vendor_code FROM dbo.vendor_chain_mappings WHERE chain_name = ? AND company_selection = ?", (chain_selection, company_selection))
                 v_res = v_cursor.fetchone()
                 if v_res: 
                     vendor_code = str(v_res[0])
-                    v_cursor.execute("SELECT mfg_part_no FROM vendors_rds WHERE vendor_code = %s", (vendor_code,))
+                    v_cursor.execute("SELECT mfg_part_no FROM dbo.vendors_rds WHERE vendor_code = ?", (vendor_code,))
                     mfg_res = v_cursor.fetchone()
                     if mfg_res: dynamic_mfg_no = str(mfg_res[0])
             finally:
@@ -420,15 +419,22 @@ def process_atcrep_template(chain_selection, company_selection, pc_memo, sales_c
                             f_dept, f_class = "0000", "0000"
                             if loop_conn: 
                                 try:
-                                    l_cursor = loop_conn.cursor(dictionary=True)
+                                    l_cursor = loop_conn.cursor() # Removed dictionary=True
                                     clean_brand = str(brand_name).strip()
                                     search_term = clean_brand + '%'
-                                    qry = """SELECT b.dept_code, b.sub_dept_code, b.class_code, s.subclass_code
-                                             FROM brands b LEFT JOIN sub_classes s ON b.product_group = s.product_group
-                                             WHERE b.brand_name LIKE %s LIMIT 1"""
+                                    
+                                    # Added TOP 1, dbo., and removed LIMIT 1
+                                    qry = """SELECT TOP 1 b.dept_code, b.sub_dept_code, b.class_code, s.subclass_code
+                                             FROM dbo.brands b LEFT JOIN dbo.sub_classes s ON b.product_group = s.product_group
+                                             WHERE b.brand_name LIKE ?"""
                                     l_cursor.execute(qry, (search_term,))
-                                    res = l_cursor.fetchone()
-                                    if res:
+                                    row = l_cursor.fetchone()
+                                    
+                                    if row:
+                                        # Zip the pyodbc tuple into a dictionary so .get() works
+                                        columns = [col[0] for col in l_cursor.description]
+                                        res = dict(zip(columns, row))
+                                        
                                         d = res.get('dept_code') or '00'
                                         sd = res.get('sub_dept_code') or '00'
                                         c = res.get('class_code') or '00'

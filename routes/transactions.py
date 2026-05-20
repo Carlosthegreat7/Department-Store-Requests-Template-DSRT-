@@ -182,18 +182,24 @@ def _abbreviate_category(val) -> str:
 
 
 def get_mysql_conn():
-    """Open a MySQL connection using environment variables, or return None."""
+    """
+    Replaces the old MySQL connection logic with SQL Server pyodbc logic.
+    Targets the DSRT database using ODBC Driver 18 for SQL Server.
+    """
     try:
-        return mysql.connector.connect(
-            host=os.getenv('MYSQL_HOST', 'localhost'),
-            user=os.getenv('MYSQL_USER', 'root'),
-            password=os.getenv('MYSQL_PASSWORD', ''),
-            database=os.getenv('MYSQL_DB', 'myproject'),
+        # TrustServerCertificate=yes is highly recommended for Driver 18 
+        # to prevent SSL chain errors on internal network servers.
+        conn_str = (
+            "DRIVER={ODBC Driver 18 for SQL Server};"
+            "SERVER=MGSVR14;"
+            "DATABASE=DSRT;"
+            "Trusted_Connection=yes;"
+            "TrustServerCertificate=yes;" 
         )
-    except Exception:
+        return pyodbc.connect(conn_str, timeout=5)
+    except Exception as exc:
+        logger.error('DSRT Meta DB connection failed: %s', exc)
         return None
-
-
 # ==============================================================
 # PROGRESS TRACKING  (file-based so multi-worker servers work)
 # ==============================================================
@@ -1195,18 +1201,19 @@ def verify_codes():
 
 @transactions_bp.route('/get-companies/<chain>')
 def get_companies(chain):
-    mysql_conn = get_mysql_conn()
+    meta_conn = get_mysql_conn()
     results = []
-    if mysql_conn:
+    if meta_conn:
         try:
-            cursor = mysql_conn.cursor(dictionary=True)
+            cursor = meta_conn.cursor()
             cursor.execute(
-                'SELECT company_selection, vendor_code FROM vendor_chain_mappings WHERE chain_name = %s',
+                'SELECT company_selection, vendor_code FROM dbo.vendor_chain_mappings WHERE chain_name = ?',
                 (chain.upper(),),
             )
-            results = cursor.fetchall()
+            columns = [column[0] for column in cursor.description]
+            results = [dict(zip(columns, row)) for row in cursor.fetchall()]
         finally:
-            mysql_conn.close()
+            meta_conn.close()
 
     if not results:
         return jsonify([
@@ -1524,27 +1531,41 @@ def process_template():
         else:
             merged_df['Discount Level'] = ''
 
-        # ── Vendor / brand lookup from MySQL ──────────────────
+       # ── Vendor / brand lookup from MySQL ──────────────────
         mysql_conn = get_mysql_conn()
         vendor_code, dynamic_mfg_no = '000000', ''
         if mysql_conn:
             try:
                 v_cursor = mysql_conn.cursor()
-                v_cursor.execute(
-                    'SELECT vendor_code FROM vendor_chain_mappings '
-                    'WHERE chain_name = %s AND company_selection = %s',
-                    (chain_selection, company_selection),
-                )
-                v_res = v_cursor.fetchone()
+                
+                # First, try to get the exact mapping
+                if company_selection:
+                    v_cursor.execute(
+                        'SELECT vendor_code FROM vendor_chain_mappings '
+                        'WHERE chain_name = ? AND company_selection = ?',
+                        (chain_selection, company_selection),
+                    )
+                    v_res = v_cursor.fetchone()
+                else:
+                    v_res = None
+                
+                # Fallback: If no company selected or mapping missing, grab the first vendor code for the chain
+                if not v_res:
+                    v_cursor.execute(
+                        'SELECT TOP 1 vendor_code FROM dbo.vendor_chain_mappings '
+                        'WHERE chain_name = ?',
+                        (chain_selection,),
+                    )
+                    v_res = v_cursor.fetchone()
+
                 if v_res:
                     vendor_code = str(v_res[0])
                     v_cursor.execute(
-                        'SELECT mfg_part_no FROM vendors_rds WHERE vendor_code = %s',
+                        'SELECT mfg_part_no FROM dbo.vendors_rds WHERE vendor_code = ?',
                         (vendor_code,),
                     )
-                    mfg_res = v_cursor.fetchone()
-                    if mfg_res:
-                        dynamic_mfg_no = str(mfg_res[0])
+            except Exception as e:
+                logger.error('Vendor code lookup failed: %s', e)
             finally:
                 mysql_conn.close()
 
@@ -1743,24 +1764,32 @@ def process_template():
                             filename = f'{filename_base} - {brand_name}.xlsx'
                         else:
                             f_dept, f_class = '0000', '0000'
-                            loop_conn = get_mysql_conn()
+                            loop_conn = get_mysql_conn()  # Assuming this function now returns your pyodbc connection
                             if loop_conn:
                                 try:
-                                    l_cursor = loop_conn.cursor(dictionary=True)
+                                    l_cursor = loop_conn.cursor() # Removed dictionary=True
+                                    
+                                    # Added TOP 1, dbo., and changed %s to ?
                                     l_cursor.execute(
-                                        'SELECT b.dept_code, b.sub_dept_code, b.class_code, s.subclass_code '
-                                        'FROM brands b LEFT JOIN sub_classes s ON b.product_group = s.product_group '
-                                        'WHERE b.brand_name LIKE %s LIMIT 1',
-                                        (str(brand_name).strip() + '%',),
+                                        'SELECT TOP 1 b.dept_code, b.sub_dept_code, b.class_code, s.subclass_code '
+                                        'FROM dbo.brands b LEFT JOIN dbo.sub_classes s ON b.product_group = s.product_group '
+                                        'WHERE b.brand_name LIKE ?',
+                                        (str(brand_name).strip() + '%',)
                                     )
-                                    res = l_cursor.fetchone()
-                                    if res:
+                                    row = l_cursor.fetchone()
+                                    
+                                    if row:
+                                        # Map the pyodbc tuple back into a dictionary
+                                        columns = [col[0] for col in l_cursor.description]
+                                        res = dict(zip(columns, row))
+                                        
                                         f_dept  = f"{res.get('dept_code') or '00'}{res.get('sub_dept_code') or '00'}"
                                         f_class = f"{res.get('class_code') or '00'}{res.get('subclass_code') or '00'}"
                                 except Exception as db_e:
                                     logger.error('Loop Lookup Error: %s', db_e)
                                 finally:
                                     loop_conn.close()
+
                             sm_ts    = time_now.strftime('%m%d%H%M')
                             filename = f'SC{vendor_code}_{f_dept}_{f_class}_{sm_ts}.xlsx'
 
