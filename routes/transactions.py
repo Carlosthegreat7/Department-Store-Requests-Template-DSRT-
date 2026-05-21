@@ -12,6 +12,10 @@ from typing import Optional
 import openpyxl
 import pandas as pd
 import pyodbc
+try:
+    import xlrd  # type: ignore[import-untyped]
+except ImportError:  # xlrd is optional; only needed for legacy .xls files
+    xlrd = None  # type: ignore[assignment]
 from flask import Blueprint, Response, jsonify, make_response, render_template, request, send_file, session
 from PIL import Image
 from werkzeug.utils import secure_filename
@@ -68,19 +72,21 @@ CHAIN_MAPPINGS = {
         'BRAND':     'BRAND_CODE',
     },
     'RDS': {
-        'SKU NO.':          'BARCODE',
-        'VENDOR PART #':    'ITEM_CODE',
-        'ITEM DESCRIPTION': 'DESC',
-        'BRAND':            'BRAND_CODE',
+        'SKU NUMBER WITH CHECK DIGIT': 'BARCODE',    
+        'SKU NUMBER':                  'BARCODE',    
+        'ITEM DESCRIPTION':            'DESC',
+        'VENDORPART#':                 'ITEM_CODE',  
+        'BRAND':                       'BRAND_CODE',
     },
     'RUSTANS': {
-        'RCC SKU':          'BARCODE',
-        'VENDOR ITEM CODE': 'ITEM_CODE',
+        'RCC SKU':                                   'BARCODE',
+        'VENDOR ITEM CODE':                          'ITEM_CODE',
+        'PRODUCT MEDIUM DESCRIPTION (CHAR. LIMIT = 30)': 'DESC',
     },
     'GGRAND': {
         'BRAND':       'BRAND_CODE',
         'DESCRIPTION': 'DESC',
-        'SKU':         'ITEM_CODE',   # Mapped to ITEM_CODE for database validation
+        'SKU':         'ITEM_CODE',   
         'BARCODE':     'BARCODE',
     },
     'GCAP': {
@@ -105,17 +111,10 @@ _BLANK_VALUES: frozenset = frozenset(('', 'nan', 'none'))
 
 
 def _is_blank(val) -> bool:
-    """Return True if a value represents an empty/missing cell.
-
-    Accepts any type; converts to lowercase string before checking so callers
-    do not have to do `.lower()` themselves (and cannot accidentally pass a
-    non-string and get an AttributeError).
-    """
     return str(val).strip().lower() in _BLANK_VALUES
 
 
 def _best_odbc_driver() -> Optional[str]:
-    """Return the highest-priority installed SQL Server ODBC driver, or None."""
     drivers = [d for d in pyodbc.drivers() if 'ODBC Driver' in d and 'SQL Server' in d]
     for version in ('18', '17', '13'):
         for d in drivers:
@@ -125,7 +124,6 @@ def _best_odbc_driver() -> Optional[str]:
 
 
 def _get_pyodbc_conn(database: str):
-    """Open a direct Windows-Auth pyodbc connection to MGSVR14, or return (None, None)."""
     driver = _best_odbc_driver()
     if not driver:
         return None, None
@@ -136,7 +134,9 @@ def _get_pyodbc_conn(database: str):
         )
         if '18' in driver:
             conn_str += 'TrustServerCertificate=yes;'
-        conn = pyodbc.connect(conn_str, timeout=5)
+        
+        # TIMEOUT INCREASED TO 5 MINUTES (300 SECONDS)
+        conn = pyodbc.connect(conn_str, timeout=300)
         logger.info('DB %s: connected via direct pyodbc', database)
         return conn, conn.cursor()
     except Exception as exc:
@@ -145,12 +145,10 @@ def _get_pyodbc_conn(database: str):
 
 
 def _get_barcodes_conn():
-    """Return a (conn, cursor) pair for the Barcodes database."""
     conn, cursor = _get_pyodbc_conn('Barcodes')
     if conn is not None:
         return conn, cursor
 
-    # Fallback via SQLconnect registry
     if SQLconnect:
         try:
             c, cur, _ = SQLconnect('Barcodes', 'DSRT')
@@ -163,30 +161,21 @@ def _get_barcodes_conn():
 
 
 def _get_dsrt_conn():
-    """Return a (conn, cursor) pair for the DSRT database."""
     return _get_pyodbc_conn('DSRT')
 
 
 def _safe_sheet_name(name: str, max_len: int = 31) -> str:
-    """Strip characters Excel forbids in sheet names and truncate to max_len."""
     return re.sub(r'[/\\?*\[\]:]', '', str(name))[:max_len]
 
 
 def _abbreviate_category(val) -> str:
-    """Map a short category code to its full name (shared by GCAP, GGRAND, ALTURAS)."""
     if not val:
         return ''
     return CAT_ABBREVS.get(str(val).strip().upper(), str(val))
 
 
 def get_mysql_conn():
-    """
-    Replaces the old MySQL connection logic with SQL Server pyodbc logic.
-    Targets the DSRT database using ODBC Driver 18 for SQL Server.
-    """
     try:
-        # TrustServerCertificate=yes is highly recommended for Driver 18 
-        # to prevent SSL chain errors on internal network servers.
         conn_str = (
             "DRIVER={ODBC Driver 18 for SQL Server};"
             "SERVER=MGSVR14;"
@@ -194,16 +183,17 @@ def get_mysql_conn():
             "Trusted_Connection=yes;"
             "TrustServerCertificate=yes;" 
         )
-        return pyodbc.connect(conn_str, timeout=5)
+        # TIMEOUT INCREASED TO 5 MINUTES (300 SECONDS)
+        return pyodbc.connect(conn_str, timeout=300)
     except Exception as exc:
         logger.error('DSRT Meta DB connection failed: %s', exc)
         return None
+
 # ==============================================================
-# PROGRESS TRACKING  (file-based so multi-worker servers work)
+# PROGRESS TRACKING 
 # ==============================================================
 
 def save_progress(req_id: str, current: int, total: int, status: str) -> None:
-    """Write progress state to a JSON file readable by all worker processes."""
     try:
         path = os.path.join(PROGRESS_DIR, f'{req_id}.json')
         with open(path, 'w') as fh:
@@ -213,7 +203,6 @@ def save_progress(req_id: str, current: int, total: int, status: str) -> None:
 
 
 def get_progress_data(req_id: str) -> dict:
-    """Read progress state from the JSON file written by save_progress."""
     try:
         path = os.path.join(PROGRESS_DIR, f'{req_id}.json')
         if os.path.exists(path):
@@ -229,7 +218,6 @@ def get_progress_data(req_id: str) -> dict:
 # ==============================================================
 
 def build_image_cache(base_path: str) -> dict:
-    """Walk base_path and index image files by their first character for fast lookup."""
     cache: dict = {}
     extensions = {'.jpg', '.jpeg', '.png'}
     try:
@@ -250,12 +238,10 @@ def build_image_cache(base_path: str) -> dict:
 
 
 def find_image_in_cache(cache: dict, item_no: str) -> Optional[str]:
-    """Return the full path of the image for item_no, or None if not found."""
     item_lower = str(item_no).strip().lower()
     if not item_lower:
         return None
     bucket = cache.get(item_lower[0], [])
-    # Exact match first, then prefix match
     for name, path in bucket:
         if name == item_lower:
             return path
@@ -269,53 +255,101 @@ def find_image_in_cache(cache: dict, item_no: str) -> Optional[str]:
 # STAGE 1 — TEMPLATE DETECTION
 # ==============================================================
 
+def _excel_engine(file_path: str) -> Optional[str]:
+    ext = os.path.splitext(file_path)[1].lower()
+    if ext == '.xls':
+        if xlrd is None:
+            raise ImportError(
+                "Reading legacy .xls files requires xlrd. "
+                "Install it on the server with: pip install xlrd>=2.0.1"
+            )
+        return 'xlrd'
+    if ext in ('.ods',):
+        return 'odf'
+    return None 
+
+
 def _read_head(file_path: str, nrows: int = 30, header=None, sheet_index: int = 0) -> pd.DataFrame:
-    """Read the first nrows of a CSV or Excel file without a header."""
     is_csv = file_path.lower().endswith('.csv')
     common = dict(nrows=nrows, header=header)
     if is_csv:
         return pd.read_csv(file_path, encoding='utf-8', encoding_errors='ignore', **common)
-    return pd.read_excel(file_path, sheet_name=sheet_index, **common)
+    engine = _excel_engine(file_path)
+    kwargs = dict(sheet_name=sheet_index, **common)
+    if engine:
+        kwargs['engine'] = engine
+    return pd.read_excel(file_path, **kwargs)
+
+
+def _detect_on_sheet(file_path: str, sheet_index: int) -> str:
+    df_head = _read_head(file_path, nrows=30, sheet_index=sheet_index)
+    best_match = 'UNKNOWN'
+    max_matches = 0
+
+    for _, row in df_head.iterrows():
+        row_vals = [str(v).strip().upper() for v in row.values if pd.notna(v)]
+
+        for chain, mapping in CHAIN_MAPPINGS.items():
+            matches = 0
+            for expected in mapping:
+                expected_clean = re.sub(r'\s+', '', expected.upper())
+                for val in row_vals:
+                    val_clean = re.sub(r'\s+', '', val)
+                    if expected_clean in val_clean or val_clean in expected_clean:
+                        matches += 1
+                        break
+            match_pct = matches / len(mapping) if mapping else 0
+
+            if matches >= 2 and matches > max_matches:
+                max_matches = matches
+                best_match = chain
+            elif matches >= 2 and matches == max_matches:
+                current_pct = max_matches / len(CHAIN_MAPPINGS[best_match])
+                if match_pct > current_pct:
+                    best_match = chain
+
+    if best_match == 'UNKNOWN':
+        df_full = _read_head(file_path, nrows=1, sheet_index=sheet_index)
+        if len(df_full.columns) >= 82:
+            return 'SM'
+
+    return best_match
 
 
 def detect_template_type(file_path: str, sheet_index: int = 0) -> str:
-    """Sniff the file and return the best-matching CHAIN_MAPPINGS key, or 'UNKNOWN'."""
     try:
-        df_head = _read_head(file_path, nrows=30, sheet_index=sheet_index)
-        best_match = 'UNKNOWN'
-        max_matches = 0
+        result = _detect_on_sheet(file_path, sheet_index)
+        if result != 'UNKNOWN':
+            return result
 
-        for _, row in df_head.iterrows():
-            row_vals = [str(v).strip().upper() for v in row.values if pd.notna(v)]
-            row_vals_no_spaces = [v.replace(' ', '') for v in row_vals]
+        ext = os.path.splitext(file_path)[1].lower()
+        if ext not in ('.csv',):
+            try:
+                if ext == '.xls':
+                    if xlrd is None:
+                        logger.warning('xlrd not installed; cannot enumerate .xls sheets')
+                        return 'UNKNOWN'
+                    wb = xlrd.open_workbook(file_path)
+                    sheet_count = wb.nsheets
+                else:
+                    import openpyxl as _opxl
+                    wb = _opxl.load_workbook(file_path, read_only=True, data_only=True)
+                    sheet_count = len(wb.sheetnames)
+                    wb.close()
+                for i in range(sheet_count):
+                    if i == sheet_index:
+                        continue
+                    try:
+                        result = _detect_on_sheet(file_path, i)
+                        if result != 'UNKNOWN':
+                            logger.info('Template detected as %s on sheet %d (fallback)', result, i)
+                            return result
+                    except Exception:
+                        continue
+            except Exception as wb_exc:
+                logger.warning('Multi-sheet fallback failed: %s', wb_exc)
 
-            for chain, mapping in CHAIN_MAPPINGS.items():
-                matches = 0
-                for expected in mapping:
-                    expected_clean = expected.upper().replace(' ', '')
-
-                    for val in row_vals:
-                        val_clean = val.replace(' ', '')
-
-                        if expected_clean in val_clean or val_clean in expected_clean:
-                            matches += 1
-                            break
-                match_pct = matches / len(mapping) if mapping else 0
-
-                if matches >= 2 and matches > max_matches:
-                    max_matches = matches
-                    best_match = chain
-                elif matches >= 2 and matches == max_matches:
-                    current_pct = max_matches / len(CHAIN_MAPPINGS[best_match])
-                    if match_pct > current_pct:
-                        best_match = chain
-
-        if best_match == 'UNKNOWN':
-            df_full = _read_head(file_path, nrows=1, sheet_index=sheet_index)
-            if len(df_full.columns) >= 82:
-                return 'SM'
-
-        return best_match
+        return 'UNKNOWN'
 
     except Exception as exc:
         logger.error('Template detection failed: %s', exc)
@@ -327,45 +361,88 @@ def detect_template_type(file_path: str, sheet_index: int = 0) -> str:
 # ==============================================================
 
 def _read_all_str(file_path: str, sheet_index: int = 0) -> pd.DataFrame:
-    """Read the entire file as strings to preserve leading zeros."""
     is_csv = file_path.lower().endswith('.csv')
     if is_csv:
         return pd.read_csv(
             file_path, header=None, dtype=str,
             encoding='utf-8', encoding_errors='ignore',
         )
-    return pd.read_excel(file_path, sheet_name=sheet_index, header=None, dtype=str)
+    engine = _excel_engine(file_path)
+    kwargs = dict(sheet_name=sheet_index, header=None, dtype=str)
+    if engine:
+        kwargs['engine'] = engine
+    return pd.read_excel(file_path, **kwargs)
 
 
-def parse_sku_template(file_path: str, template_type: str, sheet_index: int = 0) -> list:
-    """Parse the uploaded file and return a list of row dicts.
+_MULTI_SHEET_CHAINS = frozenset({'RUSTANS'})
 
-    Dispatches to a template-specific deep parser when available,
-    otherwise falls back to the generic column-mapping path.
-    """
+
+def parse_sku_template(file_path: str, template_type: str, sheet_index: int = 0,
+                       sheet_explicitly_selected: bool = False) -> list:
     try:
         if template_type == 'SM':
             return _parse_sm(file_path, sheet_index)
         if template_type == 'RDS':
             return _parse_rds(file_path, sheet_index)
-        if template_type == 'RUSTANS':
-            return _parse_rustans(file_path, sheet_index)
         if template_type == 'GCAP':
             return _parse_gcap(file_path, sheet_index)
-        # All other chains (GGRAND, ALTURAS, KCC, …) use the generic path
+
+        if template_type in _MULTI_SHEET_CHAINS:
+            # If the user explicitly picked a sheet, parse only that sheet.
+            # Otherwise fall back to scanning all matching sheets (auto-detect mode).
+            if sheet_explicitly_selected:
+                if template_type == 'RUSTANS':
+                    return _parse_rustans(file_path, sheet_index)
+                return _parse_generic(file_path, template_type, sheet_index)
+            return _parse_all_matching_sheets(file_path, template_type)
+
         return _parse_generic(file_path, template_type, sheet_index)
     except Exception as exc:
         logger.error('parse_sku_template error [%s]: %s', template_type, exc)
         return []
 
 
-# ------------------------------------------------------------------
-# Deep parser: GCAP
-# Direct column mapping: ITEM CODE → ITEM_CODE, GCAP BARCODE → BARCODE
-# Also captures BRAND → BRAND_CODE, DESCRIPTION → DESC
-# ------------------------------------------------------------------
+def _parse_all_matching_sheets(file_path: str, template_type: str) -> list:
+    all_rows: list = []
+    ext = os.path.splitext(file_path)[1].lower()
+
+    try:
+        if ext == '.xls':
+            if xlrd is None:
+                logger.error('xlrd required for .xls multi-sheet parsing')
+                return all_rows
+            wb = xlrd.open_workbook(file_path)
+            sheet_count = wb.nsheets
+        else:
+            _wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
+            sheet_count = len(_wb.sheetnames)
+            _wb.close()
+    except Exception as exc:
+        logger.error('_parse_all_matching_sheets: could not open workbook: %s', exc)
+        return all_rows
+
+    for i in range(sheet_count):
+        try:
+            detected = _detect_on_sheet(file_path, i)
+            if detected != template_type:
+                logger.info('Sheet %d skipped (detected as %s, not %s)', i, detected, template_type)
+                continue
+            if template_type == 'RUSTANS':
+                rows = _parse_rustans(file_path, i)
+            else:
+                rows = _parse_generic(file_path, template_type, i)
+            logger.info('Sheet %d (%s): extracted %d rows', i, template_type, len(rows))
+            all_rows.extend(rows)
+        except Exception as exc:
+            logger.error('Sheet %d parse error: %s', i, exc)
+            continue
+
+    logger.info('_parse_all_matching_sheets [%s]: %d total rows from %d sheets',
+                template_type, len(all_rows), sheet_count)
+    return all_rows
+
+
 def _parse_gcap(file_path: str, sheet_index: int = 0) -> list:
-    """GCAP template — direct named-column extraction."""
     extracted_data = []
     mapping = CHAIN_MAPPINGS['GCAP']
     df_full = _read_all_str(file_path, sheet_index)
@@ -386,7 +463,6 @@ def _parse_gcap(file_path: str, sheet_index: int = 0) -> list:
         item_code = _get_col(row, col_map, 'ITEM_CODE')
         barcode   = _get_col(row, col_map, 'BARCODE')
 
-        # Skip rows with no useful data
         if _is_blank(item_code.lower()) and _is_blank(barcode.lower()):
             continue
 
@@ -401,22 +477,13 @@ def _parse_gcap(file_path: str, sheet_index: int = 0) -> list:
     return extracted_data
 
 
-# ------------------------------------------------------------------
-# Deep parser: SM
-# Extracts ITEM_CODE from the last token of the description column.
-# Dynamically hunts for the Barcode column to prevent out-of-bounds errors.
-# ------------------------------------------------------------------
 def _parse_sm(file_path: str, sheet_name=0) -> list:
-    """SM template — extracts ITEM_CODE from the last token of the description column."""
     extracted_data = []
     df = _read_all_str(file_path, sheet_name)
 
-    # Defaults for legacy files
     DESC_COL    = 0
     BARCODE_COL = 81
 
-    # 1. SMART COLUMN FINDER (Protects against layout changes)
-    # Scans the first 50 rows looking for header keywords
     for row_idx in range(min(50, len(df))):
         row_vals = [str(v).strip().upper() for v in df.iloc[row_idx].values]
         
@@ -448,8 +515,6 @@ def _parse_sm(file_path: str, sheet_name=0) -> list:
     _SKIP_BAR  = {'nan', 'none', '', 'sm upc', 'barcode', 'upc'}
 
     for _, row in df.iterrows():
-        # 2. SAFE ROW LENGTH CHECK
-        # Only skips if the row physically isn't wide enough to contain our target columns
         max_needed_index = max(DESC_COL, BARCODE_COL)
         if len(row) <= max_needed_index:
             continue
@@ -464,8 +529,6 @@ def _parse_sm(file_path: str, sheet_name=0) -> list:
         if not any(c.isalnum() for c in raw_desc):
             continue
 
-        # 3. YOUR TOKEN LOGIC (Extract Item Code from Description)
-        # e.g. "GUESS NEWTRENDS GUESS 0001018 GW0997L3" → "GW0997L3"
         tokens    = raw_desc.split()
         item_code = tokens[-1] if tokens else raw_desc
         desc      = ' '.join(tokens[:-1]) if len(tokens) > 1 else raw_desc
@@ -479,22 +542,12 @@ def _parse_sm(file_path: str, sheet_name=0) -> list:
     logger.info('SM: extracted %d rows', len(extracted_data))
     return extracted_data
 
-# ------------------------------------------------------------------
-# Deep parser: RDS
-# Multi-row headers must be skipped.
-# SKU NO.       → BARCODE   (RDS's own SKU is stored as the barcode)
-# VENDOR PART # → ITEM_CODE (our internal item code)
-# ITEM DESCRIPTION → DESC
-# BRAND → BRAND_CODE
-# ------------------------------------------------------------------
+
 def _parse_rds(file_path: str, sheet_index: int = 0) -> list:
-    """RDS template — skips multi-row headers, maps SKU NO. to BARCODE."""
     extracted_data = []
     mapping = CHAIN_MAPPINGS['RDS']
     df_full = _read_all_str(file_path, sheet_index)
 
-    # RDS files often have 2–3 merged header rows before the real column row.
-    # _find_header_row scans up to row 50 and picks the best match.
     header_idx = _find_header_row(df_full, mapping)
     if header_idx == -1:
         logger.warning('RDS: header row not found')
@@ -504,17 +557,16 @@ def _parse_rds(file_path: str, sheet_index: int = 0) -> list:
         str(c).strip().upper() if pd.notna(c) else f'UNNAMED_{i}'
         for i, c in enumerate(df_full.iloc[header_idx].values)
     ]
-    df_data = df_full.iloc[header_idx + 1:].reset_index(drop=True)
+    data_start = header_idx + 3
+    df_data = df_full.iloc[data_start:].reset_index(drop=True)
     col_map = _build_col_map(df_data.columns, mapping)
 
     for _, row in df_data.iterrows():
-        # RDS mapping: SKU NO. → BARCODE, VENDOR PART # → ITEM_CODE
-        barcode   = _get_col(row, col_map, 'BARCODE')    # sourced from SKU NO.
-        item_code = _get_col(row, col_map, 'ITEM_CODE')  # sourced from VENDOR PART #
+        barcode   = _get_col(row, col_map, 'BARCODE')    
+        item_code = _get_col(row, col_map, 'ITEM_CODE')  
 
         if _is_blank(barcode) and _is_blank(item_code):
             continue
-        # Skip rows that appear to be sub-headers (non-numeric SKU when barcode expected)
         if not any(c.isdigit() for c in barcode) and barcode:
             continue
 
@@ -529,24 +581,14 @@ def _parse_rds(file_path: str, sheet_index: int = 0) -> list:
     return extracted_data
 
 
-# ------------------------------------------------------------------
-# Deep parser: RUSTANS
-# Form-based extraction using fixed cell positions.
-# The file is structured with labeled cells rather than a flat table.
-# Multiple consecutive rows may represent a single item.
-# Key cells: RCC SKU → BARCODE, VENDOR ITEM CODE → ITEM_CODE
-# ------------------------------------------------------------------
 def _parse_rustans(file_path: str, sheet_index: int = 0) -> list:
-    """RUSTANS template — form-based fixed-cell extraction with multi-row grouping."""
     extracted_data = []
     mapping = CHAIN_MAPPINGS['RUSTANS']
     df_full = _read_all_str(file_path, sheet_index)
 
-    # Locate the header row to understand column positions
     header_idx = _find_header_row(df_full, mapping)
     if header_idx == -1:
         logger.warning('RUSTANS: header row not found, attempting raw scan')
-        # Fallback: scan every cell pair for known labels
         return _parse_rustans_raw_scan(df_full)
 
     df_full.columns = [
@@ -556,54 +598,60 @@ def _parse_rustans(file_path: str, sheet_index: int = 0) -> list:
     df_data = df_full.iloc[header_idx + 1:].reset_index(drop=True)
     col_map = _build_col_map(df_data.columns, mapping)
 
-    # Group rows: accumulate values and emit a record when BARCODE is found
-    current: dict = {'ITEM_CODE': '', 'BARCODE': ''}
+    current: dict = {'ITEM_CODE': '', 'BARCODE': '', 'DESC': ''}
     for _, row in df_data.iterrows():
         barcode   = _get_col(row, col_map, 'BARCODE')
         item_code = _get_col(row, col_map, 'ITEM_CODE')
+        desc      = _get_col(row, col_map, 'DESC')
 
         if not _is_blank(item_code):
             current['ITEM_CODE'] = item_code
         if not _is_blank(barcode):
             current['BARCODE'] = barcode
+        if not _is_blank(desc):
+            current['DESC'] = desc
 
-        # Emit when we have both fields
         if current['ITEM_CODE'] and current['BARCODE']:
             extracted_data.append(dict(current))
-            current = {'ITEM_CODE': '', 'BARCODE': ''}
+            current = {'ITEM_CODE': '', 'BARCODE': '', 'DESC': ''}
 
     logger.info('RUSTANS: extracted %d rows', len(extracted_data))
     return extracted_data
 
 
 def _parse_rustans_raw_scan(df: pd.DataFrame) -> list:
-    """Fallback: walk every cell looking for RUSTANS label/value pairs."""
     extracted_data = []
-    rcc_col = vendor_col = None
+    rcc_col = vendor_col = desc_col = None
 
     for row_idx, row in df.iterrows():
         vals = [str(v).strip().upper() for v in row.values]
-        # Find columns by scanning for known header labels
         for col_idx, val in enumerate(vals):
             if 'RCC SKU' in val:
                 rcc_col = col_idx
             if 'VENDOR ITEM CODE' in val:
                 vendor_col = col_idx
+            if 'PRODUCT MEDIUM DESCRIPTION' in val:
+                desc_col = col_idx
 
         if rcc_col is not None and vendor_col is not None:
             barcode   = str(row.iloc[rcc_col]).strip()   if len(row) > rcc_col    else ''
             item_code = str(row.iloc[vendor_col]).strip() if len(row) > vendor_col else ''
+            desc      = str(row.iloc[desc_col]).strip()  if desc_col is not None and len(row) > desc_col else ''
             if not _is_blank(barcode) and not _is_blank(item_code):
-                extracted_data.append({'ITEM_CODE': item_code, 'BARCODE': barcode})
+                extracted_data.append({
+                    'ITEM_CODE': item_code,
+                    'BARCODE':   barcode,
+                    'DESC':      '' if _is_blank(desc) else desc,
+                })
 
     return extracted_data
 
 
-# ------------------------------------------------------------------
-# Generic fallback parser (GGRAND, ALTURAS, KCC, …)
-# ------------------------------------------------------------------
+_DATA_START_OFFSET = {
+    'ALTURAS': 2,
+}
+
 def _parse_generic(file_path: str, template_type: str, sheet_index: int = 0) -> list:
-    """Generic column-mapping parser for chains without a custom deep parser."""
     extracted_data = []
 
     if template_type not in CHAIN_MAPPINGS:
@@ -621,7 +669,8 @@ def _parse_generic(file_path: str, template_type: str, sheet_index: int = 0) -> 
         str(c).strip().upper() if pd.notna(c) else f'UNNAMED_{i}'
         for i, c in enumerate(df_full.iloc[header_idx].values)
     ]
-    df_data = df_full.iloc[header_idx + 1:].copy()
+    offset = _DATA_START_OFFSET.get(template_type, 1)
+    df_data = df_full.iloc[header_idx + offset:].copy()
     col_map = _build_col_map(df_data.columns, mapping)
 
     for _, row in df_data.iterrows():
@@ -634,7 +683,6 @@ def _parse_generic(file_path: str, template_type: str, sheet_index: int = 0) -> 
                 row_dict[target_key] = val
                 has_data = True
 
-        # SKU can serve as a fallback ITEM_CODE
         if not row_dict.get('ITEM_CODE') and row_dict.get('SKU'):
             row_dict['ITEM_CODE'] = row_dict['SKU']
 
@@ -649,15 +697,14 @@ def _parse_generic(file_path: str, template_type: str, sheet_index: int = 0) -> 
 # ------------------------------------------------------------------
 
 def _find_header_row(df: pd.DataFrame, mapping: dict, scan_rows: int = 50) -> int:
-    """Scan up to scan_rows rows and return the index of the best header match."""
     header_idx, max_matches = -1, 0
     for idx in range(min(scan_rows, len(df))):
-        row_vals      = [str(v).strip().upper() for v in df.iloc[idx].values if pd.notna(v)]
-        row_no_spaces = [v.replace(' ', '') for v in row_vals]
+        row_vals = [str(v) for v in df.iloc[idx].values if pd.notna(v)]
+        row_clean = [re.sub(r'\s+', '', v.upper()) for v in row_vals]
+        
         matches = sum(
             1 for expected in mapping
-            if (expected.upper() in row_vals
-                or expected.upper().replace(' ', '') in row_no_spaces)
+            if re.sub(r'\s+', '', expected.upper()) in row_clean
         )
         if matches > max_matches:
             max_matches = matches
@@ -666,19 +713,32 @@ def _find_header_row(df: pd.DataFrame, mapping: dict, scan_rows: int = 50) -> in
 
 
 def _build_col_map(columns, mapping: dict) -> dict:
-    """Return {actual_col_name: target_db_key} by fuzzy-matching against mapping keys."""
     col_map = {}
     for source_key, target_key in mapping.items():
-        expected = source_key.upper()
+        expected_clean = re.sub(r'\s+', '', source_key.upper())
         for col in columns:
-            if expected == col or expected.replace(' ', '') == col.replace(' ', ''):
+            col_clean = re.sub(r'\s+', '', str(col).upper())
+            if expected_clean == col_clean:
                 col_map[col] = target_key
                 break
+
+    resolved_targets = set(col_map.values())
+    for source_key, target_key in mapping.items():
+        if target_key in resolved_targets:
+            continue
+        expected = source_key.upper().replace(' ', '')
+        for col in columns:
+            col_norm = col.upper().replace(' ', '')
+            if expected in col_norm or col_norm in expected:
+                if col not in col_map:
+                    col_map[col] = target_key
+                    resolved_targets.add(target_key)
+                    break
+
     return col_map
 
 
 def _get_col(row, col_map: dict, target_key: str) -> str:
-    """Safely extract the value for a target_key from a row using col_map."""
     for col, key in col_map.items():
         if key == target_key:
             val = str(row[col]).strip()
@@ -691,7 +751,6 @@ def _get_col(row, col_map: dict, target_key: str) -> str:
 # ==============================================================
 
 def normalize_rows(parsed_data: list) -> list:
-    """Clean item codes and barcodes; strip the '.0' float artifact from Excel."""
     normalized = []
     for row in parsed_data:
         item_raw = re.sub(r'\.0+$', '', str(row.get('ITEM_CODE', '')).strip())
@@ -715,7 +774,6 @@ def normalize_rows(parsed_data: list) -> list:
 # ==============================================================
  
 def validate_rows(parsed_data: list, template_type: str) -> tuple:
-    """Validate normalized rows against the Barcodes database. Returns (results, db_online, db_error)."""
     parsed_data = normalize_rows(parsed_data)
     results: list = []
     db_error: Optional[str] = None
@@ -786,13 +844,11 @@ def validate_rows(parsed_data: list, template_type: str) -> tuple:
                         item_match = db_item == item_code.upper()
                         barcode_match = db_bar == barcode.upper()
  
-                        # Exact match
                         if item_match and barcode_match:
                             exact_match_found = True
                             exact_match_count += 1
                             continue
  
-                        # Barcode already belongs to another item
                         if barcode_match and not item_match:
                             result.update({
                                 'status': 'conflict',
@@ -804,7 +860,6 @@ def validate_rows(parsed_data: list, template_type: str) -> tuple:
                             conflict_found = True
                             break
  
-                        # Item Code already belongs to another barcode
                         if item_match and not barcode_match:
                             result.update({
                                 'status': 'conflict',
@@ -816,7 +871,6 @@ def validate_rows(parsed_data: list, template_type: str) -> tuple:
                             conflict_found = True
                             break
  
-                    # Multiple identical rows found in DB
                     if not conflict_found and exact_match_count > 1:
                         result.update({
                             'status': 'conflict',
@@ -827,14 +881,12 @@ def validate_rows(parsed_data: list, template_type: str) -> tuple:
                         })
                         conflict_found = True
  
-                    # Valid existing mapping
                     if not conflict_found and exact_match_found:
                         result.update({
                             'status': 'ok',
                             'reason': 'VR-009: Exists in Database - Already Validated'
                         })
  
-                    # Unexpected conflict fallback
                     if not conflict_found and not exact_match_found:
                         result.update({
                             'status': 'conflict',
@@ -869,7 +921,6 @@ def validate_rows(parsed_data: list, template_type: str) -> tuple:
 # ==============================================================
 
 def commit_rows_to_db(rows: list, committed_by: str) -> dict:
-    """Write rows with status='update' or 'force_overwrite' to the Barcodes database."""
     conn, cursor = _get_barcodes_conn()
     if conn is None:
         return {
@@ -897,7 +948,6 @@ def commit_rows_to_db(rows: list, committed_by: str) -> dict:
 
             try:
                 if status == 'update':
-                    # Standard Insert for brand new items
                     cursor.execute(
                         """
                         IF NOT EXISTS (SELECT 1 FROM dbo.barcodes WHERE BARCODE = ? OR ITEM_CODE = ?)
@@ -912,9 +962,7 @@ def commit_rows_to_db(rows: list, committed_by: str) -> dict:
                     committed += 1
                     
                 elif status == 'force_overwrite':
-                    # 1. Wipe out any old conflicting mappings for this specific Item or Barcode
                     cursor.execute("DELETE FROM dbo.barcodes WHERE BARCODE = ? OR ITEM_CODE = ?", (barcode, item_code))
-                    # 2. Force the new 1:1 mapping into the database
                     cursor.execute(
                         """
                         INSERT INTO dbo.barcodes
@@ -955,7 +1003,6 @@ def commit_rows_to_db(rows: list, committed_by: str) -> dict:
 # ==============================================================
 
 def _write_audit_log(rows: list, committed_by: str, committed_count: int, errors: list) -> None:
-    """Append commit results to dbo.audit_logs in the DSRT database."""
     conn, cursor = _get_dsrt_conn()
     if conn is None:
         logger.error('Audit log skipped — cannot connect to DSRT DB')
@@ -997,14 +1044,12 @@ def _write_audit_log(rows: list, committed_by: str, committed_count: int, errors
 
 @transactions_bp.route('/validate_barcode', methods=['GET'])
 def validate_barcode_page():
-    """Render the barcode validation UI."""
     if not session.get('sdr_loggedin'):
         return render_template('home.html')
     return render_template('validate_barcode.html')
 
 
 def _save_temp_file(file) -> tuple:
-    """Save an uploaded file to a temp path. Returns (filename, temp_filepath)."""
     filename = secure_filename(file.filename)
     suffix = os.path.splitext(filename)[1]
     fd, temp_filepath = tempfile.mkstemp(suffix=suffix)
@@ -1015,7 +1060,6 @@ def _save_temp_file(file) -> tuple:
 
 @transactions_bp.route('/api/get_sheets', methods=['POST'])
 def get_sheets():
-    """Return the list of sheet names for a multi-sheet Excel file."""
     if not session.get('sdr_loggedin'):
         return jsonify({'error': 'Not authenticated'}), 401
     if 'file' not in request.files:
@@ -1045,7 +1089,6 @@ def get_sheets():
 
 @transactions_bp.route('/api/detect_template', methods=['POST'])
 def detect_template():
-    """Stage 1: Accept a file and return the auto-detected template type."""
     if not session.get('sdr_loggedin'):
         return jsonify({'error': 'Not authenticated'}), 401
     if 'file' not in request.files:
@@ -1070,7 +1113,6 @@ def detect_template():
 
 @transactions_bp.route('/api/parse_sku_file', methods=['POST'])
 def parse_sku_file():
-    """Stages 2–4: Upload → parse → normalize → validate → return preview."""
     if not session.get('sdr_loggedin'):
         return jsonify({'error': 'Not authenticated'}), 401
     if 'file' not in request.files:
@@ -1091,7 +1133,11 @@ def parse_sku_file():
         if not filename:
             return jsonify({'error': 'Invalid filename'}), 400
 
-        parsed_data = parse_sku_template(temp_filepath, template_type, sheet_index)
+        # sheet_explicitly_selected is True when the user picked a specific sheet from the UI.
+        # When absent/false, RUSTANS falls back to scanning all matching sheets.
+        sheet_explicitly_selected = request.form.get('sheet_explicitly_selected', 'false').lower() == 'true'
+        parsed_data = parse_sku_template(temp_filepath, template_type, sheet_index,
+                                         sheet_explicitly_selected=sheet_explicitly_selected)
         if not parsed_data:
             return jsonify({
                 'error': f'No data extracted using template [{template_type}]. Check the file format.'
@@ -1127,7 +1173,6 @@ def parse_sku_file():
 
 @transactions_bp.route('/api/commit_barcodes', methods=['POST'])
 def commit_barcodes():
-    """Stages 5–6: Write approved rows to DB and write audit log."""
     if not session.get('sdr_loggedin'):
         return jsonify({'error': 'Not authenticated'}), 401
 
@@ -1141,7 +1186,6 @@ def commit_barcodes():
 
     committed_by = session.get('sdr_curr_user_username', 'unknown')
     
-    # Check for both 'update' and 'force_overwrite' statuses
     updateable = [r for r in rows if r.get('status') in ('update', 'force_overwrite')]
 
     if not updateable:
@@ -1162,7 +1206,6 @@ def commit_barcodes():
 
 @transactions_bp.route('/api/barcode_audit_log', methods=['GET'])
 def get_audit_log():
-    """Return the last 200 entries from the DSRT audit_logs table."""
     if not session.get('sdr_loggedin'):
         return jsonify({'error': 'Not authenticated'}), 401
 
@@ -1190,10 +1233,6 @@ def get_audit_log():
     finally:
         conn.close()
 
-
-# ==============================================================
-# ROUTES — PROGRESS STREAM
-# ==============================================================
 
 @transactions_bp.route('/progress')
 def progress():
@@ -1285,7 +1324,6 @@ def get_companies(chain):
 # Data-mapping helpers ─────────────────────────────────────────
 
 def _build_sm_watsons_cols(merged_df: pd.DataFrame, time_now: datetime, chain_selection: str) -> tuple:
-    """Shared column setup for SM and Watsons chains."""
     safe_color = merged_df['Dial Color'].fillna('')        if 'Dial Color'       in merged_df.columns else ''
     safe_size  = merged_df['Case _Frame Size'].fillna('')  if 'Case _Frame Size' in merged_df.columns else ''
     safe_brand = merged_df['Brand'].fillna('')
@@ -1324,7 +1362,6 @@ def _build_sm_watsons_cols(merged_df: pd.DataFrame, time_now: datetime, chain_se
 
 
 def _map_rds(merged_df: pd.DataFrame, vendor_code: str, dynamic_mfg_no: str) -> tuple:
-    """Build RDS column layout. Returns (final_cols, img_col, sheet, header_row, data_row)."""
     # PAGE 1
     for col in ('SKU Number', 'SKU Number with check digit', 'Sku Number'):
         merged_df[col] = ''
@@ -1459,7 +1496,6 @@ def process_template():
     req_id = sales_code
     save_progress(req_id, 0, 0, 'Initializing...')
 
-    # Redirect ATC/TPC to their own processing module
     if company_selection in ('ATC', 'TPC'):
         logger.info('Redirecting to ATC/TPC logic for company: %s', company_selection)
         return process_atcrep_template(
@@ -1468,7 +1504,6 @@ def process_template():
             find_image_in_cache, NETWORK_IMAGE_PATH, {},
         )
 
-    # ── NIC script logic ──────────────────────────────────────
     save_progress(req_id, 0, 0, 'Accessing NICREP...')
     conn = None
     try:
@@ -1476,7 +1511,6 @@ def process_template():
         if conn is None:
             return jsonify({'error': 'Database Connection Failed'}), 500
 
-        # Fetch prices (try with Discount Level first, fall back without)
         base_price_qry = (
             'SELECT {cols} FROM ('
             '  SELECT "Item No_", "Unit Price" AS SRP, {extra}'
@@ -1505,7 +1539,6 @@ def process_template():
         total_items_count = len(item_list)
         save_progress(req_id, 0, total_items_count, f'Found {total_items_count} items. Starting Retrieval...')
 
-        # ── Chunked data retrieval ────────────────────────────
         CHUNK_SIZE = 2000
         items_dfs: list = []
         attr_dfs:  list = []
@@ -1552,9 +1585,8 @@ def process_template():
             except Exception as exc:
                 logger.error('Attribute fetch failed for chunk %d: %s', i, exc)
 
-            time.sleep(0.01)  # yield to other threads — do not remove
+            time.sleep(0.01)
 
-        # ── Reconstruct + merge ───────────────────────────────
         items_df = pd.concat(items_dfs, ignore_index=True) if items_dfs else pd.DataFrame()
 
         if attr_dfs:
@@ -1576,7 +1608,6 @@ def process_template():
 
         merged_df = pd.merge(items_df, prices_df, on='Item No_')
 
-        # Resolve Discount Level from whichever column is available
         if 'Price_Discount' in merged_df and not merged_df['Price_Discount'].isna().all():
             merged_df['Discount Level'] = merged_df['Price_Discount']
         elif 'Item_Discount' in merged_df and not merged_df['Item_Discount'].isna().all():
@@ -1584,14 +1615,12 @@ def process_template():
         else:
             merged_df['Discount Level'] = ''
 
-       # ── Vendor / brand lookup from MySQL ──────────────────
         mysql_conn = get_mysql_conn()
         vendor_code, dynamic_mfg_no = '000000', ''
         if mysql_conn:
             try:
                 v_cursor = mysql_conn.cursor()
                 
-                # First, try to get the exact mapping
                 if company_selection:
                     v_cursor.execute(
                         'SELECT vendor_code FROM vendor_chain_mappings '
@@ -1602,7 +1631,6 @@ def process_template():
                 else:
                     v_res = None
                 
-                # Fallback: If no company selected or mapping missing, grab the first vendor code for the chain
                 if not v_res:
                     v_cursor.execute(
                         'SELECT TOP 1 vendor_code FROM dbo.vendor_chain_mappings '
@@ -1622,7 +1650,6 @@ def process_template():
             finally:
                 mysql_conn.close()
 
-        # ── Data mapping per chain ─────────────────────────────
         time_now = datetime.now()
         zip_date = time_now.strftime('%m%d%Y')
 
@@ -1643,12 +1670,11 @@ def process_template():
             filename_base  = f'SC{vendor_code}_DEPT_CLASS_{sm_ts}'
             chain_prefix   = 'WATSONS_ONLINE' if chain_selection == 'WATSONS ONLINE' else 'WATSONS'
             final_zip_name = f'{chain_prefix}{zip_date}.zip'
-        else:  # SM / default
+        else:
             sm_ts = time_now.strftime('%m%d%H%M')
             filename_base  = f'SC{vendor_code}_DEPT_CLASS_{sm_ts}'
             final_zip_name = f'SM{zip_date}.zip'
 
-        # img_col_name defaults; overridden per chain below
         img_col_name = None
         rds_sections = None
 
@@ -1787,11 +1813,10 @@ def process_template():
             img_col_name, sheet_name_val, header_row_idx, data_start_row = \
                 'PRODUCT IMAGE', 'New Item Sample Sheet', 6, 8
 
-        else:  # SM / default
+        else:
             final_cols, img_col_name, sheet_name_val, header_row_idx, data_start_row = \
                 _build_sm_watsons_cols(merged_df, time_now, chain_selection)
 
-        # ── Excel generation ──────────────────────────────────
         output_buffer    = io.BytesIO()
         brand_groups     = list(merged_df.groupby('Brand'))
         images_found_count = 0
@@ -1810,19 +1835,17 @@ def process_template():
         try:
             for brand_name, bucket_df in brand_groups:
                 try:
-                    # 1. Determine filename (zip mode only)
                     filename = ''
                     if not is_multisheet_mode:
                         if chain_selection in ('RDS', 'GCAP', 'KCC', 'GGRAND', 'ALTURAS', 'METRO'):
                             filename = f'{filename_base} - {brand_name}.xlsx'
                         else:
                             f_dept, f_class = '0000', '0000'
-                            loop_conn = get_mysql_conn()  # Assuming this function now returns your pyodbc connection
+                            loop_conn = get_mysql_conn() 
                             if loop_conn:
                                 try:
-                                    l_cursor = loop_conn.cursor() # Removed dictionary=True
+                                    l_cursor = loop_conn.cursor() 
                                     
-                                    # Added TOP 1, dbo., and changed %s to ?
                                     l_cursor.execute(
                                         'SELECT TOP 1 b.dept_code, b.sub_dept_code, b.class_code, s.subclass_code '
                                         'FROM dbo.brands b LEFT JOIN dbo.sub_classes s ON b.product_group = s.product_group '
@@ -1832,7 +1855,6 @@ def process_template():
                                     row = l_cursor.fetchone()
                                     
                                     if row:
-                                        # Map the pyodbc tuple back into a dictionary
                                         columns = [col[0] for col in l_cursor.description]
                                         res = dict(zip(columns, row))
                                         
@@ -1846,7 +1868,6 @@ def process_template():
                             sm_ts    = time_now.strftime('%m%d%H%M')
                             filename = f'SC{vendor_code}_{f_dept}_{f_class}_{sm_ts}.xlsx'
 
-                        # Deduplicate filenames
                         if filename in used_filenames:
                             base, ext = os.path.splitext(filename)
                             counter = 1
@@ -1857,7 +1878,6 @@ def process_template():
 
                     save_progress(req_id, 0, len(merged_df), f'Processing Brand: {brand_name}')
 
-                    # 2. Set up writer and sheet
                     if is_multisheet_mode:
                         current_writer     = global_writer
                         current_sheet_name = _safe_sheet_name(brand_name)
@@ -1869,7 +1889,6 @@ def process_template():
                         data_start_row     = {'METRO': 8, 'RDS': 2, 'KCC': 6,
                                               'GGRAND': 3, 'ALTURAS': 3}.get(chain_selection, 1)
 
-                    # 3. Write data
                     bucket_df[final_cols].to_excel(
                         current_writer, sheet_name=current_sheet_name,
                         index=False, startrow=data_start_row, header=False,
@@ -1877,7 +1896,6 @@ def process_template():
                     workbook  = current_writer.book
                     worksheet = current_writer.sheets[current_sheet_name]
 
-                    # 4. Formatting per chain
                     if chain_selection == 'RDS':
                         curr_col = 0
                         for idx, (group, title, color) in enumerate(rds_sections):
@@ -2032,7 +2050,7 @@ def process_template():
                         item_code_start = 15 + len(store_names) + 3
                         worksheet.merge_range(6, item_code_start, 6, item_code_start + 2, 'ITEM CODES', red_hdr_fmt)
 
-                    else:  # SM / default — blue theme
+                    else:  
                         header_fmt = workbook.add_format({'bold': True, 'bg_color': '#BDD7EE', 'border': 1, 'align': 'center'})
                         for col_num, value in enumerate(final_cols):
                             worksheet.write(0, col_num, value, header_fmt)
@@ -2046,7 +2064,6 @@ def process_template():
                                 else:
                                     worksheet.set_column(col_num, col_num, 18)
 
-                    # 5. Image insertion
                     if chain_selection not in ('RDS', 'GCAP') and img_col_name and img_col_name in final_cols:
                         image_cache = build_image_cache(NETWORK_IMAGE_PATH)
                         img_col_idx = final_cols.index(img_col_name)
@@ -2072,7 +2089,6 @@ def process_template():
                                 except Exception:
                                     worksheet.write(row_idx, img_col_idx, 'ERR')
 
-                    # 6. Save (zip mode only)
                     if not is_multisheet_mode:
                         current_writer.close()
                         zip_file.writestr(filename, excel_output.getvalue())

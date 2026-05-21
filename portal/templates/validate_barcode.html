@@ -1,6 +1,62 @@
 {% extends "base.html" %}
 
 {% block content %}
+<style>
+    /* --- Classic Filter Badges --- */
+    .filter-badge { 
+        cursor: pointer; 
+        transition: all 0.2s ease; 
+        user-select: none;
+        opacity: 0.6;
+    }
+    .filter-badge:hover { 
+        opacity: 1; 
+        transform: scale(1.05);
+    }
+    .filter-active { 
+        opacity: 1 !important; 
+        font-weight: bold; 
+        border-bottom: 2px solid currentColor;
+        padding-bottom: 2px;
+    }
+    
+    /* --- Table & Typography --- */
+    .reason-text {
+        color: #6c757d;
+        font-size: 0.82rem;
+        line-height: 1.4;
+        display: block;
+    }
+    .extra-details-badge {
+        font-size: 0.75rem;
+        padding: 4px 8px;
+        margin-right: 4px;
+        margin-bottom: 4px;
+        display: inline-block;
+    }
+    
+    /* --- Overwrite Checkbox & Row Highlight --- */
+    .overwrite-box {
+        background-color: #fff0f2;
+        border: 1px solid #ffcdd2;
+        border-radius: 6px;
+        padding: 4px 10px;
+        display: inline-flex;
+        align-items: center;
+        transition: all 0.2s;
+    }
+    .overwrite-box:hover { background-color: #ffe6e9; }
+    
+    .row-overwrite-active td {
+        background-color: #fff5f5 !important;
+        transition: background-color 0.3s ease;
+    }
+    .table-bento tbody tr td { transition: background-color 0.3s ease; }
+
+    /* --- Progress Bar Styles --- */
+    .progress-bento { height: 6px; border-radius: 4px; background-color: #edf2f7; overflow: hidden; }
+    .progress-bar-bento { transition: width 0.4s ease; }
+</style>
 
 <div class="bg-blob blob-purple"></div>
 <div class="bg-blob blob-blue"></div>
@@ -38,12 +94,15 @@
                 <div class="d-flex flex-column flex-md-row align-items-md-end" style="gap:15px;">
                     <div class="flex-grow-1 w-100">
                         <label class="font-weight-bold text-muted small text-uppercase mb-2" style="font-size:0.7rem;letter-spacing:0.5px;">1. Upload Template</label>
-                        <div class="custom-file custom-file-bento">
+                        <div class="custom-file custom-file-bento mb-2">
                             <input type="file" class="custom-file-input" id="skuFile" name="file" accept=".xlsx,.xls,.csv" required>
                             <label class="custom-file-label d-flex align-items-center text-muted" for="skuFile" style="height: 48px; border-radius: 12px;">
                                 <i class="fas fa-cloud-upload-alt mr-2 flex-shrink-0" style="font-size: 1.2rem;"></i>
                                 <span class="text-truncate flex-grow-1" style="min-width:0;font-weight:500;font-size:0.95rem;">Choose file to validate...</span>
                             </label>
+                        </div>
+                        <div class="progress progress-bento" id="detectProgressContainer" style="display: none;">
+                            <div id="detectProgressBar" class="progress-bar progress-bar-bento progress-bar-striped progress-bar-animated bg-success" role="progressbar" style="width: 0%"></div>
                         </div>
                     </div>
                     <div id="processBtnWrapper" style="flex-shrink:0;">
@@ -62,61 +121,65 @@
 
             <div class="card-header bg-white border-0 py-4 px-4 d-flex justify-content-between align-items-center flex-wrap"
                 style="border-bottom:1px solid rgba(0,0,0,0.04)!important; gap:20px;">
-                
                 <div class="position-relative">
                     <i class="fas fa-search position-absolute text-muted" style="left:15px;top:50%;transform:translateY(-50%);font-size:0.9rem;"></i>
                     <input type="text" id="searchInput" class="form-control shadow-sm" placeholder="Search items, codes..."
                         style="border-radius:50px;padding-left:40px;border:1px solid #edf2f7;background:#f8f9fa;width:240px; height: 42px; font-size: 0.9rem;">
                 </div>
-                
                 <div class="d-flex align-items-center flex-wrap" style="gap: 15px;">
-                    <div id="rowCountBadge" class="d-flex align-items-center" style="font-size: 0.9rem;">
-                        </div>
-
+                    <div id="rowCountBadge" class="d-flex align-items-center" style="font-size: 0.9rem;"></div>
                     <button id="overwriteAllBtn" type="button" 
                         class="btn btn-outline-danger rounded-pill px-3 py-1 font-weight-bold shadow-sm" 
                         onclick="toggleAllOverwrites()" style="display:none; align-items: center; transition: all 0.2s; font-size: 0.85rem;">
                         <i class="fas fa-exclamation-circle mr-1"></i> Overwrite All
                     </button>
                 </div>
-                
             </div>
 
-            <div class="table-responsive" style="min-height:450px;">
-                <table class="table table-bento mb-0">
-                    <thead style="background-color: #f8f9fa;">
-                        <tr>
-                            <th class="px-4 py-3 text-muted" style="width:50px; font-size: 0.75rem; letter-spacing: 1px;">#</th>
-                            <th class="py-3 text-muted" style="width:14%; font-size: 0.75rem; letter-spacing: 1px;">ITEM CODE</th>
-                            <th class="py-3 text-muted" style="width:16%; font-size: 0.75rem; letter-spacing: 1px;">BARCODE</th>
-                            <th class="py-3 text-muted" style="width:18%; font-size: 0.75rem; letter-spacing: 1px;">STATUS</th>
-                            <th class="py-3 text-muted" style="width:25%; font-size: 0.75rem; letter-spacing: 1px;">REASON</th>
-                            <th class="py-3 text-muted" style="font-size: 0.75rem; letter-spacing: 1px;">EXTRA DETAILS</th>
-                        </tr>
-                    </thead>
-                    <tbody id="resultsTableBody"></tbody>
-                </table>
-            </div>
-
-            <div class="px-4 py-3 bg-white" id="paginationControls" style="border-top:1px solid rgba(0,0,0,0.04);"></div>
-
-            <div class="card-footer bg-white border-0 py-4 px-4 d-flex flex-column flex-xl-row justify-content-between align-items-center"
-                style="border-top:1px solid rgba(0,0,0,0.04)!important; gap: 15px;">
-                
-                <div class="d-flex align-items-center text-muted small font-weight-500 bg-light px-3 py-2 rounded-pill">
-                    <i class="fas fa-info-circle text-primary mr-2"></i>
-                    <span>"Ready to Add" items save automatically. Tick <strong class="text-danger">Force Overwrite</strong> to replace conflicts.</span>
-                </div>
-                
-                <div class="d-flex flex-wrap justify-content-center align-items-center" style="gap: 12px;">
-                    <button class="btn btn-light rounded-pill px-4 font-weight-bold shadow-sm" style="height: 42px;" onclick="hideResults()">Clear</button>
-
-                    <button id="commitBtn" type="button" class="btn btn-success rounded-pill px-4 shadow-sm font-weight-bold" style="height: 42px;" onclick="commitToDatabase()">
-                        <i class="fas fa-cloud-upload-alt mr-2"></i> Commit Database
-                    </button>
+            <div id="tableLoadingState" class="py-5 text-center" style="display: none; min-height: 450px; flex-direction: column; justify-content: center; align-items: center;">
+                <div class="spinner-border text-primary mb-3" role="status" style="width: 3rem; height: 3rem; border-width: 0.25em;"></div>
+                <h5 class="font-weight-bold text-dark mb-2">Analyzing File & Extracting Barcodes...</h5>
+                <p class="text-muted small mb-4">This might take a moment depending on the size of the file.</p>
+                <div class="w-50 mx-auto">
+                    <div class="progress progress-bento" style="height: 10px;">
+                        <div id="extractionProgressBar" class="progress-bar progress-bar-bento bg-primary progress-bar-striped progress-bar-animated" role="progressbar" style="width: 0%"></div>
+                    </div>
                 </div>
             </div>
-        </div>
+
+            <div id="tableDataWrapper">
+                <div class="table-responsive" style="min-height:450px;">
+                    <table class="table table-bento mb-0">
+                        <thead style="background-color: #f8f9fa;">
+                            <tr>
+                                <th class="px-4 py-3 text-muted" style="width:50px; font-size: 0.75rem; letter-spacing: 1px;">#</th>
+                                <th class="py-3 text-muted" style="width:14%; font-size: 0.75rem; letter-spacing: 1px;">ITEM CODE</th>
+                                <th class="py-3 text-muted" style="width:16%; font-size: 0.75rem; letter-spacing: 1px;">BARCODE</th>
+                                <th class="py-3 text-muted" style="width:18%; font-size: 0.75rem; letter-spacing: 1px;">STATUS</th>
+                                <th class="py-3 text-muted" style="width:25%; font-size: 0.75rem; letter-spacing: 1px;">REASON</th>
+                                <th class="py-3 text-muted" style="font-size: 0.75rem; letter-spacing: 1px;">EXTRA DETAILS</th>
+                            </tr>
+                        </thead>
+                        <tbody id="resultsTableBody"></tbody>
+                    </table>
+                </div>
+
+                <div class="px-4 py-3 bg-white" id="paginationControls" style="border-top:1px solid rgba(0,0,0,0.04);"></div>
+
+                <div class="card-footer bg-white border-0 py-4 px-4 d-flex flex-column flex-xl-row justify-content-between align-items-center"
+                    style="border-top:1px solid rgba(0,0,0,0.04)!important; gap: 15px;">
+                    <div class="d-flex align-items-center text-muted small font-weight-500 bg-light px-3 py-2 rounded-pill">
+                        <i class="fas fa-info-circle text-primary mr-2"></i>
+                        <span>"Ready to Add" items save automatically. Tick <strong class="text-danger">Force Overwrite</strong> to replace conflicts.</span>
+                    </div>
+                    <div class="d-flex flex-wrap justify-content-center align-items-center" style="gap: 12px;">
+                        <button class="btn btn-light rounded-pill px-4 font-weight-bold shadow-sm" style="height: 42px;" onclick="hideResults()">Clear</button>
+                        <button id="commitBtn" type="button" class="btn btn-success rounded-pill px-4 shadow-sm font-weight-bold" style="height: 42px;" onclick="commitToDatabase()">
+                            <i class="fas fa-cloud-upload-alt mr-2"></i> Commit Database
+                        </button>
+                    </div>
+                </div>
+            </div> </div>
     </div>
 </div>
 
@@ -162,7 +225,7 @@
 // ================================================================
 window.showModal = function (title, message, type = 'alert', onConfirm = null, onClose = null) {
     document.getElementById('bentoModalTitle').innerHTML = title;
-    document.getElementById('bentoModalBody').innerHTML  = message.replace(/\n/g, '<br>');
+    document.getElementById('bentoModalBody').innerHTML = message;
 
     const footer        = document.getElementById('bentoModalFooter');
     const iconContainer = document.getElementById('bentoModalIcon');
@@ -172,7 +235,7 @@ window.showModal = function (title, message, type = 'alert', onConfirm = null, o
     let iconHtml;
     if (t.includes('success')) {
         iconHtml = `<div style="width:65px;height:65px;background:#d1e7dd;color:#0f5132;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto;font-size:1.8rem;box-shadow:0 4px 15px rgba(25,135,84,.15);"><i class="fas fa-check"></i></div>`;
-    } else if (t.includes('error') || t.includes('warning') || t.includes('not recognized')) {
+    } else if (t.includes('error') || t.includes('warning') || t.includes('not recognized') || t.includes('detected')) {
         iconHtml = `<div style="width:65px;height:65px;background:#f8d7da;color:#842029;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto;font-size:1.8rem;box-shadow:0 4px 15px rgba(220,53,69,.15);"><i class="fas fa-exclamation-triangle"></i></div>`;
     } else if (type === 'confirm') {
         iconHtml = `<div style="width:65px;height:65px;background:#cff4fc;color:#055160;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto;font-size:1.8rem;box-shadow:0 4px 15px rgba(13,202,240,.15);"><i class="fas fa-question"></i></div>`;
@@ -187,11 +250,19 @@ window.showModal = function (title, message, type = 'alert', onConfirm = null, o
     } else if (type === 'confirm') {
         footer.innerHTML = `
             <button type="button" class="btn btn-light rounded-pill px-4 font-weight-bold text-muted" data-dismiss="modal" style="background:#f1f3f5;border:none;">Cancel</button>
-            <button type="button" class="btn btn-primary rounded-pill px-4 font-weight-bold shadow-sm" id="bentoModalConfirmBtn">Yes, Confirm</button>`;
+            <button type="button" class="btn btn-primary rounded-pill px-4 font-weight-bold shadow-sm" id="bentoModalConfirmBtn">Confirm</button>`;
         
+        if (onClose) $('#bentoModal').on('hidden.bs.modal', function(e) {
+            if(!$(this).data('confirmed')) onClose();
+        });
+
         $('#bentoModalConfirmBtn').off('click').on('click', function () {
+            $('#bentoModal').data('confirmed', true);
             $('#bentoModal').modal('hide');
-            setTimeout(() => { if (onConfirm) onConfirm(); }, 350);
+            setTimeout(() => { 
+                if (onConfirm) onConfirm(); 
+                $('#bentoModal').data('confirmed', false); 
+            }, 350);
         });
     }
     $('#bentoModal').modal('show');
@@ -204,6 +275,7 @@ let currentPage   = 1;
 const rowsPerPage = 15;
 let filteredData  = [];
 let currentFilter = 'all';
+let currentSelectedSheet = null; 
 
 const STATUS_BADGE = {
     ok:         `<span class="badge badge-primary px-3 py-2 rounded-pill shadow-sm"><i class="fas fa-database mr-1"></i> EXISTS</span>`,
@@ -261,8 +333,10 @@ document.getElementById('sheetPickerConfirmBtn').addEventListener('click', funct
 });
 
 // ================================================================
-// DETECT TEMPLATE (shared helper — called after sheet is chosen)
+// DETECT TEMPLATE
 // ================================================================
+let detectProgressInterval;
+
 function runDetectTemplate() {
     const fileInput    = document.getElementById('skuFile');
     const processBtn   = document.getElementById('processBtn');
@@ -272,9 +346,17 @@ function runDetectTemplate() {
         ? ` <span class="badge badge-info flex-shrink-0 py-1 px-2 shadow-sm ml-1" style="font-size:0.72rem;"><i class="fas fa-layer-group mr-1"></i>${pendingSheets[sheetIndex]}</span>`
         : '';
 
-    // Re-add spinner
     label.find('#detectSpinner').remove();
     label.append('<i class="fas fa-spinner fa-spin ml-2 text-primary flex-shrink-0" id="detectSpinner"></i>');
+
+    // UI Detect Progress Animation
+    document.getElementById('detectProgressContainer').style.display = 'flex';
+    let dProg = 10;
+    const dBar = document.getElementById('detectProgressBar');
+    dBar.style.width = '10%';
+    detectProgressInterval = setInterval(() => {
+        if (dProg < 85) { dProg += 15; dBar.style.width = dProg + '%'; }
+    }, 200);
 
     const formData = new FormData();
     formData.append('file', fileInput.files[0]);
@@ -283,20 +365,29 @@ function runDetectTemplate() {
     fetch("{{ url_for('transactions.detect_template') }}", { method: 'POST', body: formData })
         .then(r => r.json())
         .then(data => {
-            $('#detectSpinner').remove();
-            if (data.success && data.template_type !== 'UNKNOWN') {
-                document.getElementById('detected_template').value = data.template_type;
-                label.append(`<span class="badge badge-success flex-shrink-0 py-1 px-2 shadow-sm ml-2" style="font-size:0.75rem;"><i class="fas fa-robot mr-1"></i> ${data.template_type}</span>${sheetSuffix}`);
-                processBtn.disabled = false;
-                document.getElementById('uploadForm').dispatchEvent(new Event('submit'));
-            } else {
-                label.append(`<span class="badge badge-danger flex-shrink-0 py-1 px-2 shadow-sm ml-2"><i class="fas fa-exclamation-triangle mr-1"></i> Unknown Format</span>`);
-                showModal('Format Not Recognized', 'Could not identify this template. Please make sure you are using a standard department store format.', 'alert');
-            }
+            clearInterval(detectProgressInterval);
+            dBar.style.width = '100%';
+            
+            setTimeout(() => {
+                document.getElementById('detectProgressContainer').style.display = 'none';
+                $('#detectSpinner').remove();
+                
+                if (data.success && data.template_type !== 'UNKNOWN') {
+                    document.getElementById('detected_template').value = data.template_type;
+                    label.append(`<span class="badge badge-success flex-shrink-0 py-1 px-2 shadow-sm ml-2" style="font-size:0.75rem;"><i class="fas fa-robot mr-1"></i> ${data.template_type}</span>${sheetSuffix}`);
+                    processBtn.disabled = false;
+                    document.getElementById('uploadForm').dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+                } else {
+                    label.append(`<span class="badge badge-danger flex-shrink-0 py-1 px-2 shadow-sm ml-2"><i class="fas fa-exclamation-triangle mr-1"></i> Unknown Format</span>`);
+                    showModal('Format Not Recognized', 'Could not identify this template. Please make sure you are using a standard department store format.', 'alert');
+                }
+            }, 300);
         })
         .catch(() => {
+            clearInterval(detectProgressInterval);
+            document.getElementById('detectProgressContainer').style.display = 'none';
             $('#detectSpinner').remove();
-            label.append(`<span class="badge badge-danger flex-shrink-0 py-1 px-2 shadow-sm ml-2"><i class="fas fa-times mr-1\"></i> Error</span>`);
+            label.append(`<span class="badge badge-danger flex-shrink-0 py-1 px-2 shadow-sm ml-2"><i class="fas fa-times mr-1"></i> Error</span>`);
         });
 }
 
@@ -328,7 +419,6 @@ $('.custom-file-input').on('change', function () {
 
     if (!fileInput.files.length) return;
 
-    // Step 1: check for multiple sheets
     const sheetFormData = new FormData();
     sheetFormData.append('file', fileInput.files[0]);
 
@@ -336,19 +426,16 @@ $('.custom-file-input').on('change', function () {
         .then(r => r.json())
         .then(data => {
             if (data.success && !data.is_csv && data.sheets && data.sheets.length > 1) {
-                // Multiple sheets — show picker first
                 $('#detectSpinner').remove();
                 pendingSheets      = data.sheets;
                 selectedSheetIndex = 0;
                 renderSheetPicker(data.sheets);
                 $('#sheetPickerModal').modal('show');
             } else {
-                // Single sheet or CSV — go straight to detection
                 runDetectTemplate();
             }
         })
         .catch(() => {
-            // If sheet check fails, fall through to direct detection
             runDetectTemplate();
         });
 });
@@ -369,6 +456,7 @@ function hideResults() {
     pendingSheets      = [];
     window.lastParsedData = [];
     filteredData = [];
+    $('.custom-file-input').val(''); 
     $('.custom-file-label').html('<i class="fas fa-cloud-upload-alt mr-2 flex-shrink-0" style="font-size: 1.2rem;"></i><span class="text-truncate flex-grow-1" style="min-width:0;font-weight:500;font-size:0.95rem;">Choose file to validate...</span>');
     
     const owBtn = document.getElementById('overwriteAllBtn');
@@ -442,7 +530,6 @@ window.filterByStatus = function (status) {
     filteredData = data;
     currentPage  = 1;
 
-    // --- VISIBILITY LOGIC FOR THE "OVERWRITE ALL" BUTTON ---
     const owBtn = document.getElementById('overwriteAllBtn');
     if (status === 'conflict' && data.length > 0) {
         owBtn.style.display = 'inline-flex';
@@ -573,6 +660,8 @@ window.changePage = function (page) {
 // ================================================================
 // FORM SUBMIT — extract & validate
 // ================================================================
+let extractProgressInterval;
+
 document.getElementById('uploadForm').addEventListener('submit', function (e) {
     e.preventDefault();
 
@@ -587,47 +676,73 @@ document.getElementById('uploadForm').addEventListener('submit', function (e) {
     formData.append('file', fileInput.files[0]);
     formData.append('template_type', templateType);
     formData.append('sheet_index', document.getElementById('selected_sheet_index').value || '0');
+    // Tell the backend the user explicitly picked a sheet (vs. auto-scan all sheets)
+    formData.append('sheet_explicitly_selected', pendingSheets.length > 1 ? 'true' : 'false');
 
     processBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i> Processing...';
     processBtn.disabled  = true;
-    document.getElementById('resultsContainer').style.display = 'none';
+    
+    // UI Extraction Progress Animation
+    document.getElementById('resultsContainer').style.display = 'block';
+    document.getElementById('tableDataWrapper').style.display = 'none';
+    document.getElementById('tableLoadingState').style.display = 'flex';
+    
+    let eProg = 10;
+    const eBar = document.getElementById('extractionProgressBar');
+    eBar.style.width = '10%';
+    extractProgressInterval = setInterval(() => {
+        if (eProg < 90) { eProg += Math.random() * 15; eBar.style.width = Math.min(eProg, 90) + '%'; }
+    }, 500);
 
     fetch("{{ url_for('transactions.parse_sku_file') }}", { method: 'POST', body: formData })
         .then(r => r.json())
         .then(data => {
-            processBtn.innerHTML = '<i class="fas fa-magic mr-2"></i> Extract Data';
-            processBtn.disabled  = false;
-
-            if (data.error) { showModal('Extraction Error', data.error, 'alert'); return; }
-
-            window.lastParsedData   = data.data.map(row => ({ ...row, force_overwrite: false }));
-            window.lastTemplateType = templateType;
-
-            document.getElementById('searchInput').value = '';
+            clearInterval(extractProgressInterval);
+            eBar.style.width = '100%';
             
-            // Revert back to the classic pipe-separated format
-            const s = data.summary;
-            document.getElementById('rowCountBadge').innerHTML = `
-                <span class="filter-badge filter-active text-dark" id="filter-all" onclick="filterByStatus('all')">
-                    <i class="fas fa-table mr-1"></i> ${data.row_count} Total
-                 </span> &nbsp;<span class="text-muted opacity-50">|</span>&nbsp;
-                 <span class="text-success filter-badge" id="filter-update" onclick="filterByStatus('update')">
-                    <i class="fas fa-plus-circle mr-1"></i> ${s.update || 0} New
-                 </span> &nbsp;<span class="text-muted opacity-50">|</span>&nbsp;
-                 <span class="text-primary filter-badge" id="filter-ok" onclick="filterByStatus('ok')">
-                    <i class="fas fa-database mr-1"></i> ${s.ok || 0} Exist
-                 </span> &nbsp;<span class="text-muted opacity-50">|</span>&nbsp;
-                 <span class="text-danger filter-badge" id="filter-conflict" onclick="filterByStatus('conflict')">
-                    <i class="fas fa-exclamation-triangle mr-1"></i> ${s.conflict || 0} Conflicts
-                 </span>`;
+            setTimeout(() => {
+                document.getElementById('tableLoadingState').style.display = 'none';
+                
+                processBtn.innerHTML = '<i class="fas fa-magic mr-2"></i> Extract Data';
+                processBtn.disabled  = false;
 
-            filterByStatus('all');
+                if (data.error) { 
+                    document.getElementById('resultsContainer').style.display = 'none';
+                    showModal('Extraction Error', data.error, 'alert'); 
+                    return; 
+                }
 
-            const container = document.getElementById('resultsContainer');
-            container.style.display = 'block';
-            container.classList.add('animate-fade-in-up');
+                window.lastParsedData   = data.data.map(row => ({ ...row, force_overwrite: false }));
+                window.lastTemplateType = templateType;
+
+                document.getElementById('searchInput').value = '';
+                
+                const s = data.summary;
+                document.getElementById('rowCountBadge').innerHTML = `
+                    <span class="filter-badge filter-active text-dark" id="filter-all" onclick="filterByStatus('all')">
+                        <i class="fas fa-table mr-1"></i> ${data.row_count} Total
+                     </span> &nbsp;<span class="text-muted opacity-50">|</span>&nbsp;
+                     <span class="text-success filter-badge" id="filter-update" onclick="filterByStatus('update')">
+                        <i class="fas fa-plus-circle mr-1"></i> ${s.update || 0} New
+                     </span> &nbsp;<span class="text-muted opacity-50">|</span>&nbsp;
+                     <span class="text-primary filter-badge" id="filter-ok" onclick="filterByStatus('ok')">
+                        <i class="fas fa-database mr-1"></i> ${s.ok || 0} Exist
+                     </span> &nbsp;<span class="text-muted opacity-50">|</span>&nbsp;
+                     <span class="text-danger filter-badge" id="filter-conflict" onclick="filterByStatus('conflict')">
+                        <i class="fas fa-exclamation-triangle mr-1"></i> ${s.conflict || 0} Conflicts
+                     </span>`;
+
+                filterByStatus('all');
+
+                document.getElementById('tableDataWrapper').style.display = 'block';
+                document.getElementById('resultsContainer').classList.add('animate-fade-in-up');
+            }, 400); // Small wait for progress bar to finish CSS animation
         })
         .catch(() => {
+            clearInterval(extractProgressInterval);
+            document.getElementById('tableLoadingState').style.display = 'none';
+            document.getElementById('resultsContainer').style.display = 'none';
+            
             showModal('Network Error', 'A network or server error occurred.', 'alert');
             processBtn.innerHTML = '<i class="fas fa-magic mr-2"></i> Extract Data';
             processBtn.disabled  = false;
@@ -671,9 +786,9 @@ function commitToDatabase() {
                 commitBtn.innerHTML = '<i class="fas fa-cloud-upload-alt mr-2"></i> Commit Database';
                 commitBtn.disabled  = false;
 
-                if (data.error) { showModal('Error', data.error, 'alert'); return; }
+                if (data.error) { showModal('Error', `<br>${data.error.replace(/\n/g, '<br>')}`, 'alert'); return; }
 
-                showModal('Success!', `✅ ${data.committed} record(s) saved.\n⏭️ ${data.skipped} row(s) skipped.\n${data.message || ''}`, 'alert', null, hideResults);
+                showModal('Success!', `✅ ${data.committed} record(s) saved.<br>⏭️ ${data.skipped} row(s) skipped.<br><br>${data.message || ''}`, 'alert', null, hideResults);
             })
             .catch(() => {
                 showModal('Network Error', 'A network error occurred while saving.', 'alert');
